@@ -2,7 +2,7 @@ name: build
 
 # 触发条件：
 #   - 推送到 main / master：跑测试 + 构建双架构镜像（打 latest 与 sha 标签）
-#   - 打 v* 标签：额外打上版本号标签（例如 v1.2.0 -> 1.2.0 / 1.2 / latest）
+#   - 打 v* 标签：额外打上版本号标签（例如 v1.2.0 -> 1.2.0 / 1.2 / 1 / latest）
 #   - Pull Request：只跑测试，不推送镜像
 #   - 也可以在 Actions 页面手动触发
 on:
@@ -21,7 +21,7 @@ concurrency:
 env:
   REGISTRY: ghcr.io
   # 镜像名必须全小写，而仓库名可能含大写（例如 SoulFound-ERP），
-  # 所以下面用 IMAGE_NAME_LOWER 统一转换后再使用。
+  # 所以下面在小写化之后再使用。
   IMAGE_NAME_RAW: ${{ github.repository }}
 
 jobs:
@@ -31,10 +31,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: 安装 Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           check-latest: true
@@ -52,8 +52,11 @@ jobs:
       - name: 静态检查
         run: go vet ./...
 
-      - name: 运行测试（含库存与市集利润核算、页面渲染、权限隔离）
-        run: go test -timeout 300s ./...
+      - name: 运行测试
+        run: |
+          echo "包含：金额与数量精度、移动加权平均成本、采购到岸成本分摊、"
+          echo "市集结算与撤销、库存不足拦截、页面渲染、权限隔离、导出文件校验。"
+          go test -timeout 300s -v ./... 2>&1 | tail -60
 
   # ---------------------------------------------------------------- 多架构镜像
   image:
@@ -65,21 +68,27 @@ jobs:
       packages: write
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: 计算小写镜像名
         id: repo
         run: echo "name=${IMAGE_NAME_RAW,,}" >> "$GITHUB_OUTPUT"
 
-      - name: 准备 QEMU（用于交叉构建 arm64）
-        uses: docker/setup-qemu-action@v3
+      - name: 计算版本号
+        id: ver
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${GITHUB_REF_NAME}-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: 准备 Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: 登录 GHCR
         if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -87,7 +96,7 @@ jobs:
 
       - name: 生成镜像标签
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ steps.repo.outputs.name }}
           tags: |
@@ -99,27 +108,30 @@ jobs:
             type=sha,prefix=sha-,format=short
 
       - name: 构建并推送
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
-          # 两种架构都构建，同一个标签下以 manifest list 形式发布，
+          # 两种架构打在同一个标签下（manifest list），
           # 服务器拉取时会自动选择匹配的架构
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            VERSION=${{ steps.meta.outputs.version }}
+            VERSION=${{ steps.ver.outputs.value }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: 输出镜像信息
+      - name: 汇总
         run: |
           {
-            echo "### 镜像已构建"
+            echo "### ✅ 镜像已构建"
             echo ""
-            echo "架构：\`linux/amd64\`、\`linux/arm64\`"
+            echo "**版本**：\`${{ steps.ver.outputs.value }}\`"
             echo ""
+            echo "**架构**：\`linux/amd64\`、\`linux/arm64\`"
+            echo ""
+            echo "**标签**："
             echo '```'
             echo "${{ steps.meta.outputs.tags }}"
             echo '```'
@@ -132,22 +144,23 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - { arch: x86_64, goarch: amd64 }
-          - { arch: aarch64, goarch: arm64 }
+          - { arch: x86_64, goarch: amd64, expect: x86-64 }
+          - { arch: aarch64, goarch: arm64, expect: aarch64 }
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: 安装 Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           check-latest: true
           cache: true
 
-      - name: 编译静态二进制
+      - name: 交叉编译静态二进制
         env:
           GOOS: linux
           GOARCH: ${{ matrix.goarch }}
@@ -156,10 +169,21 @@ jobs:
           go build -trimpath \
             -ldflags "-s -w -X main.buildVersion=${{ github.ref_name }}" \
             -o "erp-linux-${{ matrix.arch }}" ./cmd/erp
-          ./erp-linux-${{ matrix.arch }} version
+
+      # 注意：交叉编译出来的二进制不能在构建机上执行（架构不同，会 exit 126），
+      # 所以这里用 file / go version -m 校验，而不是运行它。
+      - name: 校验产物
+        run: |
+          set -eux
+          bin="erp-linux-${{ matrix.arch }}"
+          ls -lh "$bin"
+          file "$bin"
+          file "$bin" | grep -q "${{ matrix.expect }}"
+          file "$bin" | grep -q "statically linked"
+          go version -m "$bin" | head -5
 
       - name: 上传产物
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: erp-linux-${{ matrix.arch }}
           path: erp-linux-${{ matrix.arch }}
