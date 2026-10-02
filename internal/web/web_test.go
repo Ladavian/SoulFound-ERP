@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/json"
 	"encoding/xml"
 	"image"
 	"image/color"
@@ -1343,5 +1344,68 @@ func TestProductImageUpload(t *testing.T) {
 	}
 	if _, err := os.Stat(disk); !os.IsNotExist(err) {
 		t.Error("删除后磁盘上的图片文件也应被清掉")
+	}
+}
+
+// TestAppBrandingAndInstallPrompt 应用名与安装引导的行为约定。
+//
+// 这套系统以后还会接别的产品线，所以界面上一律叫「ERP」，
+// 不再出现「冰酒 ERP」这类绑定品类的名字；
+// 安装到桌面的引导只在手机上出现，PC 浏览器不需要。
+func TestAppBrandingAndInstallPrompt(t *testing.T) {
+	h, _, cfg := testApp(t)
+	cookie := doLogin(t, h, cfg, "admin", "admin123")
+
+	// PWA 清单：图标下面显示的名字就叫 ERP
+	code, manifest := get(t, h, "/static/manifest.webmanifest", cookie)
+	if code != http.StatusOK {
+		t.Fatalf("清单应可访问，实际 %d", code)
+	}
+	var parsed struct {
+		Name      string `json:"name"`
+		ShortName string `json:"short_name"`
+	}
+	if err := json.Unmarshal([]byte(manifest), &parsed); err != nil {
+		t.Fatalf("清单不是合法 JSON: %v", err)
+	}
+	if parsed.ShortName != "ERP" {
+		t.Errorf("清单 short_name 应为 ERP，实际 %q", parsed.ShortName)
+	}
+	if !strings.HasPrefix(parsed.Name, "ERP") {
+		t.Errorf("清单 name 应以 ERP 开头，实际 %q", parsed.Name)
+	}
+	if strings.Contains(parsed.Name, "冰酒") {
+		t.Errorf("应用名不应绑定品类，实际 %q", parsed.Name)
+	}
+
+	// 离线页与应用名保持一致
+	_, offline := get(t, h, "/static/offline.html", cookie)
+	if strings.Contains(offline, "冰酒") {
+		t.Error("离线页不应出现品类名")
+	}
+	if !strings.Contains(offline, "ERP") {
+		t.Error("离线页应显示应用名")
+	}
+
+	// 安装条用应用名（而不是账套里的公司名），并且文案只在手机端有意义
+	_, page := get(t, h, "/", cookie)
+	if !strings.Contains(page, "install-bar") {
+		t.Fatal("页面里应有安装引导条")
+	}
+	if !strings.Contains(page, "把「"+cfg.AppName+"」装到手机桌面") {
+		t.Error("安装提示应使用应用名")
+	}
+
+	// 品牌与交互脚本里也不应再写死品类名
+	_, css := get(t, h, "/static/css/app.css", cookie)
+	if strings.Contains(css, "冰酒") {
+		t.Error("样式表注释里不应出现品类名")
+	}
+	if !strings.Contains(css, "sidebar__nav::-webkit-scrollbar") {
+		t.Error("侧边栏应有细滚动条样式，避免系统默认滚动条切出白边")
+	}
+	// 宽屏下隐藏安装引导
+	if !strings.Contains(css, ".install-bar.is-visible { display: none !important; }") {
+		t.Error("PC 端应隐藏安装引导")
 	}
 }

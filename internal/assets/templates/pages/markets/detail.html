@@ -203,7 +203,7 @@
         </table>
       </div>
       {{else}}
-      {{template "empty" (dict "Icon" "market" "Title" "还没有添加产品" "Hint" "从下面选择本次市集要带的冰酒，添加后填写试饮与销售数量。")}}
+      {{template "empty" (dict "Icon" "market" "Title" "还没有添加产品" "Hint" "从下面选择本次市集要带的产品，添加后到收银台逐笔记账。")}}
       {{end}}
 
       {{if and .CanManage (not $m.IsSettled)}}

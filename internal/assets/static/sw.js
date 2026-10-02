@@ -1,4 +1,4 @@
-/* SoulFound ERP · Service Worker
+/* ERP · Service Worker
    策略：
    - /static/ 静态资源：stale-while-revalidate（先用缓存秒开，后台悄悄更新）
    - 页面导航：始终走网络（业务数据必须实时），离线时回退到离线提示页

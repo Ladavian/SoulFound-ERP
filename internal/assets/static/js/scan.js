@@ -1,4 +1,4 @@
-/* SoulFound ERP · 扫码模块
+/* ERP · 扫码模块
  *
  * 用法（写在按钮上即可，不需要额外脚本）：
  *   data-scan-submit="#表单选择器"   识别后把条码填进表单的 code 字段并提交（HTMX 或普通表单）

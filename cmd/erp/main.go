@@ -1,4 +1,4 @@
-// Command erp 启动 SoulFound ERP 服务，并提供少量运维命令。
+// Command erp 启动 ERP 服务，并提供少量运维命令。
 //
 // 用法：
 //
@@ -123,7 +123,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Print(`SoulFound ERP
+	fmt.Print(`ERP
 
 用法：
   erp                            启动 Web 服务（默认监听 :8123）

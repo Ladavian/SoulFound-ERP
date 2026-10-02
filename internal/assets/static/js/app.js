@@ -1,4 +1,4 @@
-/* SoulFound ERP · 前端交互
+/* ERP · 前端交互
    - PWA 安装引导与服务注册
    - 在线/离线状态提示
    - 市集录入的断网自动重试（市集现场信号差时最实用）
@@ -23,8 +23,14 @@
     }
   }
 
+  function isMobile() {
+    // 与样式断点保持一致：PC 端不打扰，只在手机上提示装到桌面
+    return window.matchMedia('(max-width: 900px)').matches;
+  }
+
   function showInstallBar() {
     if (!installBar || dismissedRecently()) return;
+    if (!isMobile()) return;
     // 已经是独立窗口（已安装）就不再提示
     var standalone = window.matchMedia('(display-mode: standalone)').matches ||
       window.navigator.standalone === true;
@@ -33,6 +39,8 @@
   }
 
   window.addEventListener('beforeinstallprompt', function (e) {
+    // PC 端（Chrome 桌面）也会触发这个事件，但那里不需要引导，直接忽略
+    if (!isMobile()) return;
     e.preventDefault();
     deferredPrompt = e;
     showInstallBar();

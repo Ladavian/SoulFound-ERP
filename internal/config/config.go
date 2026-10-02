@@ -125,7 +125,7 @@ func Load() *Config {
 	}
 
 	cfg := &Config{
-		AppName:        getenv("ERP_APP_NAME", "SoulFound ERP"),
+		AppName:        getenv("ERP_APP_NAME", "ERP"),
 		Version:        getenv("ERP_VERSION", "1.0.0"),
 		Addr:           getenv("ERP_ADDR", ":8123"),
 		Dev:            envBool("ERP_DEV", false),
