@@ -1,0 +1,21 @@
+# 使用 GitHub 构建好的镜像（免编译，同时支持 amd64 / arm64）
+#
+#   docker compose -f docker-compose.ghcr.yml up -d
+#
+# 前提：镜像包是私有的，需要先满足下面之一
+#   1. 在 GitHub 把镜像包设为 Public（一次即可，之后永久免登录）
+#      https://github.com/users/Ladavian/packages/container/soulfound-erp/settings
+#      → 页面最下面 Danger Zone → Change visibility → Public
+#   2. 或者在设备上登录一次：
+#      echo "<只读令牌>" | docker login ghcr.io -u Ladavian --password-stdin
+#      （令牌：https://github.com/settings/tokens/new?scopes=read:packages）
+
+services:
+  erp:
+    image: ghcr.io/ladavian/soulfound-erp:latest
+    container_name: icewine-erp
+    restart: unless-stopped
+    ports:
+      - "8123:8123"
+    volumes:
+      - ./data:/data
