@@ -181,6 +181,7 @@ func (s *Server) handleProductSave(w http.ResponseWriter, r *http.Request) {
 		SalePrice:      f.Money("sale_price", "建议售价"),
 		LowStockQty:    f.Qty("low_stock_qty", "库存预警线"),
 		SupplierID:     f.OptionalID("supplier_id"),
+		Barcode:        f.Str("barcode"),
 		ImageURL:       f.Str("image_url"),
 		Notes:          f.Str("notes"),
 		IsActive:       f.Bool("is_active"),

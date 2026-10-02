@@ -38,7 +38,7 @@ func (s *Server) handleMarketList(w http.ResponseWriter, r *http.Request) {
 	var summary model.MarketTotals
 	var totalSold, totalTasting model.Qty
 	for _, m := range markets {
-		t := service.ComputeMarketTotals(m.Items, m.Expenses)
+		t := m.Totals()
 		rows = append(rows, marketRow{Market: m, Totals: t})
 		summary.Revenue += t.Revenue
 		summary.CogsSold += t.CogsSold
@@ -107,7 +107,7 @@ func (s *Server) handleMarketForm(w http.ResponseWriter, r *http.Request) {
 	page["FormAction"] = "/markets/new"
 	if !isNew {
 		page["FormAction"] = "/markets/" + strconv.FormatInt(id, 10) + "/edit"
-		page["Totals"] = service.ComputeMarketTotals(market.Items, market.Expenses)
+		page["Totals"] = market.Totals()
 	}
 	if err := s.rnd.Render(w, "markets/form", page); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -189,7 +189,7 @@ func (s *Server) marketPanelData(r *http.Request, marketID int64) (map[string]an
 
 	return map[string]any{
 		"Market":            m,
-		"Totals":            service.ComputeMarketTotals(m.Items, m.Expenses),
+		"Totals":            m.Totals(),
 		"AvailableProducts": available,
 		"Shortages":         shortages,
 		"ExpenseCategories": model.ExpenseCategoryOptions,
@@ -310,7 +310,7 @@ func (s *Server) handleMarketItemUpdate(w http.ResponseWriter, r *http.Request) 
 				m.Items[i].Note = up.Note
 			}
 		}
-		panel["Totals"] = service.ComputeMarketTotals(m.Items, m.Expenses)
+		panel["Totals"] = m.Totals()
 	}
 	panel["RowError"] = msg
 	panel["RowErrorID"] = itemID

@@ -104,7 +104,10 @@ func (s *Store) ListMarkets(ctx context.Context, f MarketFilter) ([]model.Market
 	if err := s.attachMarketItems(ctx, out); err != nil {
 		return nil, err
 	}
-	return out, s.attachMarketExpenses(ctx, out)
+	if err := s.attachMarketExpenses(ctx, out); err != nil {
+		return out, err
+	}
+	return out, s.attachMarketRecords(ctx, out)
 }
 
 // MarketByID 查询单场市集。
@@ -125,8 +128,13 @@ func (s *Store) MarketByID(ctx context.Context, id int64) (*model.Market, error)
 	if err != nil {
 		return nil, err
 	}
+	records, err := s.MarketRecords(ctx, m.ID, 0)
+	if err != nil {
+		return nil, err
+	}
 	m.Items = items
 	m.Expenses = expenses
+	m.Records = records
 	return m, nil
 }
 

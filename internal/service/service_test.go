@@ -241,7 +241,7 @@ func TestMarketSettleProfitAndStock(t *testing.T) {
 
 	// 结算前为估算值（成本取自当前平均成本 40）
 	m, _ = svc.Store.MarketByID(ctx, marketID)
-	totals := ComputeMarketTotals(m.Items, m.Expenses)
+	totals := m.Totals()
 	wantRevenue := model.MustMoney("290") // 3 × 100 - 10
 	if totals.Revenue != wantRevenue {
 		t.Errorf("销售额应为 %s，实际 %s", wantRevenue, totals.Revenue)
@@ -365,7 +365,7 @@ func TestDemoSeedConsistency(t *testing.T) {
 			continue
 		}
 		settled++
-		totals := ComputeMarketTotals(m.Items, m.Expenses)
+		totals := m.Totals()
 		if totals.NetProfit != m.NetProfit {
 			t.Errorf("%s 缓存的净利润 %s 与重算结果 %s 不一致", m.Code, m.NetProfit, totals.NetProfit)
 		}

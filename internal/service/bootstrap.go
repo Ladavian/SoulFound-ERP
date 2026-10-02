@@ -386,17 +386,42 @@ func (s *Service) seedDemo(ctx context.Context, admin *model.User) error {
 				break
 			}
 			item := m.Items[i]
+			// 数量改成"逐笔记录"之后，明细行只负责带去数量与售价，
+			// 试饮/销售/赠送/损耗都通过现场记录生成（下方 AddMarketRecord）。
 			up := MarketItemUpdate{
-				CarriedQty:  model.MustQty(ln.carried),
-				TastingQty:  model.MustQty(ln.tasting),
-				SoldQty:     model.MustQty(ln.sold),
-				GiftQty:     model.MustQty(ln.gift),
-				LossQty:     model.MustQty(ln.loss),
-				UnitPrice:   model.MustMoney(ln.price),
-				DiscountAmt: model.MustMoney(ln.disc),
+				CarriedQty: model.MustQty(ln.carried),
+				UnitPrice:  model.MustMoney(ln.price),
 			}
 			if err := s.UpdateMarketItemRow(ctx, marketID, item.ID, up, admin); err != nil {
 				return err
+			}
+			demoRecords := []struct {
+				kind  string
+				qty   string
+				price string
+				disc  string
+				note  string
+			}{
+				{model.RecordSale, ln.sold, ln.price, ln.disc, "演示：现场销售"},
+				{model.RecordTasting, ln.tasting, "0", "0", "演示：试饮"},
+				{model.RecordGift, ln.gift, "0", "0", "演示：赠送"},
+				{model.RecordLoss, ln.loss, "0", "0", "演示：损耗"},
+			}
+			for _, dr := range demoRecords {
+				if model.MustQty(dr.qty) == 0 {
+					continue
+				}
+				if _, err := s.AddMarketRecord(ctx, marketID, MarketRecordInput{
+					ProductID: item.ProductID,
+					Kind:      dr.kind,
+					Qty:       model.MustQty(dr.qty),
+					UnitPrice: model.MustMoney(dr.price),
+					Discount:  model.MustMoney(dr.disc),
+					Channel:   "manual",
+					Note:      dr.note,
+				}, admin); err != nil {
+					return err
+				}
 			}
 		}
 		expenses := make([]model.MarketExpense, 0, len(ms.expenses))

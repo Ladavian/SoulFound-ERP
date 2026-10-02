@@ -120,6 +120,7 @@
           {{end}}
           <td class="right">
             <div class="row-actions">
+              {{if not $m.IsSettled}}<a class="btn btn--sm btn--primary" href="/markets/{{$m.ID}}/pos" title="现场收银台">{{template "icon" "cart"}}<span>收银台</span></a>{{end}}
               <a class="btn btn--sm" href="/markets/{{$m.ID}}">明细</a>
               {{if and $.CanManage (not $m.IsSettled)}}<a class="btn btn--sm btn--ghost" href="/markets/{{$m.ID}}/edit" title="编辑">{{template "icon" "edit"}}</a>{{end}}
             </div>

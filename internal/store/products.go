@@ -12,7 +12,7 @@ import (
 
 const productCols = `p.id, p.sku, p.name, p.name_en, p.category, p.vintage, p.volume_ml,
 	p.unit, p.bottles_per_case, p.sale_price, p.low_stock_qty, p.supplier_id,
-	COALESCE(s.name, ''), p.image_url, p.notes, p.is_active,
+	COALESCE(s.name, ''), p.image_url, p.notes, p.barcode, p.is_active,
 	p.stock_qty, p.avg_cost, p.stock_value, p.created_at, p.updated_at`
 
 const productFrom = ` FROM products p LEFT JOIN suppliers s ON s.id = p.supplier_id`
@@ -25,7 +25,7 @@ func scanProduct(row interface{ Scan(...any) error }) (*model.Product, error) {
 	)
 	err := row.Scan(&p.ID, &p.SKU, &p.Name, &p.NameEn, &p.Category, &p.Vintage, &p.VolumeML,
 		&p.Unit, &p.BottlesPerCase, &p.SalePrice, &p.LowStockQty, &supplierID,
-		&p.SupplierName, &p.ImageURL, &p.Notes, &isActive,
+		&p.SupplierName, &p.ImageURL, &p.Notes, &p.Barcode, &isActive,
 		&p.StockQty, &p.AvgCost, &p.StockValue, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return nil, err
@@ -55,9 +55,9 @@ func (s *Store) ListProducts(ctx context.Context, f ProductFilter) ([]model.Prod
 		where = append(where, "p.is_active = 1")
 	}
 	if kw := strings.TrimSpace(f.Keyword); kw != "" {
-		where = append(where, "(p.name LIKE ? OR p.sku LIKE ? OR p.name_en LIKE ? OR p.notes LIKE ?)")
+		where = append(where, "(p.name LIKE ? OR p.sku LIKE ? OR p.name_en LIKE ? OR p.notes LIKE ? OR p.barcode LIKE ?)")
 		like := "%" + kw + "%"
-		args = append(args, like, like, like, like)
+		args = append(args, like, like, like, like, like)
 	}
 	if f.Category != "" {
 		where = append(where, "p.category = ?")
@@ -192,11 +192,11 @@ func (s *Store) CreateProduct(ctx context.Context, p *model.Product) (int64, err
 	res, err := s.db.ExecContext(ctx,
 		`INSERT INTO products(sku, name, name_en, category, vintage, volume_ml, unit,
 		        bottles_per_case, sale_price, low_stock_qty, supplier_id, image_url,
-		        notes, is_active, stock_qty, avg_cost, stock_value, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?)`,
+		        notes, barcode, is_active, stock_qty, avg_cost, stock_value, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?)`,
 		p.SKU, p.Name, p.NameEn, p.Category, p.Vintage, p.VolumeML, p.Unit,
 		p.BottlesPerCase, int64(p.SalePrice), int64(p.LowStockQty), p.SupplierID, p.ImageURL,
-		p.Notes, b2i(p.IsActive), now, now)
+		p.Notes, p.Barcode, b2i(p.IsActive), now, now)
 	if err != nil {
 		return 0, err
 	}
@@ -208,12 +208,12 @@ func (s *Store) UpdateProduct(ctx context.Context, p *model.Product) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE products SET sku = ?, name = ?, name_en = ?, category = ?, vintage = ?,
 		        volume_ml = ?, unit = ?, bottles_per_case = ?, sale_price = ?,
-		        low_stock_qty = ?, supplier_id = ?, image_url = ?, notes = ?,
+		        low_stock_qty = ?, supplier_id = ?, image_url = ?, notes = ?, barcode = ?,
 		        is_active = ?, updated_at = ?
 		 WHERE id = ?`,
 		p.SKU, p.Name, p.NameEn, p.Category, p.Vintage, p.VolumeML, p.Unit,
 		p.BottlesPerCase, int64(p.SalePrice), int64(p.LowStockQty), p.SupplierID,
-		p.ImageURL, p.Notes, b2i(p.IsActive), Now(), p.ID)
+		p.ImageURL, p.Notes, p.Barcode, b2i(p.IsActive), Now(), p.ID)
 	return err
 }
 

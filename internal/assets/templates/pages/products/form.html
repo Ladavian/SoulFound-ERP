@@ -106,6 +106,20 @@
           </select>
         </div>
         <div class="field">
+          <label class="field__label" for="barcode">条形码</label>
+          <div class="input-group">
+            <input class="input mono" id="barcode" name="barcode" type="text" value="{{$p.Barcode}}"
+                   placeholder="扫一次瓶身条码即可自动填入" autocomplete="off">
+            <button class="btn" type="button" data-scan-fill="#barcode">
+              {{template "icon" "scan"}}<span>扫码录入</span>
+            </button>
+          </div>
+          <div class="field__hint">
+            录一次以后，市集收银台扫这瓶酒就能自动出库。没有原厂条码的产品，可以到
+            <a href="/products/labels">条码标签</a>页用 SKU 打印一张贴上。
+          </div>
+        </div>
+        <div class="field">
           <label class="field__label" for="image_url">图片地址</label>
           <input class="input" id="image_url" name="image_url" type="text" value="{{$p.ImageURL}}"
                  placeholder="https://...">

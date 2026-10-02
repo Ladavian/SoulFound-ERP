@@ -306,6 +306,9 @@ func (s *Server) routes() {
 	m.Handle("POST /products/{id}/edit", s.guard(PermProductManage, s.handleProductSave))
 	m.Handle("POST /products/{id}/toggle", s.guard(PermProductManage, s.handleProductToggle))
 	m.Handle("POST /products/{id}/delete", s.guard(PermProductManage, s.handleProductDelete))
+	m.Handle("POST /products/{id}/barcode", s.guard(PermProductManage, s.handleBindBarcode))
+	m.Handle("GET /products/labels", s.guard(PermProductView, s.handleProductLabels))
+	m.Handle("GET /scan", s.guard(PermProductView, s.handleBarcodeLookup))
 
 	// 供应商 / 客户
 	m.Handle("GET /suppliers", s.guard(PermPartnerView, s.partnerList("supplier")))
@@ -354,6 +357,14 @@ func (s *Server) routes() {
 	m.Handle("POST /markets/{id}/settle", s.guard(PermMarketSettle, s.handleMarketSettle))
 	m.Handle("POST /markets/{id}/unsettle", s.guard(PermMarketSettle, s.handleMarketUnsettle))
 	m.Handle("POST /markets/{id}/delete", s.guard(PermMarketManage, s.handleMarketDelete))
+
+	// 市集收银台：现场逐笔记账（点按钮或扫码），实时看单数与销售额
+	m.Handle("GET /markets/{id}/pos", s.guard(PermMarketView, s.handleMarketPOS))
+	m.Handle("POST /markets/{id}/records", s.guard(PermMarketManage, s.handleAddRecord))
+	m.Handle("POST /markets/{id}/records/{rid}", s.guard(PermMarketManage, s.handleUpdateRecord))
+	m.Handle("POST /markets/{id}/records/{rid}/delete", s.guard(PermMarketManage, s.handleDeleteRecord))
+	m.Handle("POST /markets/{id}/scan", s.guard(PermMarketManage, s.handlePOSScan))
+	m.Handle("POST /markets/{id}/scan/bind", s.guard(PermMarketManage, s.handlePOSScanBind))
 
 	// 报表
 	m.Handle("GET /reports/markets", s.guard(PermReportView, s.handleReportMarkets))

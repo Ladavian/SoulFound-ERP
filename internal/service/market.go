@@ -23,30 +23,30 @@ type MarketInput struct {
 	Notes     string
 }
 
-// ComputeMarketTotals 依据明细与费用计算一场市集的损益。
+// ComputeMarketTotals 依据明细、费用与逐笔记录计算损益。
 //
-// 计算口径（与界面上展示的公式完全一致）：
+// 计算口径（与界面展示的公式一致）：
 //
-//	销售额   = Σ(销售数量 × 单价 - 优惠)
-//	售出成本 = Σ(销售数量 × 单位成本)
-//	试饮成本 = Σ(试饮数量 × 单位成本)
-//	赠送损耗 = Σ((赠送 + 损耗) × 单位成本)
-//	净利润   = 销售额 - 售出成本 - 试饮成本 - 赠送损耗 - 活动费用
+//	销售额   = Σ(每笔销售的数量 × 成交价 − 该笔优惠)
+//	售出成本 = Σ(每笔销售的数量 × 单位成本)
+//	试饮成本 = Σ(每笔试饮的数量 × 单位成本)
+//	赠送损耗 = Σ(每笔赠送/损耗的数量 × 单位成本)
+//	净利润   = 销售额 − 售出成本 − 试饮成本 − 赠送损耗 − 活动费用
 //
-// 已结算的市集使用结算时的成本快照，未结算的按产品当前平均成本估算。
-func ComputeMarketTotals(items []model.MarketItem, expenses []model.MarketExpense) model.MarketTotals {
-	var t model.MarketTotals
-	for _, it := range items {
-		t.Revenue += it.Revenue()
-		t.CogsSold += it.Cogs()
-		t.TastingCost += it.TastingCost()
-		t.LossCost += it.LossCost()
+// 已结算的市集使用结算时的成本快照，未结算的按产品当前平均成本估算；
+// 没有任何逐笔记录时（历史数据）退回按汇总数量计算。
+func ComputeMarketTotals(items []model.MarketItem, expenses []model.MarketExpense, records []model.MarketRecord) model.MarketTotals {
+	return model.ComputeTotals(items, expenses, records)
+}
+
+// liveRecords 复制逐笔记录并清空成本快照（用于估算态计算）。
+func liveRecords(records []model.MarketRecord) []model.MarketRecord {
+	out := make([]model.MarketRecord, len(records))
+	copy(out, records)
+	for i := range out {
+		out[i].UnitCost = nil
 	}
-	for _, e := range expenses {
-		t.ExpenseCost += e.Amount
-	}
-	t.NetProfit = t.Revenue - t.CogsSold - t.TastingCost - t.LossCost - t.ExpenseCost
-	return t
+	return out
 }
 
 // liveItems 复制明细并清空成本快照（用于估算态计算）。
@@ -262,7 +262,7 @@ func (s *Service) UpdateMarketItemRow(ctx context.Context, marketID, itemID int6
 		if st == model.MarketSettled {
 			return UserErrf("已结算的市集不能修改，请先「撤销结算」")
 		}
-		return s.Store.UpdateMarketItem(ctx, tx, &model.MarketItem{
+		if err := s.Store.UpdateMarketItem(ctx, tx, &model.MarketItem{
 			ID:          itemID,
 			CarriedQty:  up.CarriedQty,
 			TastingQty:  up.TastingQty,
@@ -272,7 +272,13 @@ func (s *Service) UpdateMarketItemRow(ctx context.Context, marketID, itemID int6
 			UnitPrice:   up.UnitPrice,
 			DiscountAmt: up.DiscountAmt,
 			Note:        strings.TrimSpace(up.Note),
-		})
+		}); err != nil {
+			return err
+		}
+		// 汇总数量由逐笔记录推导，直接改汇总会与记录打架。
+		// 因此这里把"填写值 − 记录合计"的差额补成一条调整记录，
+		// 既保留了快速补录整场数量的能力，又保证两边永远一致。
+		return s.reconcileItemQuantities(ctx, tx, marketID, item.ProductID, up)
 	})
 	if err != nil {
 		return err
@@ -280,9 +286,121 @@ func (s *Service) UpdateMarketItemRow(ctx context.Context, marketID, itemID int6
 	return s.RefreshMarketTotals(ctx, marketID)
 }
 
-// DeleteMarketItemRow 删除一行市集明细。
+// reconcileItemQuantities 让明细行的汇总数量与逐笔记录保持一致。
+//
+// 设计：现场扫码/点按钮产生的记录是"事实"，明细行上填的数字是"目标"。
+// 目标与事实的差额，每个类型（销售/试饮/赠送/损耗）各落成一条
+// 来源为 summary 的调整记录，收银台流水里因此始终能看到完整账目，
+// 后台也仍然可以一次性补录整场数量。
+//
+// 填写的目标小于现场已记录数量时直接报错，避免写出负数记录——
+// 那通常意味着填错了。
+func (s *Service) reconcileItemQuantities(ctx context.Context, tx *sql.Tx, marketID, productID int64, up MarketItemUpdate) error {
+	records, err := s.Store.MarketRecordsTx(ctx, tx, marketID)
+	if err != nil {
+		return err
+	}
+
+	// 现场记录（非汇总调整）的合计，以及每个类型最新的那条汇总记录
+	sumQty := map[string]model.Qty{}
+	summaries := map[string][]model.MarketRecord{}
+	sumDiscount := model.Money(0)
+	for _, r := range records {
+		if r.ProductID != productID {
+			continue
+		}
+		if r.Channel == "summary" {
+			summaries[r.Kind] = append(summaries[r.Kind], r)
+			continue
+		}
+		sumQty[r.Kind] += r.Qty
+		if r.Kind == model.RecordSale {
+			sumDiscount += r.Discount
+		}
+	}
+
+	targets := []struct {
+		kind   string
+		target model.Qty
+		price  model.Money
+		disc   model.Money
+	}{
+		{model.RecordSale, up.SoldQty, up.UnitPrice, up.DiscountAmt - sumDiscount},
+		{model.RecordTasting, up.TastingQty, 0, 0},
+		{model.RecordGift, up.GiftQty, 0, 0},
+		{model.RecordLoss, up.LossQty, 0, 0},
+	}
+
+	for _, t := range targets {
+		label := model.RecordKindLabel(t.kind)
+		gap := t.target - sumQty[t.kind]
+		if gap < 0 {
+			return UserErrf("「%s」现场已经记录了 %s，这里填的数量不能小于它；要减少请到收银台撤销对应记录",
+				label, sumQty[t.kind])
+		}
+
+		list := summaries[t.kind]
+		var keep *model.MarketRecord
+		for i := range list {
+			if keep == nil || list[i].ID > keep.ID {
+				keep = &list[i]
+			}
+		}
+
+		// 销售还需要承载优惠差额，所以即使数量没变也要留一条
+		needRecord := gap > 0 || (t.kind == model.RecordSale && t.disc != 0)
+		if !needRecord {
+			for i := range list {
+				if err := s.Store.DeleteMarketRecord(ctx, tx, list[i].ID); err != nil {
+					return err
+				}
+			}
+			continue
+		}
+
+		adjust := &model.MarketRecord{
+			MarketID:   marketID,
+			ProductID:  productID,
+			Kind:       t.kind,
+			Qty:        gap,
+			UnitPrice:  t.price,
+			Discount:   t.disc,
+			Channel:    "summary",
+			Note:       "汇总补录调整",
+			OccurredAt: store.Now(),
+		}
+		if keep != nil {
+			adjust.ID = keep.ID
+			if err := s.Store.UpdateMarketRecord(ctx, tx, adjust); err != nil {
+				return err
+			}
+			for i := range list {
+				if list[i].ID == keep.ID {
+					continue
+				}
+				if err := s.Store.DeleteMarketRecord(ctx, tx, list[i].ID); err != nil {
+					return err
+				}
+			}
+			continue
+		}
+		if _, err := s.Store.InsertMarketRecord(ctx, tx, adjust); err != nil {
+			return err
+		}
+	}
+	return s.Store.RecomputeMarketItemAggregates(ctx, tx, marketID)
+}
+
+// DeleteMarketItemRow 删除一行市集明细，连同该产品在本场的现场记录。
 func (s *Service) DeleteMarketItemRow(ctx context.Context, marketID, itemID int64, user *model.User) error {
-	err := s.Store.Tx(ctx, func(tx *sql.Tx) error {
+	item, err := s.Store.MarketItemByID(ctx, itemID)
+	if err != nil {
+		return err
+	}
+	if item == nil || item.MarketID != marketID {
+		return UserErrf("明细行不存在")
+	}
+	err = s.Store.Tx(ctx, func(tx *sql.Tx) error {
 		st, err := s.Store.MarketStatusTx(ctx, tx, marketID)
 		if errors.Is(err, store.ErrNotFound) {
 			return UserErrf("市集不存在")
@@ -292,6 +410,9 @@ func (s *Service) DeleteMarketItemRow(ctx context.Context, marketID, itemID int6
 		}
 		if st == model.MarketSettled {
 			return UserErrf("已结算的市集不能修改，请先「撤销结算」")
+		}
+		if err := s.Store.DeleteMarketRecordsOfProduct(ctx, tx, marketID, item.ProductID); err != nil {
+			return err
 		}
 		return s.Store.DeleteMarketItem(ctx, tx, itemID)
 	})
@@ -342,7 +463,7 @@ func (s *Service) RefreshMarketTotals(ctx context.Context, marketID int64) error
 	if err != nil || m == nil {
 		return err
 	}
-	totals := ComputeMarketTotals(m.Items, m.Expenses)
+	totals := m.Totals()
 	return s.Store.Tx(ctx, func(tx *sql.Tx) error {
 		return s.Store.SaveMarketTotals(ctx, tx, marketID, totals)
 	})
@@ -447,9 +568,13 @@ func (s *Service) SettleMarket(ctx context.Context, marketID int64, user *model.
 			if err := s.Store.SetMarketItemCost(ctx, tx, it.ID, cost); err != nil {
 				return err
 			}
+			// 逐笔记录也锁定同一成本，保证撤销结算前后损益口径一致
+			if err := s.Store.SetMarketRecordCost(ctx, tx, marketID, it.ProductID, cost); err != nil {
+				return err
+			}
 		}
 
-		totals := ComputeMarketTotals(items, m.Expenses)
+		totals := model.ComputeTotals(items, m.Expenses, m.Records)
 		if err := s.Store.MarkMarketSettled(ctx, tx, marketID, store.Now(), userID, totals); err != nil {
 			return err
 		}
@@ -495,10 +620,13 @@ func (s *Service) UnsettleMarket(ctx context.Context, marketID int64, user *mode
 		if err := s.Store.ClearMarketItemCosts(ctx, tx, marketID); err != nil {
 			return err
 		}
+		if err := s.Store.ClearMarketRecordCosts(ctx, tx, marketID); err != nil {
+			return err
+		}
 		if err := s.RebuildAffected(ctx, tx, affected); err != nil {
 			return err
 		}
-		totals := ComputeMarketTotals(liveItems(m.Items), m.Expenses)
+		totals := model.ComputeTotals(liveItems(m.Items), m.Expenses, liveRecords(m.Records))
 		if err := s.Store.MarkMarketUnsettled(ctx, tx, marketID, totals); err != nil {
 			return err
 		}

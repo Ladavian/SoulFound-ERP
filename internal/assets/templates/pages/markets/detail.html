@@ -15,6 +15,7 @@
   </div>
   <div class="page-head__actions">
     <a class="btn" href="/markets">{{template "icon" "back"}}<span>市集列表</span></a>
+    {{if not $m.IsSettled}}<a class="btn btn--primary" href="/markets/{{$m.ID}}/pos">{{template "icon" "cart"}}<span>打开收银台</span></a>{{end}}
     {{if and .CanManage (not $m.IsSettled)}}<a class="btn" href="/markets/{{$m.ID}}/edit">{{template "icon" "edit"}}<span>编辑信息</span></a>{{end}}
     {{if $showCost}}<a class="btn" href="/export/market.xlsx?id={{$m.ID}}">{{template "icon" "download"}}<span>导出 Excel</span></a>{{end}}
   </div>
@@ -88,6 +89,11 @@
     <div class="card">
       <div class="card__head">
         <div class="card__title">试饮与销售录入<span class="card__sub">改动后自动保存，单位：瓶</span></div>
+        <div class="card__actions">
+          {{if not $m.IsSettled}}
+          <a class="btn btn--sm btn--primary" href="/markets/{{$m.ID}}/pos">{{template "icon" "cart"}}<span>去收银台逐笔记账</span></a>
+          {{end}}
+        </div>
         <div class="card__actions">
           <span class="save-state save-state--idle tiny">已同步</span>
         </div>

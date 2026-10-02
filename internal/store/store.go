@@ -122,19 +122,39 @@ func (s *Store) Migrate(ctx context.Context) error {
 		`CREATE TABLE IF NOT EXISTS schema_meta (version INTEGER NOT NULL)`); err != nil {
 		return fmt.Errorf("初始化 schema_meta 失败: %w", err)
 	}
-	var version int
-	if err := s.db.QueryRowContext(ctx,
-		`SELECT COALESCE(MAX(version), 0) FROM schema_meta`).Scan(&version); err != nil {
+	// 逐个版本判断是否已执行：只认"记录在案"的版本号，
+	// 这样即使日后单独补一个中间版本的迁移也能正确补跑。
+	applied := map[int]bool{}
+	rows, err := s.db.QueryContext(ctx, `SELECT version FROM schema_meta`)
+	if err != nil {
 		return fmt.Errorf("读取数据库版本失败: %w", err)
 	}
-	for i := version; i < len(migrations); i++ {
-		for _, stmt := range splitStatements(migrations[i]) {
+	for rows.Next() {
+		var v int
+		if err := rows.Scan(&v); err != nil {
+			rows.Close()
+			return fmt.Errorf("读取数据库版本失败: %w", err)
+		}
+		applied[v] = true
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("读取数据库版本失败: %w", err)
+	}
+	rows.Close()
+
+	for i, script := range migrations {
+		version := i + 1
+		if applied[version] {
+			continue
+		}
+		for _, stmt := range splitStatements(script) {
 			if _, err := s.db.ExecContext(ctx, stmt); err != nil {
-				return fmt.Errorf("执行迁移 v%d 失败: %w\nSQL: %s", i+1, err, firstLine(stmt))
+				return fmt.Errorf("执行迁移 v%d 失败: %w\nSQL: %s", version, err, firstLine(stmt))
 			}
 		}
 		if _, err := s.db.ExecContext(ctx,
-			`INSERT INTO schema_meta(version) VALUES (?)`, i+1); err != nil {
+			`INSERT INTO schema_meta(version) VALUES (?)`, version); err != nil {
 			return fmt.Errorf("记录迁移版本失败: %w", err)
 		}
 	}

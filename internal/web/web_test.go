@@ -873,3 +873,288 @@ func TestStaticAssetsAndServiceWorker(t *testing.T) {
 		t.Error("底部导航的「更多」应当是 /more 链接")
 	}
 }
+
+// TestMarketPOSFlow 收银台逐笔记账的完整链路。
+//
+// 现场流程：点「销售 +1」记一单 → 顶部销售额与单数实时变化 →
+// 记错了点「撤销」→ 数量同步回退。这条链路是市集现场的核心，
+// 任何一处算错都会直接反映到净利润上。
+func TestMarketPOSFlow(t *testing.T) {
+	h, svc, cfg := testApp(t)
+	ctx := context.Background()
+	cookie := doLogin(t, h, cfg, "admin", "admin123")
+
+	// 准备一个产品并入库 20 瓶，成本 50
+	code, _ := post(t, h, "/products/new", url.Values{
+		"sku": {"POS-001"}, "name": {"收银台测试冰酒"}, "volume_ml": {"375"},
+		"sale_price": {"398"}, "unit": {"瓶"}, "bottles_per_case": {"12"},
+		"is_active": {"1"},
+	}, cookie)
+	if code != http.StatusSeeOther {
+		t.Fatalf("新建产品应 303，实际 %d", code)
+	}
+	product, err := svc.Store.ProductBySKU(ctx, "POS-001")
+	if err != nil || product == nil {
+		t.Fatalf("产品未创建: %v", err)
+	}
+	if err := svc.AdjustStock(ctx, service.AdjustInput{
+		ProductID: product.ID, Qty: model.MustQty("20"),
+		UnitCost: model.MustMoney("50"), Reason: model.ReasonOpening,
+		Note: "期初", OccurredOn: "2025-06-01",
+	}, mustUser(t, svc, "admin")); err != nil {
+		t.Fatalf("入库失败: %v", err)
+	}
+
+	// 建市集并上架
+	code, _ = post(t, h, "/markets/new", url.Values{
+		"name": {"收银台测试市集"}, "start_date": {"2025-06-10"}, "end_date": {"2025-06-10"},
+	}, cookie)
+	if code != http.StatusSeeOther {
+		t.Fatalf("新建市集应 303，实际 %d", code)
+	}
+	markets, _ := svc.Store.ListMarkets(ctx, store.MarketFilter{Keyword: "收银台测试"})
+	marketID := markets[0].ID
+	mkt := strconv.FormatInt(marketID, 10)
+
+	if _, body := postHTMX(t, h, "/markets/"+mkt+"/items",
+		url.Values{"product_id": {strconv.FormatInt(product.ID, 10)}}, cookie); !strings.Contains(body, "收银台测试冰酒") {
+		t.Fatal("上架后收银台/明细页应显示产品")
+	}
+	// 填带去数量 20、售价 398
+	items, _ := svc.Store.MarketItems(ctx, marketID)
+	if _, body := postHTMX(t, h, "/markets/"+mkt+"/items/"+strconv.FormatInt(items[0].ID, 10),
+		url.Values{"carried_qty": {"20"}, "unit_price": {"398"}}, cookie); !strings.Contains(body, "398") {
+		t.Fatal("保存带去数量与售价失败")
+	}
+
+	// 收银台页面能打开
+	code, body := get(t, h, "/markets/"+mkt+"/pos", cookie)
+	if code != http.StatusOK || !strings.Contains(body, "收银台") {
+		t.Fatalf("收银台应可访问，实际 %d", code)
+	}
+
+	pid := strconv.FormatInt(product.ID, 10)
+
+	// 记两单销售
+	for i := 0; i < 2; i++ {
+		code, body = postHTMX(t, h, "/markets/"+mkt+"/records",
+			url.Values{"product_id": {pid}, "kind": {"sale"}, "qty": {"1"}}, cookie)
+		if code != http.StatusOK {
+			t.Fatalf("记账应 200，实际 %d", code)
+		}
+	}
+	if !strings.Contains(body, "¥796.00") {
+		t.Errorf("两单销售后销售额应为 ¥796.00，面板内容未体现")
+	}
+
+	// 记一次试饮
+	code, body = postHTMX(t, h, "/markets/"+mkt+"/records",
+		url.Values{"product_id": {pid}, "kind": {"tasting"}, "qty": {"1"}}, cookie)
+	if code != http.StatusOK {
+		t.Fatalf("试饮记账应 200，实际 %d", code)
+	}
+
+	records, err := svc.Store.MarketRecords(ctx, marketID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 3 {
+		t.Fatalf("应有 3 笔记录，实际 %d", len(records))
+	}
+
+	// 汇总数量应自动累加
+	item, _ := svc.Store.MarketItemByID(ctx, items[0].ID)
+	if item.SoldQty != model.MustQty("2") {
+		t.Errorf("已售数量应为 2，实际 %s", item.SoldQty)
+	}
+	if item.TastingQty != model.MustQty("1") {
+		t.Errorf("试饮数量应为 1，实际 %s", item.TastingQty)
+	}
+
+	// 损益：销售额 796，售出成本 100，试饮成本 50
+	m, _ := svc.Store.MarketByID(ctx, marketID)
+	totals := m.Totals()
+	if totals.Revenue != model.MustMoney("796") {
+		t.Errorf("销售额应为 796，实际 %s", totals.Revenue)
+	}
+	if totals.CogsSold != model.MustMoney("100") {
+		t.Errorf("售出成本应为 100，实际 %s", totals.CogsSold)
+	}
+	if totals.TastingCost != model.MustMoney("50") {
+		t.Errorf("试饮成本应为 50，实际 %s", totals.TastingCost)
+	}
+	if totals.NetProfit != model.MustMoney("646") {
+		t.Errorf("净利润应为 646（796-100-50），实际 %s", totals.NetProfit)
+	}
+
+	// 撤销一笔销售：销售额与数量都要跟着退回来
+	saleID := int64(0)
+	for _, r := range records {
+		if r.IsSale() {
+			saleID = r.ID
+			break
+		}
+	}
+	code, body = postHTMX(t, h, "/markets/"+mkt+"/records/"+strconv.FormatInt(saleID, 10)+"/delete",
+		url.Values{}, cookie)
+	if code != http.StatusOK {
+		t.Fatalf("撤销应 200，实际 %d", code)
+	}
+	if !strings.Contains(body, "¥398.00") {
+		t.Errorf("撤销一单后销售额应为 ¥398.00")
+	}
+	item, _ = svc.Store.MarketItemByID(ctx, items[0].ID)
+	if item.SoldQty != model.MustQty("1") {
+		t.Errorf("撤销后已售数量应为 1，实际 %s", item.SoldQty)
+	}
+
+	// 结算后不能再记账
+	user := mustUser(t, svc, "admin")
+	// 收银台记的一笔销售 + 试饮，结算后库存应减少 1 瓶销售 + 1 杯试饮
+	if err := svc.SettleMarket(ctx, marketID, user); err != nil {
+		t.Fatalf("结算失败: %v", err)
+	}
+	code, body = postHTMX(t, h, "/markets/"+mkt+"/records",
+		url.Values{"product_id": {pid}, "kind": {"sale"}, "qty": {"1"}}, cookie)
+	if strings.Contains(body, "已记录") && !strings.Contains(body, "已结算") {
+		t.Error("已结算的市集不应再接受记账")
+	}
+	after, _ := svc.Store.ProductByID(ctx, product.ID)
+	if after.StockQty != model.MustQty("18") {
+		t.Errorf("结算后库存应为 18（20-1销售-1试饮），实际 %s", after.StockQty)
+	}
+
+	// 结算后记录应带上成本快照
+	records, _ = svc.Store.MarketRecords(ctx, marketID, 0)
+	for _, r := range records {
+		if !r.HasSnapshot() {
+			t.Errorf("结算后记录 %d 应锁定成本快照", r.ID)
+			continue
+		}
+		if r.CostBasis() != model.MustMoney("50") {
+			t.Errorf("成本快照应为 50，实际 %s", r.CostBasis())
+		}
+	}
+}
+
+// TestBarcodeScanFlow 扫码出库：绑定条码 → 扫码记账 → 重复扫码不再重复记账。
+func TestBarcodeScanFlow(t *testing.T) {
+	h, svc, cfg := testApp(t)
+	ctx := context.Background()
+	cookie := doLogin(t, h, cfg, "admin", "admin123")
+
+	code, _ := post(t, h, "/products/new", url.Values{
+		"sku": {"SCAN-001"}, "name": {"扫码测试冰酒"}, "volume_ml": {"375"},
+		"sale_price": {"268"}, "unit": {"瓶"}, "bottles_per_case": {"12"},
+		"barcode": {"0690123456789"}, "is_active": {"1"},
+	}, cookie)
+	if code != http.StatusSeeOther {
+		t.Fatalf("新建产品应 303，实际 %d", code)
+	}
+	product, _ := svc.Store.ProductBySKU(ctx, "SCAN-001")
+	if product == nil {
+		t.Fatal("产品未创建")
+	}
+	if product.Barcode != "0690123456789" {
+		t.Fatalf("条码应被保存，实际 %q", product.Barcode)
+	}
+
+	// 按条码能查到产品
+	found, err := svc.LookupBarcode(ctx, "0690123456789")
+	if err != nil || found.Product == nil {
+		t.Fatalf("按条码应能查到产品: %v", err)
+	}
+	if found.Product.ID != product.ID {
+		t.Error("查到的产品不对")
+	}
+
+	// 条码查不到时应返回空而不是报错
+	miss, err := svc.LookupBarcode(ctx, "0000000000000")
+	if err != nil {
+		t.Fatalf("未绑定的条码不应报错: %v", err)
+	}
+	if miss.Product != nil {
+		t.Error("未绑定的条码不应查到产品")
+	}
+
+	// 建市集、上架、扫码出库
+	post(t, h, "/markets/new", url.Values{
+		"name": {"扫码测试市集"}, "start_date": {"2025-06-20"}, "end_date": {"2025-06-20"},
+	}, cookie)
+	markets, _ := svc.Store.ListMarkets(ctx, store.MarketFilter{Keyword: "扫码测试"})
+	marketID := markets[0].ID
+	mkt := strconv.FormatInt(marketID, 10)
+	postHTMX(t, h, "/markets/"+mkt+"/items",
+		url.Values{"product_id": {strconv.FormatInt(product.ID, 10)}}, cookie)
+
+	// 未知条码：返回绑定表单而不是报错
+	code, body := postHTMX(t, h, "/markets/"+mkt+"/scan",
+		url.Values{"code": {"9999999999999"}}, cookie)
+	if code != http.StatusOK {
+		t.Fatalf("扫码应 200，实际 %d", code)
+	}
+	if !strings.Contains(body, "还没有绑过产品") {
+		t.Error("未知条码应提示绑定产品")
+	}
+
+	// 已绑定的条码：直接记一笔销售
+	code, body = postHTMX(t, h, "/markets/"+mkt+"/scan",
+		url.Values{"code": {"0690123456789"}}, cookie)
+	if code != http.StatusOK {
+		t.Fatalf("扫码应 200，实际 %d", code)
+	}
+	if !strings.Contains(body, "已扫码出库") {
+		t.Errorf("扫码后应提示已出库，实际未包含提示")
+	}
+	records, _ := svc.Store.MarketRecords(ctx, marketID, 0)
+	if len(records) != 1 {
+		t.Fatalf("扫码应产生 1 笔记录，实际 %d", len(records))
+	}
+	if records[0].Channel != "scan" {
+		t.Errorf("记录来源应为 scan，实际 %s", records[0].Channel)
+	}
+	if records[0].UnitPrice != model.MustMoney("268") {
+		t.Errorf("扫码销售单价应取产品售价 268，实际 %s", records[0].UnitPrice)
+	}
+}
+
+// TestBarcodeDuplicateRejected 同一个条码不能绑到两个产品上。
+func TestBarcodeDuplicateRejected(t *testing.T) {
+	_, svc, _ := testApp(t)
+	ctx := context.Background()
+	user := mustUser(t, svc, "admin")
+
+	id1, err := svc.Store.CreateProduct(ctx, &model.Product{
+		SKU: "DUP-1", Name: "产品一", Unit: "瓶",
+		SalePrice: model.MustMoney("100"), IsActive: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id2, err := svc.Store.CreateProduct(ctx, &model.Product{
+		SKU: "DUP-2", Name: "产品二", Unit: "瓶",
+		SalePrice: model.MustMoney("100"), IsActive: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.BindProductBarcode(ctx, id1, "1234567890128", user); err != nil {
+		t.Fatalf("首次绑定应成功: %v", err)
+	}
+	if err := svc.BindProductBarcode(ctx, id2, "1234567890128", user); err == nil {
+		t.Error("同一条码绑到第二个产品应被拒绝")
+	}
+}
+
+// mustUser 取指定账号，测试里用于模拟操作人。
+func mustUser(t *testing.T, svc *service.Service, username string) *model.User {
+	t.Helper()
+	u, err := svc.Store.UserByUsername(context.Background(), username)
+	if err != nil {
+		t.Fatalf("查询用户 %s 失败: %v", username, err)
+	}
+	if u == nil {
+		t.Fatalf("用户 %s 不存在", username)
+	}
+	return u
+}

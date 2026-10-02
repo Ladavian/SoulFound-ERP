@@ -1,0 +1,244 @@
+{{define "content"}}
+{{$m := .Market}}
+
+<div class="page-head">
+  <div class="page-head__main">
+    <div class="page-head__title">收银台 · {{$m.Name}}</div>
+    <div class="page-head__meta">
+      <span class="mono">{{$m.Code}}</span>
+      {{template "market_status" $m.Status}}
+      <span>{{template "icon" "calendar"}} {{$m.DateRange}}</span>
+      {{if $m.Venue}}<span>{{template "icon" "pin"}} {{$m.Venue}}</span>{{end}}
+    </div>
+  </div>
+  <div class="page-head__actions">
+    <a class="btn" href="/markets/{{$m.ID}}">{{template "icon" "back"}}<span>市集详情</span></a>
+  </div>
+</div>
+
+{{/* 所有操作都只换这一块，现场点一下立刻看到数字变化 */}}
+<div id="pos-panel">
+  {{template "pos_panel" .}}
+</div>
+{{end}}
+
+
+{{define "pos_panel"}}
+{{$m := .Market}}
+{{$s := .Summary}}
+{{$showCost := .ShowCost}}
+{{$settled := $m.IsSettled}}
+{{$canManage := .CanManage}}
+
+<div class="pos-stats">
+  <div class="pos-stat pos-stat--main">
+    <div class="pos-stat__label">销售额</div>
+    <div class="pos-stat__value">{{money $s.Revenue}}</div>
+  </div>
+  <div class="pos-stat">
+    <div class="pos-stat__label">单数</div>
+    <div class="pos-stat__value">{{$s.Orders}}</div>
+  </div>
+  <div class="pos-stat">
+    <div class="pos-stat__label">售出</div>
+    <div class="pos-stat__value">{{$s.SoldQty}}<span class="pos-stat__unit">瓶</span></div>
+  </div>
+  <div class="pos-stat">
+    <div class="pos-stat__label">试饮</div>
+    <div class="pos-stat__value">{{$s.TastingQty}}<span class="pos-stat__unit">杯</span></div>
+  </div>
+</div>
+
+{{if $showCost}}
+<div class="pos-profit">
+  <span>售出成本 <b>{{money .Totals.CogsSold}}</b></span>
+  <span>试饮成本 <b>{{money .Totals.TastingCost}}</b></span>
+  <span>赠送损耗 <b>{{money .Totals.LossCost}}</b></span>
+  <span>活动费用 <b>{{money .Totals.ExpenseCost}}</b></span>
+  <span class="pos-profit__net">净利润 <b>{{money .Totals.NetProfit}}</b></span>
+</div>
+{{end}}
+
+{{if .ScanNotice}}
+<div class="alert alert--success">{{template "icon" "check"}}<div class="alert__body">{{.ScanNotice}}</div></div>
+{{end}}
+{{if .ScanError}}
+<div class="alert alert--error">{{template "icon" "alert"}}<div class="alert__body">{{.ScanError}}</div></div>
+{{end}}
+
+{{if $settled}}
+<div class="alert alert--info">
+  {{template "icon" "info"}}
+  <div class="alert__body">
+    <div class="alert__title">本场已经结算</div>
+    收银台已关闭，不能再记账。如需补记录，请先在市集详情里「撤销结算」。
+  </div>
+</div>
+{{else if $canManage}}
+
+{{/* ---------------- 扫码出库 ---------------- */}}
+<div class="scan-bar">
+  <button class="btn btn--primary btn--lg scan-bar__btn" type="button"
+          data-scan-submit="#scan-form" data-scan-label="扫码出库">
+    {{template "icon" "scan"}}<span>扫码出库</span>
+  </button>
+  <form id="scan-form" hx-post="/markets/{{$m.ID}}/scan" hx-target="#pos-panel" hx-swap="outerHTML">
+    <input type="hidden" name="code" id="scan-code" value="">
+  </form>
+  <div class="scan-bar__hint">
+    对准酒瓶上的条形码即可自动记一笔销售；也可以直接点下面的产品按钮。
+    <span class="scan-bar__warn" data-scan-status></span>
+  </div>
+</div>
+
+{{if .UnknownCode}}
+<div class="card card--warn">
+  <div class="card__head"><div class="card__title">{{template "icon" "scan"}} 未识别的条码</div></div>
+  <div class="card__body">
+    <p class="muted">条码 <span class="mono">{{.UnknownCode}}</span> 还没有绑定产品。选择它属于哪个产品，确认后会自动记住，下次扫码直接出库。</p>
+    <form hx-post="/markets/{{$m.ID}}/scan/bind" hx-target="#pos-panel" hx-swap="outerHTML">
+      <input type="hidden" name="code" value="{{.UnknownCode}}">
+      <div class="field">
+        <label class="field__label" for="bind-product">这是哪个产品</label>
+        <select class="select" id="bind-product" name="product_id" required>
+          <option value="">请选择产品…</option>
+          {{range .BindProducts}}<option value="{{.ID}}">{{.Label}}</option>{{end}}
+        </select>
+      </div>
+      <button class="btn btn--primary" type="submit">{{template "icon" "check"}}<span>绑定并出库</span></button>
+    </form>
+  </div>
+</div>
+{{end}}
+
+{{end}}
+
+{{/* ---------------- 产品快捷按钮 ---------------- */}}
+{{if .Tiles}}
+<div class="pos-grid">
+  {{range .Tiles}}
+  {{$it := .Item}}
+  <div class="pos-tile{{if .Warning}} pos-tile--warn{{end}}">
+    <div class="pos-tile__head">
+      <div class="pos-tile__name">{{.Product.Name}}</div>
+      <div class="pos-tile__price">{{money $it.UnitPrice}}</div>
+    </div>
+    <div class="pos-tile__meta">
+      <span class="mono">{{.Product.SKU}}</span>
+      {{if .Product.VolumeML}}<span>{{.Product.VolumeML}}ml</span>{{end}}
+      <span>带去 {{$it.CarriedQty}}</span>
+      <span>已出 {{.Out}}</span>
+      {{if $showCost}}<span>库存 {{.Product.StockQty}}</span>{{end}}
+    </div>
+    {{if .Warning}}<div class="pos-tile__warn">{{template "icon" "alert"}} {{.Warning}}</div>{{end}}
+    <div class="pos-actions">
+      <button class="pos-btn pos-btn--sale" type="button"
+              {{if or $settled (not $canManage)}}disabled{{else}}
+              hx-post="/markets/{{$m.ID}}/records"
+              hx-vals='{"product_id":"{{.Product.ID}}","kind":"sale","qty":"1"}'
+              hx-target="#pos-panel" hx-swap="outerHTML"{{end}}>
+        {{template "icon" "cart"}}<span>销售 +1</span>
+      </button>
+      <button class="pos-btn pos-btn--tasting" type="button"
+              {{if or $settled (not $canManage)}}disabled{{else}}
+              hx-post="/markets/{{$m.ID}}/records"
+              hx-vals='{"product_id":"{{.Product.ID}}","kind":"tasting","qty":"1"}'
+              hx-target="#pos-panel" hx-swap="outerHTML"{{end}}>
+        {{template "icon" "glass"}}<span>试饮 +1</span>
+      </button>
+      <button class="pos-btn pos-btn--gift" type="button"
+              {{if or $settled (not $canManage)}}disabled{{else}}
+              hx-post="/markets/{{$m.ID}}/records"
+              hx-vals='{"product_id":"{{.Product.ID}}","kind":"gift","qty":"1"}'
+              hx-target="#pos-panel" hx-swap="outerHTML"{{end}}>
+        {{template "icon" "gift"}}<span>赠送 +1</span>
+      </button>
+      <button class="pos-btn pos-btn--loss" type="button"
+              {{if or $settled (not $canManage)}}disabled{{else}}
+              hx-post="/markets/{{$m.ID}}/records"
+              hx-vals='{"product_id":"{{.Product.ID}}","kind":"loss","qty":"1"}'
+              hx-target="#pos-panel" hx-swap="outerHTML"{{end}}>
+        {{template "icon" "alert"}}<span>损耗 +1</span>
+      </button>
+    </div>
+  </div>
+  {{end}}
+</div>
+{{else}}
+<div class="card">
+  <div class="card__body">
+    <div class="empty">
+      {{template "icon" "box"}}
+      <div class="empty__title">本场还没有上架产品</div>
+      <div class="empty__hint">先去市集详情里把这次要带的产品加进来，然后回到收银台记账。</div>
+      <a class="btn btn--primary" href="/markets/{{$m.ID}}">{{template "icon" "plus"}}<span>去添加产品</span></a>
+    </div>
+  </div>
+</div>
+{{end}}
+
+{{/* ---------------- 最近流水 ---------------- */}}
+<div class="card">
+  <div class="card__head">
+    <div class="card__title">{{template "icon" "list"}} 最近记录</div>
+    <div class="card__actions">
+      <span class="muted">共 {{$s.Orders}} 单 · 售出 {{$s.SoldQty}} 瓶</span>
+    </div>
+  </div>
+  {{if .Records}}
+  <div class="card__body card__body--flush">
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>时间</th>
+            <th>产品</th>
+            <th>类型</th>
+            <th class="num">数量</th>
+            {{if $showCost}}<th class="num">单价</th><th class="num">金额</th>{{end}}
+            <th>备注</th>
+            <th class="actions-col">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Records}}
+          <tr>
+            <td class="muted">{{.Clock}}</td>
+            <td>{{.ProductName}}</td>
+            <td>
+              {{if .IsSale}}<span class="badge badge--ok">{{.KindLabel}}</span>
+              {{else if eq .Kind "tasting"}}<span class="badge">{{.KindLabel}}</span>
+              {{else if eq .Kind "gift"}}<span class="badge badge--info">{{.KindLabel}}</span>
+              {{else}}<span class="badge badge--warn">{{.KindLabel}}</span>{{end}}
+              {{if .FromScan}}<span class="badge badge--muted">{{template "icon" "scan"}}</span>{{end}}
+            </td>
+            <td class="num">{{.Qty}}</td>
+            {{if $showCost}}<td class="num">{{money .UnitPrice}}</td><td class="num">{{money .Amount}}</td>{{end}}
+            <td class="muted">{{.Note}}</td>
+            <td class="actions-col">
+              {{if and $canManage (not $settled)}}
+              <button class="btn btn--sm btn--danger" type="button"
+                      hx-post="/markets/{{$m.ID}}/records/{{.ID}}/delete"
+                      hx-confirm="撤销这一笔？撤销后数量会同步减少。"
+                      hx-target="#pos-panel" hx-swap="outerHTML">
+                {{template "icon" "trash"}}<span>撤销</span>
+              </button>
+              {{end}}
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {{else}}
+  <div class="card__body">
+    <div class="empty">
+      {{template "icon" "receipt"}}
+      <div class="empty__title">还没有记录</div>
+      <div class="empty__hint">卖出一瓶就点一下「销售 +1」，或直接扫码。</div>
+    </div>
+  </div>
+  {{end}}
+</div>
+{{end}}

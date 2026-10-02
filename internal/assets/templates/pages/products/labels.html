@@ -1,0 +1,67 @@
+{{define "content"}}
+
+<div class="page-head no-print">
+  <div class="page-head__main">
+    <div class="page-head__title">条码标签</div>
+    <div class="page-head__meta">
+      <span>共 <b id="label-count">0</b> 张标签</span>
+      <span>用 SKU 生成 Code128 条码，贴在瓶子上就能扫码出库</span>
+    </div>
+  </div>
+  <div class="page-head__actions">
+    <a class="btn" href="/products">{{template "icon" "back"}}<span>产品列表</span></a>
+    {{if .ShowAll}}
+    <a class="btn" href="/products/labels">{{template "icon" "filter"}}<span>只看在售</span></a>
+    {{else}}
+    <a class="btn" href="/products/labels?all=1">{{template "icon" "list"}}<span>包含停用</span></a>
+    {{end}}
+    <button class="btn btn--primary" type="button" id="label-print">
+      {{template "icon" "print"}}<span>打印</span>
+    </button>
+  </div>
+</div>
+
+<div class="alert alert--info no-print">
+  {{template "icon" "info"}}
+  <div class="alert__body">
+    <div class="alert__title">怎么用</div>
+    打印后贴在瓶身或包装上。市集收银台点「扫码出库」，扫到这张标签就会自动记一笔销售。
+    瓶子上已经有酒庄原厂条码的产品，建议直接在产品档案里用「扫码录入」把原厂条码录进去，就不必自己贴标签了。
+  </div>
+</div>
+
+<div class="alert alert--warn no-print" id="label-warning" style="display:none">
+  {{template "icon" "alert"}}
+  <div class="alert__body">条码组件没有加载成功，请刷新页面重试。</div>
+</div>
+
+{{if .Products}}
+<div class="label-sheet">
+  {{range .Products}}
+  <div class="label">
+    <div class="label__name">{{.Name}}</div>
+    <svg class="label__barcode" data-code="{{if .Barcode}}{{.Barcode}}{{else}}{{.SKU}}{{end}}"></svg>
+    <div class="label__meta">
+      <span class="mono">{{.SKU}}</span>
+      {{if .VolumeML}}<span>{{.VolumeML}}ml</span>{{end}}
+      {{if .SalePrice}}<span>{{money .SalePrice}}</span>{{end}}
+    </div>
+  </div>
+  {{end}}
+</div>
+{{else}}
+<div class="card">
+  <div class="card__body">
+    <div class="empty">
+      {{template "icon" "tag"}}
+      <div class="empty__title">没有可打印的产品</div>
+      <div class="empty__hint">先到产品档案里添加产品，再回来打印标签。</div>
+      <a class="btn btn--primary" href="/products/new">{{template "icon" "plus"}}<span>添加产品</span></a>
+    </div>
+  </div>
+</div>
+{{end}}
+
+<script src="/static/vendor/jsbarcode.min.js" defer></script>
+<script src="/static/js/labels.js?v={{.Cfg.Version}}" defer></script>
+{{end}}

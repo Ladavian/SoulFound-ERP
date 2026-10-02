@@ -128,6 +128,7 @@ type Product struct {
 	Unit           string
 	BottlesPerCase int
 	SalePrice      Money
+	Barcode        string
 	LowStockQty    Qty
 	SupplierID     *int64
 	SupplierName   string
@@ -480,6 +481,23 @@ type Market struct {
 
 	Items    []MarketItem
 	Expenses []MarketExpense
+	Records  []MarketRecord
+}
+
+// Totals 本场损益。有逐笔记录时按记录精确计算，否则退回汇总数量。
+func (m Market) Totals() MarketTotals {
+	return ComputeTotals(m.Items, m.Expenses, m.Records)
+}
+
+// SaleCount 销售笔数（现场收银用）。
+func (m Market) SaleCount() int {
+	n := 0
+	for _, r := range m.Records {
+		if r.Kind == RecordSale {
+			n++
+		}
+	}
+	return n
 }
 
 // StatusLabel 状态中文名。
@@ -645,7 +663,138 @@ func (t MarketTotals) TotalCost() Money {
 	return t.CogsSold + t.TastingCost + t.LossCost + t.ExpenseCost
 }
 
-// MarketItem 市集单品行：一场市集中某个产品的试饮/销售/赠送/损耗记录。
+// 市集现场记录类型。
+const (
+	RecordSale    = "sale"
+	RecordTasting = "tasting"
+	RecordGift    = "gift"
+	RecordLoss    = "loss"
+)
+
+// RecordKindLabels 记录类型中文名。
+var RecordKindLabels = map[string]string{
+	RecordSale:    "销售",
+	RecordTasting: "试饮",
+	RecordGift:    "赠送",
+	RecordLoss:    "损耗",
+}
+
+// RecordKindOptions 记录类型选项。
+var RecordKindOptions = []Option{
+	{RecordSale, "销售"},
+	{RecordTasting, "试饮"},
+	{RecordGift, "赠送"},
+	{RecordLoss, "损耗"},
+}
+
+// RecordKindLabel 记录类型中文名。
+func RecordKindLabel(kind string) string {
+	if v, ok := RecordKindLabels[kind]; ok {
+		return v
+	}
+	return kind
+}
+
+// MarketRecord 市集现场的一笔记录：卖出一单、试饮一瓶、赠送或损耗一瓶。
+//
+// 这是市集业务的事实来源：销售额、成本都按它逐笔累计，
+// market_items 上的汇总数量只是它的缓存（用于列表展示与结算过账）。
+type MarketRecord struct {
+	ID            int64
+	MarketID      int64
+	ProductID     int64
+	ProductName   string
+	ProductSKU    string
+	Kind          string
+	Qty           Qty
+	UnitPrice     Money  // 成交单价（仅销售有意义）
+	Discount      Money  // 该笔优惠
+	UnitCost      *Money // 结算时的成本快照；未结算为 nil
+	Channel       string // manual 手点 / scan 扫码 / migrated 历史迁移
+	Barcode       string
+	Note          string
+	OccurredAt    string
+	CreatedBy     *int64
+	CreatedByName string
+	CreatedAt     string
+
+	// 关联查询字段：产品当前平均成本，未结算时作为成本估算
+	AvgCost Money
+}
+
+// KindLabel 类型中文名。
+func (r MarketRecord) KindLabel() string { return RecordKindLabel(r.Kind) }
+
+// IsSale 是否为销售记录。
+func (r MarketRecord) IsSale() bool { return r.Kind == RecordSale }
+
+// Amount 该笔销售额（仅销售）。
+func (r MarketRecord) Amount() Money {
+	if r.Kind != RecordSale {
+		return 0
+	}
+	return MulQty(r.Qty, r.UnitPrice) - r.Discount
+}
+
+// HasSnapshot 是否已锁定成本。
+func (r MarketRecord) HasSnapshot() bool { return r.UnitCost != nil }
+
+// CostBasis 成本计价基础：已结算用快照，否则用当前平均成本。
+func (r MarketRecord) CostBasis() Money {
+	if r.UnitCost != nil {
+		return *r.UnitCost
+	}
+	return r.AvgCost
+}
+
+// Cost 该笔成本（销售计入售出成本，试饮/赠送/损耗计入对应支出）。
+func (r MarketRecord) Cost() Money { return MulQty(r.Qty, r.CostBasis()) }
+
+// FromScan 是否由扫码产生。
+func (r MarketRecord) FromScan() bool { return r.Channel == "scan" }
+
+// Clock 时间文本（HH:MM），列表展示用。
+func (r MarketRecord) Clock() string {
+	if len(r.OccurredAt) >= 16 {
+		return strings.ReplaceAll(r.OccurredAt[11:16], "T", " ")
+	}
+	return r.OccurredAt
+}
+
+// ComputeTotals 依据逐笔记录、汇总明细与费用计算一场市集的损益。
+//
+// 有逐笔记录时按记录精确计算（能反映每笔不同的成交价）；
+// 没有记录时退回按汇总数量估算，兼容历史数据。
+func ComputeTotals(items []MarketItem, expenses []MarketExpense, records []MarketRecord) MarketTotals {
+	var t MarketTotals
+	if len(records) > 0 {
+		for _, r := range records {
+			switch r.Kind {
+			case RecordSale:
+				t.Revenue += r.Amount()
+				t.CogsSold += r.Cost()
+			case RecordTasting:
+				t.TastingCost += r.Cost()
+			case RecordGift, RecordLoss:
+				t.LossCost += r.Cost()
+			}
+		}
+	} else {
+		for _, it := range items {
+			t.Revenue += it.Revenue()
+			t.CogsSold += it.Cogs()
+			t.TastingCost += it.TastingCost()
+			t.LossCost += it.LossCost()
+		}
+	}
+	for _, e := range expenses {
+		t.ExpenseCost += e.Amount
+	}
+	t.NetProfit = t.Revenue - t.CogsSold - t.TastingCost - t.LossCost - t.ExpenseCost
+	return t
+}
+
+// MarketItem 市集单品行：一场市集中某个产品的试饮/销售/赠送/损耗汇总。
 type MarketItem struct {
 	ID          int64
 	MarketID    int64

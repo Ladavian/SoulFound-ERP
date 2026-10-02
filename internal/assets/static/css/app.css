@@ -707,3 +707,240 @@ canvas { max-width: 100%; }
   .card__head { padding: 11px 12px; }
   .page-head__title { font-size: 17px; }
 }
+
+/* ==========================================================================
+   市集收银台
+   现场场景：手机单手操作、光线可能不好、要一眼看清金额与瓶数
+   ========================================================================== */
+
+.pos-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.pos-stat {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  min-width: 0;
+}
+.pos-stat--main {
+  background: linear-gradient(150deg, var(--brand-700), var(--brand-500));
+  border-color: var(--brand-600);
+}
+.pos-stat__label { font-size: 11.5px; color: var(--text-3); }
+.pos-stat--main .pos-stat__label { color: rgba(255, 255, 255, .78); }
+.pos-stat__value {
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+}
+.pos-stat--main .pos-stat__value { color: #fff; }
+.pos-stat__unit { font-size: 12px; font-weight: 500; margin-left: 2px; color: var(--text-3); }
+.pos-stat--main .pos-stat__unit { color: rgba(255, 255, 255, .78); }
+
+.pos-profit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 12.5px;
+  color: var(--text-3);
+  margin: 0 0 12px;
+}
+.pos-profit b { color: var(--text-2); font-variant-numeric: tabular-nums; }
+.pos-profit__net b { color: var(--ok); }
+
+.scan-bar { margin-bottom: 12px; }
+.scan-bar__btn { width: 100%; }
+.scan-bar__hint { font-size: 12px; color: var(--text-3); margin-top: 6px; overflow-wrap: anywhere; }
+.scan-bar__warn { color: var(--warn); font-weight: 600; }
+
+.pos-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(258px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.pos-tile {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px;
+  box-shadow: var(--shadow-sm);
+  min-width: 0;
+}
+.pos-tile--warn { border-color: var(--warn); }
+.pos-tile__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.pos-tile__name { font-size: 14.5px; font-weight: 650; min-width: 0; overflow-wrap: anywhere; }
+.pos-tile__price { font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pos-tile__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 10px;
+  font-size: 11.5px;
+  color: var(--text-3);
+  margin-bottom: 9px;
+}
+.pos-tile__warn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--warn);
+  margin-bottom: 8px;
+}
+
+.pos-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.pos-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 9px 2px;
+  min-height: 58px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.2;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform .06s ease, background .12s ease, border-color .12s ease;
+}
+.pos-btn:active:not(:disabled) { transform: scale(.96); }
+.pos-btn:disabled { opacity: .45; cursor: not-allowed; }
+.pos-btn--sale { background: var(--brand-600); border-color: var(--brand-600); color: #fff; }
+.pos-btn--sale:active:not(:disabled) { background: var(--brand-700); }
+.pos-btn--tasting { background: var(--ice-100); border-color: var(--ice-200); color: var(--info); }
+.pos-btn--gift { background: var(--gold-100); border-color: #EBD9B4; color: #8A6A21; }
+.pos-btn--loss { background: var(--warn-bg); border-color: #F0DCBB; color: var(--warn); }
+
+.card--warn { border-color: var(--warn); }
+
+/* 输入框 + 按钮并排（产品档案里的"扫码录入"） */
+.input-group { display: flex; gap: 8px; align-items: stretch; }
+.input-group .input { flex: 1 1 auto; min-width: 0; }
+.input-group .btn { flex: 0 0 auto; white-space: nowrap; }
+
+/* ==========================================================================
+   扫码弹层（摄像头取景）
+   ========================================================================== */
+body.scan-open { overflow: hidden; }
+
+.scan-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(8, 20, 16, .74);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px;
+}
+.scan-modal__box {
+  width: 100%;
+  max-width: 460px;
+  max-height: 94vh;
+  overflow: auto;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 14px;
+}
+.scan-modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.scan-modal__title { font-weight: 650; }
+.scan-modal__stage {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  background: #10201B;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.scan-modal__video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.scan-modal__frame {
+  position: absolute;
+  left: 7%;
+  right: 7%;
+  top: 34%;
+  height: 32%;
+  border: 2px solid rgba(255, 255, 255, .9);
+  border-radius: 8px;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, .26);
+  transition: border-color .12s ease;
+}
+.scan-modal__frame--hit { border-color: #6BD3A0; }
+.scan-modal__status { font-size: 12.5px; color: var(--text-3); margin: 10px 0; overflow-wrap: anywhere; }
+.scan-modal__status--live { color: var(--ok); }
+.scan-modal__status--warn { color: var(--warn); }
+.scan-modal__status--error { color: var(--danger); }
+.scan-modal__manual-label { font-size: 12px; color: var(--text-3); margin-bottom: 6px; }
+.scan-modal__row { display: flex; gap: 8px; }
+.scan-modal__actions { display: flex; gap: 8px; margin-top: 10px; }
+.scan-modal__actions .btn.is-on { background: var(--brand-600); border-color: var(--brand-600); color: #fff; }
+
+/* ==========================================================================
+   条码标签打印
+   ========================================================================== */
+.label-sheet { display: flex; flex-wrap: wrap; gap: 6mm; }
+.label {
+  width: 50mm;
+  height: 30mm;
+  box-sizing: border-box;
+  border: 1px dashed var(--line-strong);
+  border-radius: 4px;
+  padding: 2mm;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1mm;
+  overflow: hidden;
+}
+.label__name {
+  font-size: 8pt;
+  font-weight: 700;
+  text-align: center;
+  line-height: 1.15;
+  max-width: 100%;
+  max-height: 2.4em;
+  overflow: hidden;
+}
+/* 覆盖全局 svg 兜底尺寸：条码要占满标签宽度 */
+.label__barcode { display: block; width: 100%; height: auto; }
+.label__meta { font-size: 7pt; color: #333; display: flex; gap: 2mm; flex-wrap: wrap; justify-content: center; }
+.label--error, .label--empty { border-color: var(--danger); }
+.label--empty::after { content: "缺少条码"; font-size: 8pt; color: var(--danger); }
+
+@media (max-width: 560px) {
+  .pos-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pos-stat__value { font-size: 18px; }
+}
+
+@media print {
+  .no-print, .sidebar, .sidebar-backdrop, .topbar, .bottom-nav { display: none !important; }
+  .main { margin-left: 0 !important; }
+  .content { padding: 0 !important; max-width: none !important; }
+  body { background: #fff !important; }
+  .label-sheet { gap: 3mm; }
+  .label { border-color: transparent; break-inside: avoid; page-break-inside: avoid; }
+}

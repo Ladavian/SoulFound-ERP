@@ -67,7 +67,7 @@ func (s *Service) Dashboard(ctx context.Context, months int) (*DashboardData, er
 		return nil, err
 	}
 	for _, m := range monthMarkets {
-		t := ComputeMarketTotals(m.Items, m.Expenses)
+		t := m.Totals()
 		out.Stats.MonthRevenue += t.Revenue
 		out.Stats.MonthProfit += t.NetProfit
 		out.Stats.MonthSoldQty += m.SoldQty()
@@ -79,7 +79,7 @@ func (s *Service) Dashboard(ctx context.Context, months int) (*DashboardData, er
 		return nil, err
 	}
 	for _, m := range yearMarkets {
-		t := ComputeMarketTotals(m.Items, m.Expenses)
+		t := m.Totals()
 		out.Stats.YearRevenue += t.Revenue
 		out.Stats.YearProfit += t.NetProfit
 	}
@@ -134,7 +134,7 @@ func (s *Service) MonthlySeries(ctx context.Context, months int) ([]model.Monthl
 		if !ok {
 			continue
 		}
-		t := ComputeMarketTotals(m.Items, m.Expenses)
+		t := m.Totals()
 		p.Revenue += t.Revenue
 		p.Cost += t.TotalCost()
 		p.Profit += t.NetProfit
@@ -201,7 +201,7 @@ func (s *Service) MarketSummary(ctx context.Context, from, to, status, keyword s
 	rows := make([]model.MarketSummaryRow, 0, len(markets))
 	var totals model.MarketSummaryTotals
 	for _, m := range markets {
-		t := ComputeMarketTotals(m.Items, m.Expenses)
+		t := m.Totals()
 		row := model.MarketSummaryRow{
 			ID:           m.ID,
 			Code:         m.Code,

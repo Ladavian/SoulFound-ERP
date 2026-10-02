@@ -20,7 +20,17 @@
         <span class="action-item__icon">{{template "icon" "market"}}</span>
         <span class="action-item__main">
           <span class="action-item__title">市集活动</span>
-          <span class="action-item__sub">试饮与销售录入、每场利润</span>
+          <span class="action-item__sub">每场活动的成本与利润</span>
+        </span>
+        <span class="action-item__go">{{template "icon" "right"}}</span>
+      </a>
+      {{end}}
+      {{if .Perms.Has "product.view"}}
+      <a class="action-item" href="/products/labels">
+        <span class="action-item__icon">{{template "icon" "print"}}</span>
+        <span class="action-item__main">
+          <span class="action-item__title">条码标签</span>
+          <span class="action-item__sub">打印标签，扫码即可出库</span>
         </span>
         <span class="action-item__go">{{template "icon" "right"}}</span>
       </a>

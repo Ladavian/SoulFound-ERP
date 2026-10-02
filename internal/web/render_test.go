@@ -59,11 +59,11 @@ func TestTemplatesParse(t *testing.T) {
 func TestNavPagesExist(t *testing.T) {
 	expected := []string{
 		"login", "dashboard", "error", "profile", "settings", "logs", "more",
-		"products/list", "products/form", "products/detail",
+		"products/list", "products/form", "products/detail", "products/labels",
 		"partners/list", "partners/form",
 		"purchases/list", "purchases/form", "purchases/detail",
 		"inventory/index", "inventory/movements", "inventory/adjust",
-		"markets/list", "markets/form", "markets/detail",
+		"markets/list", "markets/form", "markets/detail", "markets/pos",
 		"reports/markets", "reports/products", "reports/inventory",
 		"users/list", "users/form", "users/password",
 	}

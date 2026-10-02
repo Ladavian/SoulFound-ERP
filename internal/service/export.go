@@ -292,7 +292,7 @@ func (s *Service) ExportMarketDetail(ctx context.Context, marketID int64) ([]byt
 	if m == nil {
 		return nil, "", fmt.Errorf("市集不存在")
 	}
-	totals := ComputeMarketTotals(m.Items, m.Expenses)
+	totals := m.Totals()
 
 	overviewCols := []Column{{"项目", 22, false}, {"数值", 20, false}}
 	overview := [][]any{
