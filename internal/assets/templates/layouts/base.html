@@ -15,14 +15,16 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="{{.Settings.CompanyName}}">
 <meta name="format-detection" content="telephone=no">
-<link rel="stylesheet" href="/static/css/app.css">
+<link rel="stylesheet" href="/static/css/app.css?v={{.Cfg.Version}}">
 <script src="/static/vendor/htmx.min.js" defer></script>
 <script src="/static/vendor/alpine.min.js" defer></script>
-<script src="/static/js/app.js" defer></script>
+<script src="/static/js/app.js?v={{.Cfg.Version}}" defer></script>
 {{block "head" .}}{{end}}
 </head>
 <body>
 <div class="app" x-data="{ menu: false }">
+
+  <div class="sidebar-backdrop" x-show="menu" x-transition.opacity @click="menu = false"></div>
 
   <aside class="sidebar" :class="menu ? 'is-open' : ''" @click.outside="menu = false">
     <div class="sidebar__brand">
@@ -85,7 +87,7 @@
 
   <div class="main">
     <header class="topbar">
-      <button class="btn btn--ghost btn--icon topbar__burger" type="button" @click="menu = !menu" aria-label="菜单">{{template "icon" "menu"}}</button>
+      <button class="btn btn--ghost btn--icon topbar__burger" type="button" @click.stop="menu = !menu" aria-label="菜单">{{template "icon" "menu"}}</button>
       <div class="topbar__main">
         <div class="topbar__title">{{.Title}}</div>
       </div>
@@ -120,7 +122,7 @@
       {{if .Perms.Has "market.view"}}{{template "bottom_item" (dict "Href" "/markets" "Icon" "market" "Label" "市集" "Page" .Nav "Key" "markets")}}{{end}}
       {{if .Perms.Has "purchase.view"}}{{template "bottom_item" (dict "Href" "/purchases" "Icon" "truck" "Label" "采购" "Page" .Nav "Key" "purchases")}}{{end}}
       {{if .Perms.Has "inventory.view"}}{{template "bottom_item" (dict "Href" "/inventory" "Icon" "box" "Label" "库存" "Page" .Nav "Key" "inventory")}}{{end}}
-      <button class="bottom-nav__item" type="button" @click="menu = true" style="background:none;border:0;font-family:inherit">{{template "icon" "menu"}}<span>更多</span></button>
+      {{template "bottom_item" (dict "Href" "/more" "Icon" "menu" "Label" "更多" "Page" .Nav "Key" "more")}}
     </nav>
   </div>
 </div>

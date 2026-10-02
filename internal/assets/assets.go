@@ -4,7 +4,15 @@
 // 数据文件；需要改模板时（开发模式 ERP_DEV=1）也可以直接从磁盘读取。
 package assets
 
-import "embed"
+import (
+	"embed"
+	"io/fs"
+)
+
+// ReadStatic 读取 static/ 下的文件内容。
+func ReadStatic(name string) ([]byte, error) {
+	return fs.ReadFile(FS, "static/"+name)
+}
 
 // FS 包含 templates/ 与 static/ 两个目录。
 //

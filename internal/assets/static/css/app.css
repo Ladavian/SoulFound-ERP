@@ -172,6 +172,9 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
 
 .bottom-nav { display: none; }
 
+/* 移动端抽屉遮罩：仅窄屏显示，点它关闭抽屉 */
+.sidebar-backdrop { display: none; }
+
 /* ---------------------------------------------------------------- 卡片 */
 .card {
   background: var(--surface);
@@ -531,6 +534,15 @@ table.data--compact th, table.data--compact td { padding: 7px 10px; }
     padding-bottom: var(--safe-b);
   }
   .sidebar.is-open { transform: none; }
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 45;
+    background: rgba(10, 24, 20, .45);
+    -webkit-backdrop-filter: blur(2px);
+    backdrop-filter: blur(2px);
+  }
   .main { margin-left: 0; }
   .topbar__burger { display: inline-flex; }
 
@@ -667,6 +679,25 @@ table.data td:not(.num),
 /* 图片与画布不超出容器 */
 img { max-width: 100%; height: auto; }
 canvas { max-width: 100%; }
+
+/* 移动端触控与输入体验 */
+@media (max-width: 900px) {
+  /* iOS Safari 在输入框字号小于 16px 时，聚焦会自动把页面放大，
+     导致元素位置跳动、按钮"点不准"。统一提到 16px 可以彻底避免。 */
+  .input, .select, .textarea, .input--sm, .select.input--sm { font-size: 16px; }
+
+  /* 触控目标尽量不低于 44px（Apple / Google 的无障碍建议） */
+  .btn { min-height: 44px; }
+  .btn--sm { min-height: 38px; padding-left: 12px; padding-right: 12px; }
+  .btn--xs { min-height: 34px; }
+  .btn--icon { min-height: 44px; width: 44px; }
+  .nav-item { min-height: 44px; }
+  .tab { padding-top: 12px; padding-bottom: 12px; }
+  .pager__actions .btn { min-width: 96px; }
+
+  /* 表格里的操作按钮单独一行，避免和相邻行按钮挤在一起误触 */
+  .row-actions { gap: 8px; }
+}
 
 @media (max-width: 560px) {
   .topbar { padding-left: 12px; padding-right: 12px; }

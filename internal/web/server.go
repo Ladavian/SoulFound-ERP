@@ -1,6 +1,7 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"icewine-erp/internal/assets"
 	"icewine-erp/internal/config"
 	"icewine-erp/internal/model"
 	"icewine-erp/internal/service"
@@ -278,6 +280,7 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
+	m.HandleFunc("GET /sw.js", s.handleServiceWorker)
 	m.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = w.Write([]byte("ok " + s.cfg.Version))
@@ -290,6 +293,9 @@ func (s *Server) routes() {
 
 	// 首页
 	m.Handle("GET /{$}", s.guard(PermDashboardView, s.handleDashboard))
+
+	// 全部功能（底部导航「更多」，纯链接、不依赖 JS）
+	m.Handle("GET /more", s.guard("", s.handleMore))
 
 	// 产品
 	m.Handle("GET /products", s.guard(PermProductView, s.handleProductList))
@@ -393,15 +399,40 @@ func (s *Server) routes() {
 }
 
 // cacheControl 给静态资源加上缓存头。
+//
+// 关键点：应用自己的 css/js 在模板里带了 ?v=<构建版本>，URL 会随版本变化，
+// 因此可以放心长缓存；没有带版本号的资源（图片等）只做协商缓存，
+// 避免改版后浏览器继续用旧文件。
 func cacheControl(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "vendor/") {
-			w.Header().Set("Cache-Control", "public, max-age=2592000")
-		} else {
-			w.Header().Set("Cache-Control", "public, max-age=3600")
+		switch {
+		case strings.HasPrefix(r.URL.Path, "vendor/"):
+			w.Header().Set("Cache-Control", "public, max-age=2592000, immutable")
+		case r.URL.Query().Get("v") != "":
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		default:
+			w.Header().Set("Cache-Control", "no-cache")
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// handleServiceWorker 从站点根路径提供 Service Worker 脚本。
+//
+// 必须放在根路径：/static/sw.js 的作用域最多只能覆盖 /static/，
+// 注册时申请 scope "/" 会被浏览器直接拒绝，离线缓存与 PWA 安装都会失效。
+// 同时把构建版本注入脚本，缓存名随版本变化，升级后旧缓存会被自动清理。
+func (s *Server) handleServiceWorker(w http.ResponseWriter, r *http.Request) {
+	source, err := assets.ReadStatic("sw.js")
+	if err != nil {
+		http.Error(w, "service worker 不可用", http.StatusInternalServerError)
+		return
+	}
+	body := bytes.ReplaceAll(source, []byte("__ERP_VERSION__"), []byte(s.cfg.Version))
+	w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Service-Worker-Allowed", "/")
+	_, _ = w.Write(body)
 }
 
 // noCache 用于 HTML 页面。

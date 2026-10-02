@@ -6,6 +6,18 @@ import (
 	"net/http"
 )
 
+// handleMore 渲染「全部功能」页。
+//
+// 底部导航的「更多」指向这里：它是一个普通链接，不依赖 JavaScript，
+// 手机在弱网或脚本异常时也能进到各个模块。
+func (s *Server) handleMore(w http.ResponseWriter, r *http.Request) {
+	noCache(w)
+	page := s.newPage(r, "全部功能", "more")
+	if err := s.rnd.Render(w, "more", page); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	data, err := s.svc.Dashboard(r.Context(), 12)
 	if err != nil {

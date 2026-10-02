@@ -58,7 +58,7 @@ func TestTemplatesParse(t *testing.T) {
 // TestNavPagesExist 保证所有路由用到的页面模板都存在。
 func TestNavPagesExist(t *testing.T) {
 	expected := []string{
-		"login", "dashboard", "error", "profile", "settings", "logs",
+		"login", "dashboard", "error", "profile", "settings", "logs", "more",
 		"products/list", "products/form", "products/detail",
 		"partners/list", "partners/form",
 		"purchases/list", "purchases/form", "purchases/detail",

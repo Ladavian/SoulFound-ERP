@@ -16,14 +16,20 @@ RUN go mod download
 
 COPY . .
 
-ARG VERSION=1.0.0
+# VERSION 由 CI 注入（形如 main-1f9e85e）；本地构建留空则用构建时间，
+# 这样每次重编译都会得到不同的版本号——前端 css/js 的 ?v= 参数随之变化，
+# 浏览器与 Service Worker 都能正确拿到新文件，不会继续用旧缓存。
+ARG VERSION=
 # BuildKit 会为每个目标平台注入 TARGETARCH（amd64 / arm64）
 ARG TARGETARCH
 RUN set -eux; \
+    ver="${VERSION}"; \
+    if [ -z "$ver" ]; then ver="dev-$(date -u +%Y%m%d-%H%M)"; fi; \
     target_arch="${TARGETARCH:-$(go env GOARCH)}"; \
+    echo "构建版本: ${ver}  目标架构: linux/${target_arch}"; \
     CGO_ENABLED=0 GOOS=linux GOARCH="${target_arch}" go build \
         -trimpath \
-        -ldflags="-s -w -X main.buildVersion=${VERSION}" \
+        -ldflags="-s -w -X main.buildVersion=${ver}" \
         -o /out/erp ./cmd/erp; \
     if [ "${target_arch}" = "$(go env GOHOSTARCH)" ]; then \
         /out/erp version; \

@@ -182,6 +182,7 @@ func TestAllPagesRender(t *testing.T) {
 		{"/settings", []string{"系统设置"}},
 		{"/logs", []string{"操作日志"}},
 		{"/profile", []string{"我的账号"}},
+		{"/more", []string{"全部功能", "市集活动", "系统设置"}},
 		{"/healthz", []string{"ok"}},
 	}
 
@@ -815,5 +816,60 @@ func TestListFiltersWork(t *testing.T) {
 	_, body = get(t, h, "/inventory/movements?direction=in&page=1", cookie)
 	if !strings.Contains(body, "direction=in") {
 		t.Error("分页链接应保留筛选条件")
+	}
+}
+
+// TestStaticAssetsAndServiceWorker 校验前端资源的缓存策略与 Service Worker 可注册性。
+//
+// 背景：/static/sw.js 的作用域最多只能覆盖 /static/，注册时申请 scope "/"
+// 会被浏览器拒绝（离线缓存与 PWA 安装全部失效）。因此必须从根路径 /sw.js 提供，
+// 并带上 Service-Worker-Allowed 头。
+func TestStaticAssetsAndServiceWorker(t *testing.T) {
+	h, _, cfg := testApp(t)
+	cookie := doLogin(t, h, cfg, "admin", "admin123")
+
+	// 根路径的 Service Worker
+	req := httptest.NewRequest(http.MethodGet, "/sw.js", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /sw.js 返回 %d，期望 200", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "serviceWorker") && !strings.Contains(body, "addEventListener") {
+		t.Error("/sw.js 内容不像 Service Worker 脚本")
+	}
+	if strings.Contains(body, "__ERP_VERSION__") {
+		t.Error("/sw.js 里的版本占位符没有被替换")
+	}
+	if got := rec.Header().Get("Service-Worker-Allowed"); got != "/" {
+		t.Errorf("缺少 Service-Worker-Allowed: /（实际 %q）", got)
+	}
+	if cc := rec.Header().Get("Cache-Control"); !strings.Contains(cc, "no-cache") {
+		t.Errorf("/sw.js 必须是 no-cache，实际 %q", cc)
+	}
+	if !strings.Contains(body, cfg.Version) {
+		t.Errorf("/sw.js 里应包含构建版本 %q", cfg.Version)
+	}
+
+	// 带版本号的资源可以长缓存
+	req = httptest.NewRequest(http.MethodGet, "/static/css/app.css?v="+cfg.Version, nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if cc := rec.Header().Get("Cache-Control"); !strings.Contains(cc, "immutable") {
+		t.Errorf("带版本号的资源应可长缓存，实际 %q", cc)
+	}
+
+	// 页面引用的 css/js 必须带版本号，否则升级后浏览器会继续用旧文件
+	_, page := get(t, h, "/", cookie)
+	for _, asset := range []string{"/static/css/app.css", "/static/js/app.js"} {
+		if !strings.Contains(page, asset+"?v=") {
+			t.Errorf("页面里的 %s 没有带版本号，改版后会取到旧缓存", asset)
+		}
+	}
+
+	// 移动端底部导航的「更多」必须是真实链接，不能依赖 JS
+	if !strings.Contains(page, `href="/more"`) {
+		t.Error("底部导航的「更多」应当是 /more 链接")
 	}
 }

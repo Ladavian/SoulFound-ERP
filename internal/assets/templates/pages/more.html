@@ -1,0 +1,197 @@
+{{define "content"}}
+{{/* 底部导航「更多」指向这里：普通链接、不依赖 JavaScript，
+     手机上即使脚本异常也能进到所有模块。 */}}
+<div class="page-head">
+  <div class="page-head__main">
+    <div class="page-head__title">全部功能</div>
+    <div class="page-head__meta"><span>{{.Settings.CompanyName}} · 进销存与市集利润</span></div>
+  </div>
+  <div class="page-head__actions">
+    <a class="btn btn--primary" href="/">{{template "icon" "dashboard"}}<span>回到看板</span></a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__head"><div class="card__title">日常操作</div></div>
+  <div class="card__body card__body--flush">
+    <div class="action-list">
+      {{if .Perms.Has "market.view"}}
+      <a class="action-item" href="/markets">
+        <span class="action-item__icon">{{template "icon" "market"}}</span>
+        <span class="action-item__main">
+          <span class="action-item__title">市集活动</span>
+          <span class="action-item__sub">试饮与销售录入、每场利润</span>
+        </span>
+        <span class="action-item__go">{{template "icon" "right"}}</span>
+      </a>
+      {{end}}
+      {{if .Perms.Has "purchase.view"}}
+      <a class="action-item" href="/purchases">
+        <span class="action-item__icon">{{template "icon" "truck"}}</span>
+        <span class="action-item__main">
+          <span class="action-item__title">采购入库</span>
+          <span class="action-item__sub">含运费关税分摊到岸成本</span>
+        </span>
+        <span class="action-item__go">{{template "icon" "right"}}</span>
+      </a>
+      {{end}}
+      {{if .Perms.Has "inventory.view"}}
+      <a class="action-item" href="/inventory">
+        <span class="action-item__icon">{{template "icon" "box"}}</span>
+        <span class="action-item__main">
+          <span class="action-item__title">库存查询</span>
+          <span class="action-item__sub">实时库存与低库存预警</span>
+        </span>
+        <span class="action-item__go">{{template "icon" "right"}}</span>
+      </a>
+      {{end}}
+      {{if .Perms.Has "inventory.view"}}
+      <a class="action-item" href="/inventory/movements">
+        <span class="action-item__icon">{{template "icon" "layers"}}</span>
+        <span class="action-item__main">
+          <span class="action-item__title">库存流水</span>
+          <span class="action-item__sub">每笔出入库与结存快照</span>
+        </span>
+        <span class="action-item__go">{{template "icon" "right"}}</span>
+      </a>
+      {{end}}
+      {{if .Perms.Has "inventory.adjust"}}
+      <a class="action-item" href="/inventory/adjust">
+        <span class="action-item__icon">{{template "icon" "adjust"}}</span>
+        <span class="action-item__main">
+          <span class="action-item__title">出入库登记</span>
+          <span class="action-item__sub">期初建账、盘点、损耗</span>
+        </span>
+        <span class="action-item__go">{{template "icon" "right"}}</span>
+      </a>
+      {{end}}
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__head"><div class="card__title">档案</div></div>
+  <div class="card__body card__body--flush">
+    <div class="action-list">
+      {{if .Perms.Has "product.view"}}
+      <a class="action-item" href="/products">
+        <span class="action-item__icon">{{template "icon" "tag"}}</span>
+        <span class="action-item__main">
+          <span class="action-item__title">产品档案</span>
+          <span class="action-item__sub">SKU、年份、容量、售价</span>
+        </span>
+        <span class="action-item__go">{{template "icon" "right"}}</span>
+      </a>
+      {{end}}
+      {{if .Perms.Has "partner.view"}}
+      <a class="action-item" href="/suppliers">
+        <span class="action-item__icon">{{template "icon" "truck"}}</span>
+        <span class="action-item__main">
+          <span class="action-item__title">供应商</span>
+          <span class="action-item__sub">酒庄、进口商与货源信息</span>
+        </span>
+        <span class="action-item__go">{{template "icon" "right"}}</span>
+      </a>
+      <a class="action-item" href="/customers">
+        <span class="action-item__icon">{{template "icon" "users"}}</span>
+        <span class="action-item__main">
+          <span class="action-item__title">客户</span>
+          <span class="action-item__sub">常客与联系记录</span>
+        </span>
+        <span class="action-item__go">{{template "icon" "right"}}</span>
+      </a>
+      {{end}}
+    </div>
+  </div>
+</div>
+
+{{if or (.Perms.Has "report.view") (.Perms.Has "inventory.view")}}
+<div class="card">
+  <div class="card__head"><div class="card__title">报表</div></div>
+  <div class="card__body card__body--flush">
+    <div class="action-list">
+      {{if .Perms.Has "report.view"}}
+      <a class="action-item" href="/reports/markets">
+        <span class="action-item__icon">{{template "icon" "chart"}}</span>
+        <span class="action-item__main">
+          <span class="action-item__title">市集利润报表</span>
+          <span class="action-item__sub">按时间段汇总每场损益</span>
+        </span>
+        <span class="action-item__go">{{template "icon" "right"}}</span>
+      </a>
+      <a class="action-item" href="/reports/products">
+        <span class="action-item__icon">{{template "icon" "trending"}}</span>
+        <span class="action-item__main">
+          <span class="action-item__title">产品销售报表</span>
+          <span class="action-item__sub">哪个产品最好卖、最赚钱</span>
+        </span>
+        <span class="action-item__go">{{template "icon" "right"}}</span>
+      </a>
+      {{end}}
+      {{if .Perms.Has "inventory.view"}}
+      <a class="action-item" href="/reports/inventory">
+        <span class="action-item__icon">{{template "icon" "coins"}}</span>
+        <span class="action-item__main">
+          <span class="action-item__title">库存报表</span>
+          <span class="action-item__sub">库存估值与品类分布</span>
+        </span>
+        <span class="action-item__go">{{template "icon" "right"}}</span>
+      </a>
+      {{end}}
+    </div>
+  </div>
+</div>
+{{end}}
+
+<div class="card">
+  <div class="card__head"><div class="card__title">账号与系统</div></div>
+  <div class="card__body card__body--flush">
+    <div class="action-list">
+      <a class="action-item" href="/profile">
+        <span class="action-item__icon">{{template "icon" "user"}}</span>
+        <span class="action-item__main">
+          <span class="action-item__title">我的账号</span>
+          <span class="action-item__sub">改密码、装到手机桌面</span>
+        </span>
+        <span class="action-item__go">{{template "icon" "right"}}</span>
+      </a>
+      {{if .Perms.Has "user.manage"}}
+      <a class="action-item" href="/users">
+        <span class="action-item__icon">{{template "icon" "users"}}</span>
+        <span class="action-item__main">
+          <span class="action-item__title">用户管理</span>
+          <span class="action-item__sub">账号、角色与权限</span>
+        </span>
+        <span class="action-item__go">{{template "icon" "right"}}</span>
+      </a>
+      <a class="action-item" href="/logs">
+        <span class="action-item__icon">{{template "icon" "log"}}</span>
+        <span class="action-item__main">
+          <span class="action-item__title">操作日志</span>
+          <span class="action-item__sub">谁在什么时候改了什么</span>
+        </span>
+        <span class="action-item__go">{{template "icon" "right"}}</span>
+      </a>
+      {{end}}
+      {{if .Perms.Has "setting.manage"}}
+      <a class="action-item" href="/settings">
+        <span class="action-item__icon">{{template "icon" "settings"}}</span>
+        <span class="action-item__main">
+          <span class="action-item__title">系统设置</span>
+          <span class="action-item__sub">公司名、币种、备份、重算库存</span>
+        </span>
+        <span class="action-item__go">{{template "icon" "right"}}</span>
+      </a>
+      {{end}}
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__body">
+    <form method="post" action="/logout">
+      <button class="btn btn--block" type="submit">{{template "icon" "logout"}}<span>退出登录</span></button>
+    </form>
+  </div>
+</div>
+{{end}}
