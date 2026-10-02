@@ -1,13 +1,6 @@
-# 加拿大冰酒 ERP —— 复制到设备上，一行命令启动
-#
-#   docker compose up -d
-#
-# 打开 http://设备IP:8123 ，用 admin / admin123 登录（登录后请立刻改密码）。
-#
-# 数据存在同目录的 ./data 下（首次启动自动创建），备份就是拷这个目录。
-# 升级：docker compose pull && docker compose up -d
-#
-# 这个文件不需要改：能调的设置都在网页「系统设置」里。
+# 复制到任意装了 Docker 的设备，执行：docker compose up -d
+# 打开 http://设备IP:8123   admin / admin123
+# 数据在同目录 ./data，备份就是拷这个目录
 
 services:
   erp:
