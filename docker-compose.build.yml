@@ -1,0 +1,17 @@
+# 从源码本地构建（不需要任何镜像仓库登录，arm64 / amd64 都可以）
+#
+#   docker compose -f docker-compose.build.yml up -d --build
+#
+# 适合：不想碰镜像仓库、或者自己改了代码。
+# 注意：设备需要能访问 Docker Hub 拉取 golang 与 alpine 基础镜像。
+
+services:
+  erp:
+    build: .
+    image: icewine-erp:local
+    container_name: icewine-erp
+    restart: unless-stopped
+    ports:
+      - "8123:8123"
+    volumes:
+      - ./data:/data

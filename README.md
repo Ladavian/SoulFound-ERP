@@ -38,45 +38,95 @@ Docker 一条命令部署，数据放在一个 SQLite 文件里，**没有外部
 
 前提：服务器上装好 Docker 与 Docker Compose。
 
+在设备上建一个目录，把下面这个 `docker-compose.yml` 放进去，然后：
+
 ```bash
-# 1. 把整个目录传到服务器，例如 /opt/icewine-erp
-cd /opt/icewine-erp
-
-# 2. 可选：生成本地配置（不改也能跑）
-cp .env.example .env
-
-# 3. 构建并启动
-docker compose up -d --build
-
-# 4. 看日志确认起来了
-docker compose logs -f erp
+docker compose up -d
 ```
 
-> 容器内固定监听 **8123**，`.env` 里的 `ERP_PORT` 改的是宿主机对外端口。
-> 反向代理直接指向 `http://127.0.0.1:8123` 即可。
+就这样，没有别的步骤。打开 `http://设备IP:8123` 即可使用。
 
-打开 `http://服务器IP:8123`，用默认账号登录：
+```yaml
+services:
+  erp:
+    image: ghcr.io/ladavian/soulfound-erp:latest
+    container_name: icewine-erp
+    restart: unless-stopped
+    ports:
+      - "8123:8123"
+    volumes:
+      - ./data:/data
+```
 
-- 用户名：`admin`
-- 密码：`admin123`
+登录账号：
 
-> **第一次登录后请立刻到「我的账号 → 修改密码」改掉默认密码。**
+- 用户名 `admin`，密码 `admin123`
+- **第一次登录后请立刻到「我的账号 → 修改密码」改掉默认密码。**
 
-想先看看系统长什么样，可以在 `.env` 里设置 `ERP_SEED_DEMO=1` 再启动一次，
-系统会写入 4 款冰酒、1 张采购入库单、3 场已结算市集和 1 场筹备中的市集作为演示数据
-（只在数据库里还没有产品时写入，正式使用保持 `0`）。
+几点说明：
+
+- **不需要配置任何东西**。端口 8123、时区、币种、管理员账号都有合理默认值；
+  这个 compose 文件不用改，能调的设置都在网页里。
+- 数据全部在 `./data` 目录（首次启动自动创建），**备份就是拷这个目录**。
+- 想先看演示数据：在同目录放一个内容为 `ERP_SEED_DEMO=1` 的 `.env` 文件再启动，
+  会写入 4 款冰酒、1 张采购入库单、3 场已结算市集和 1 场筹备中的市集
+  （只在数据库里还没有产品时写入）。
+
+### 想改设置怎么办
+
+按「改哪一层」分三种，**绝大多数需求第一种就够了**：
+
+1. **公司名、币种、币种符号、库存预警线、是否允许负库存** →
+   登录网页，在「系统设置」里改，立即生效，不用重启。
+2. **时区、对外端口、初始管理员密码** → 这几个必须在启动时给。
+   在 compose 里加三行 `environment` 即可，其余保持不变：
+
+   ```yaml
+   services:
+     erp:
+       image: ghcr.io/ladavian/soulfound-erp:latest
+       container_name: icewine-erp
+       restart: unless-stopped
+       ports:
+         - "9000:8123"          # 左边是设备端口，右边固定 8123 不要改
+       environment:
+         - TZ=America/Toronto
+       volumes:
+         - ./data:/data
+   ```
+
+   > 容器内始终监听 **8123**；改端口只改 `ports` 冒号左边那个数字，
+   > 你自己的反向代理也请指向 `http://127.0.0.1:8123`。
+3. **想改的项比较多** → 把 `.env.example` 复制成 `.env` 按需修改，
+   再在 compose 里加一行 `env_file: [.env]`。
+   这样设置集中在一个文件里，compose 本身保持干净。
+
+### 用预构建镜像还是本地构建
+
+默认的 `docker-compose.yml` 用 GitHub 构建好的镜像（同时支持 amd64 与 arm64，
+设备拉取时自动选对架构），升级只要 `docker compose pull`。
+
+不想依赖镜像仓库、或者自己改了代码，就用源码本地构建：
+
+```bash
+docker compose -f docker-compose.build.yml up -d --build
+```
+
+两个文件的差别只有 `image:` 与 `build:` 两行，端口与数据卷完全一致。
 
 ### 停止 / 重启 / 升级
 
 ```bash
-docker compose down            # 停止（数据保留在 ./data）
+docker compose down            # 停止（数据保留在 ./data，不会丢）
 docker compose up -d           # 再次启动
 docker compose logs -f erp     # 查看日志
 
-# 升级代码后重新构建
-git pull                       # 或重新上传新版本
-docker compose up -d --build   # 数据结构会自动迁移，不会丢数据
+docker compose pull            # 升级到最新版本（会拉取新镜像）
+docker compose up -d           # 数据结构变化会自动迁移
 ```
+
+> 用的是源码本地构建（`docker-compose.build.yml`）时，
+> 升级改成 `git pull && docker compose -f docker-compose.build.yml up -d --build`。
 
 ---
 
@@ -204,7 +254,7 @@ docker compose up -d --build   # 数据结构会自动迁移，不会丢数据
 > 反向代理与证书由你自己的软件负责（Nginx / Caddy / Traefik / 群晖反代都行），
 > 指向 `http://127.0.0.1:8123` 即可。挂好 HTTPS 后有两件事要注意：
 >
-> 1. 把 `.env` 里的 `ERP_COOKIE_SECURE=1` 打开，Cookie 只走加密连接。
+> 1. 在 compose 里加一行 `- ERP_COOKIE_SECURE=1`，Cookie 只走加密连接。
 > 2. 反代里别让 `/static/sw.js` 被长缓存，否则更新 Service Worker 不生效
 >    （加一条 `Cache-Control: no-cache` 就够了）。
 >
@@ -331,7 +381,7 @@ docker compose exec erp /app/erp reset-password 用户名
 
 - **后端地址**：`http://127.0.0.1:8123`（容器内固定 8123）。
   若想不让它直接暴露到局域网，把 `.env` 里的 `ERP_BIND=127.0.0.1`。
-- **挂 HTTPS 后**：把 `.env` 里的 `ERP_COOKIE_SECURE=1` 打开。
+- **挂 HTTPS 后**：在 compose 里加一行 `- ERP_COOKIE_SECURE=1`，Cookie 就只走加密连接。
 - **不要长缓存 `/static/sw.js`**：它是 Service Worker，被缓存住会导致前端更新不生效。
   `/static/` 下其他资源带版本号，可以放心长缓存。
 - **上传体积**：本系统的表单都很小，反代默认限制够用；如果你把限制压得很低
@@ -367,40 +417,33 @@ git push --tags
 
 流水线会额外打上 `1.0.0`、`1.0`、`1` 与 `latest` 标签。
 
-### 在服务器上使用预构建镜像
+### 在设备上使用预构建镜像
 
-私有包需要一次登录。先到 GitHub 生成一个 **Personal Access Token（classic）**，
-只勾选 `read:packages` 即可（Settings → Developer settings → Personal access tokens）：
+镜像仓库**已设为公开**，所以 `docker compose pull` 不需要登录任何账号，
+不需要 GitHub 密码，也不需要 Token。
+
+如果拉取时报 `unauthorized`，说明包的可见性还没改过来，到 GitHub 点三下即可：
+
+1. 打开 <https://github.com/users/Ladavian/packages/container/soulfound-erp/settings>
+2. 拉到页面最下面 **Danger Zone → Change package visibility**
+3. 选 **Public** 并确认
+
+> 镜像里只有程序本身，**不含你的任何数据**（数据都在设备的 `./data` 里），
+> 而且源码仓库始终是私有的。
+
+### 升级
 
 ```bash
-echo "<你的PAT>" | docker login ghcr.io -u Ladavian --password-stdin
+docker compose pull && docker compose up -d
 ```
 
-然后在 `.env` 里指定镜像：
+数据库结构有变化时会自动迁移，不会丢数据。
 
-```env
-ERP_IMAGE=ghcr.io/ladavian/soulfound-erp:latest
-ERP_PULL_POLICY=always
-```
+### 想固定版本而不是跟着 latest 走
 
-```bash
-docker compose pull
-docker compose up -d
-```
+打标签发版后（见上一节），镜像会有 `1.0.0` 这类版本标签，把 compose 里的
+`image:` 改成 `ghcr.io/ladavian/soulfound-erp:1.0.0` 即可。
 
-> 镜像同时支持 amd64 与 arm64，树莓派 / 甲骨文 ARM 实例 / Apple Silicon 都能直接跑。
-> 登录信息保存在服务器上，只有拉取时用得到；容器本身不需要任何 GitHub 凭据。
-
-### 两种方式怎么选
-
-| | 服务器本地构建 | 拉取 GitHub 构建的镜像 |
-| --- | --- | --- |
-| 首次部署耗时 | 需下载 Go 镜像并编译，约 2–5 分钟 | 只下载镜像，约 30 秒 |
-| 服务器需要 | Docker + 能拉取 `golang` 镜像 | Docker + 一个只读 PAT |
-| 升级方式 | `git pull && docker compose up -d --build` | `docker compose pull && docker compose up -d` |
-| 适合 | 想少配一个凭据、想改代码 | 想升级快、服务器弱、多台机器部署 |
-
-两种方式产出的镜像内容一致（同一份 Dockerfile、同一套构建参数）。
 
 ## 常见问题
 
