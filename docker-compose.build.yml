@@ -1,0 +1,18 @@
+# 备选：在设备上从源码编译（网络拉不动 golang 基础镜像时不要用这个）
+#
+#   git clone https://github.com/Ladavian/SoulFound-ERP.git
+#   cd SoulFound-ERP
+#   docker compose -f docker-compose.build.yml up -d --build
+#
+# 正常情况请用默认的 docker-compose.yml（直接拉 GitHub 编译好的镜像）。
+
+services:
+  erp:
+    build: .
+    image: icewine-erp:local
+    container_name: icewine-erp
+    restart: unless-stopped
+    ports:
+      - "8123:8123"
+    volumes:
+      - ./data:/data
