@@ -38,13 +38,7 @@ Docker 一条命令部署，数据放在一个 SQLite 文件里，**没有外部
 
 前提：服务器上装好 Docker 与 Docker Compose。
 
-在设备上建一个目录，把下面这个 `docker-compose.yml` 放进去，然后：
-
-```bash
-docker compose up -d
-```
-
-就这样，没有别的步骤。打开 `http://设备IP:8123` 即可使用。
+在设备上建一个目录，把下面这个 `docker-compose.yml` 放进去（内容不用改）：
 
 ```yaml
 services:
@@ -58,7 +52,23 @@ services:
       - ./data:/data
 ```
 
-登录账号：
+镜像包是私有的，先登录一次（**只做一次，之后永久有效**）：
+
+```bash
+echo "<你的只读令牌>" | docker login ghcr.io -u Ladavian --password-stdin
+```
+
+> 令牌怎么来：打开 <https://github.com/settings/tokens/new?scopes=read:packages&description=icewine-erp>
+> 勾选 `read:packages` 生成即可。
+> 不想配令牌的话，见下面「不想配令牌的两个替代方案」。
+
+然后启动：
+
+```bash
+docker compose up -d
+```
+
+打开 `http://设备IP:8123` 即可使用。登录账号：
 
 - 用户名 `admin`，密码 `admin123`
 - **第一次登录后请立刻到「我的账号 → 修改密码」改掉默认密码。**
@@ -417,19 +427,47 @@ git push --tags
 
 流水线会额外打上 `1.0.0`、`1.0`、`1` 与 `latest` 标签。
 
-### 在设备上使用预构建镜像
+### 在设备上拉取镜像
 
-镜像仓库**已设为公开**，所以 `docker compose pull` 不需要登录任何账号，
-不需要 GitHub 密码，也不需要 Token。
+镜像包放在 GitHub Container Registry（GHCR）里。**默认是私有的**，
+所以设备上需要先用一个只读令牌登录一次（只做一次，之后永久有效）：
 
-如果拉取时报 `unauthorized`，说明包的可见性还没改过来，到 GitHub 点三下即可：
+1. 创建令牌：<https://github.com/settings/tokens/new?scopes=read:packages&description=icewine-erp>
+   只需要勾选 `read:packages`，有效期随意。
+2. 在设备上登录：
 
-1. 打开 <https://github.com/users/Ladavian/packages/container/soulfound-erp/settings>
-2. 拉到页面最下面 **Danger Zone → Change package visibility**
-3. 选 **Public** 并确认
+   ```bash
+   echo "<粘贴刚生成的令牌>" | docker login ghcr.io -u Ladavian --password-stdin
+   ```
 
-> 镜像里只有程序本身，**不含你的任何数据**（数据都在设备的 `./data` 里），
-> 而且源码仓库始终是私有的。
+3. 之后正常使用：
+
+   ```bash
+   docker compose pull && docker compose up -d
+   ```
+
+> 如果之前登录失败过、Docker 缓存了坏凭据，先 `docker logout ghcr.io` 再重试。
+> 报 `unauthorized` 就是"还没登录或令牌无效"，与 compose、镜像本身无关。
+
+### 不想配令牌的两个替代方案
+
+**替代一：把镜像包设为公开**（源码仓库仍然私有）
+
+打开包的设置页 <https://github.com/users/Ladavian/packages/container/soulfound-erp/settings>
+→ 拉到最下面 **Danger Zone → Change visibility → Public** → 输入包名确认。
+之后 `docker compose pull` 就不需要登录了。
+
+> ⚠️ **这一步不可逆**：官方说明「一旦把包设为公开，就不能再改回私有」。
+> 镜像里只有程序、没有你的数据，但请自行判断是否接受。
+
+**替代二：不用镜像仓库，在设备上从源码构建**
+
+```bash
+docker compose -f docker-compose.build.yml up -d --build
+```
+
+设备需要能访问 Docker Hub 拉取 `golang` 与 `alpine` 基础镜像；
+首次构建约 1–3 分钟，之后升级用 `git pull` 再执行同一条命令。
 
 ### 升级
 
