@@ -1,0 +1,132 @@
+{{define "layout"}}<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>{{.Title}} · {{.Cfg.AppName}}</title>
+<meta name="theme-color" content="#0F2A24">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="加拿大冰酒进销存与市集利润管理">
+<link rel="manifest" href="/static/manifest.webmanifest">
+<link rel="icon" href="/static/icons/icon-192.png" sizes="192x192">
+<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="{{.Settings.CompanyName}}">
+<meta name="format-detection" content="telephone=no">
+<link rel="stylesheet" href="/static/css/app.css">
+<script src="/static/vendor/htmx.min.js" defer></script>
+<script src="/static/vendor/alpine.min.js" defer></script>
+<script src="/static/js/app.js" defer></script>
+{{block "head" .}}{{end}}
+</head>
+<body>
+<div class="app" x-data="{ menu: false }">
+
+  <aside class="sidebar" :class="menu ? 'is-open' : ''" @click.outside="menu = false">
+    <div class="sidebar__brand">
+      <div class="sidebar__logo">{{template "icon" "glass"}}</div>
+      <div>
+        <div class="sidebar__name">{{.Settings.CompanyName}}</div>
+        <div class="sidebar__sub">进销存 · 市集利润</div>
+      </div>
+    </div>
+
+    <nav class="sidebar__nav" @click="menu = false">
+      <div class="nav-group">
+        <div class="nav-group__title">日常操作</div>
+        {{template "nav_item" (dict "Href" "/" "Icon" "dashboard" "Label" "经营看板" "Page" .Nav "Key" "dashboard")}}
+        {{if .Perms.Has "market.view"}}{{template "nav_item" (dict "Href" "/markets" "Icon" "market" "Label" "市集活动" "Page" .Nav "Key" "markets")}}{{end}}
+        {{if .Perms.Has "purchase.view"}}{{template "nav_item" (dict "Href" "/purchases" "Icon" "truck" "Label" "采购入库" "Page" .Nav "Key" "purchases")}}{{end}}
+        {{if .Perms.Has "inventory.view"}}{{template "nav_item" (dict "Href" "/inventory" "Icon" "box" "Label" "库存查询" "Page" .Nav "Key" "inventory")}}{{end}}
+        {{if .Perms.Has "inventory.view"}}{{template "nav_item" (dict "Href" "/inventory/movements" "Icon" "layers" "Label" "库存流水" "Page" .Nav "Key" "movements")}}{{end}}
+        {{if .Perms.Has "inventory.adjust"}}{{template "nav_item" (dict "Href" "/inventory/adjust" "Icon" "adjust" "Label" "出入库登记" "Page" .Nav "Key" "adjust")}}{{end}}
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-group__title">档案</div>
+        {{if .Perms.Has "product.view"}}{{template "nav_item" (dict "Href" "/products" "Icon" "tag" "Label" "产品档案" "Page" .Nav "Key" "products")}}{{end}}
+        {{if .Perms.Has "partner.view"}}{{template "nav_item" (dict "Href" "/suppliers" "Icon" "truck" "Label" "供应商" "Page" .Nav "Key" "suppliers")}}{{end}}
+        {{if .Perms.Has "partner.view"}}{{template "nav_item" (dict "Href" "/customers" "Icon" "users" "Label" "客户" "Page" .Nav "Key" "customers")}}{{end}}
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-group__title">报表</div>
+        {{if .Perms.Has "report.view"}}{{template "nav_item" (dict "Href" "/reports/markets" "Icon" "chart" "Label" "市集利润报表" "Page" .Nav "Key" "report-markets")}}{{end}}
+        {{if .Perms.Has "report.view"}}{{template "nav_item" (dict "Href" "/reports/products" "Icon" "trending" "Label" "产品销售报表" "Page" .Nav "Key" "report-products")}}{{end}}
+        {{if .Perms.Has "inventory.view"}}{{template "nav_item" (dict "Href" "/reports/inventory" "Icon" "coins" "Label" "库存报表" "Page" .Nav "Key" "report-inventory")}}{{end}}
+      </div>
+
+      {{if or (.Perms.Has "user.manage") (.Perms.Has "setting.manage")}}
+      <div class="nav-group">
+        <div class="nav-group__title">系统</div>
+        {{if .Perms.Has "user.manage"}}{{template "nav_item" (dict "Href" "/users" "Icon" "user" "Label" "用户管理" "Page" .Nav "Key" "users")}}{{end}}
+        {{if .Perms.Has "setting.manage"}}{{template "nav_item" (dict "Href" "/settings" "Icon" "settings" "Label" "系统设置" "Page" .Nav "Key" "settings")}}{{end}}
+        {{if .Perms.Has "user.manage"}}{{template "nav_item" (dict "Href" "/logs" "Icon" "log" "Label" "操作日志" "Page" .Nav "Key" "logs")}}{{end}}
+      </div>
+      {{end}}
+    </nav>
+
+    <div class="sidebar__footer">
+      {{if .User}}
+      <div class="user-chip">
+        <div class="user-chip__avatar">{{.User.Initial}}</div>
+        <div style="min-width:0">
+          <div class="user-chip__name">{{.User.DisplayName}}</div>
+          <div class="user-chip__role">{{.User.RoleLabel}}</div>
+        </div>
+        <a class="user-chip__out" href="/profile" title="我的账号">{{template "icon" "user"}}</a>
+        <form method="post" action="/logout" style="margin:0">
+          <button class="user-chip__out" type="submit" title="退出登录" style="background:none;border:0;cursor:pointer;padding:4px">{{template "icon" "logout"}}</button>
+        </form>
+      </div>
+      {{end}}
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <button class="btn btn--ghost btn--icon topbar__burger" type="button" @click="menu = !menu" aria-label="菜单">{{template "icon" "menu"}}</button>
+      <div>
+        <div class="topbar__title">{{.Title}}</div>
+        <div class="topbar__crumb">{{.Settings.CompanyName}} · 冰酒进销存</div>
+      </div>
+      <div class="topbar__actions">
+        {{block "topbar_actions" .}}{{end}}
+        <a class="btn btn--ghost btn--icon" href="/profile" title="我的账号">{{template "icon" "user"}}</a>
+      </div>
+    </header>
+
+    <main class="content">
+      <div class="install-bar" id="install-bar">
+        <span>{{template "icon" "phone"}}</span>
+        <span class="install-bar__text">把「{{.Settings.CompanyName}}」装到手机桌面，市集现场一键打开。</span>
+        <span class="install-bar__actions">
+          <button class="btn btn--sm" type="button" id="install-btn">立即安装</button>
+          <button class="btn btn--sm" type="button" id="install-dismiss">稍后</button>
+        </span>
+      </div>
+
+      <div class="offline-banner" id="offline-banner">
+        <span>{{template "icon" "wifi-off"}}</span>
+        <span><strong>当前网络不可用。</strong>已保存的操作会保留在手机上，恢复网络后请确认数据是否已同步。</span>
+      </div>
+
+      {{template "flash" .}}
+
+      {{block "content" .}}{{end}}
+    </main>
+
+    <nav class="bottom-nav">
+      {{template "bottom_item" (dict "Href" "/" "Icon" "dashboard" "Label" "看板" "Page" .Nav "Key" "dashboard")}}
+      {{if .Perms.Has "market.view"}}{{template "bottom_item" (dict "Href" "/markets" "Icon" "market" "Label" "市集" "Page" .Nav "Key" "markets")}}{{end}}
+      {{if .Perms.Has "purchase.view"}}{{template "bottom_item" (dict "Href" "/purchases" "Icon" "truck" "Label" "采购" "Page" .Nav "Key" "purchases")}}{{end}}
+      {{if .Perms.Has "inventory.view"}}{{template "bottom_item" (dict "Href" "/inventory" "Icon" "box" "Label" "库存" "Page" .Nav "Key" "inventory")}}{{end}}
+      <button class="bottom-nav__item" type="button" @click="menu = true" style="background:none;border:0;font-family:inherit">{{template "icon" "menu"}}<span>更多</span></button>
+    </nav>
+  </div>
+</div>
+</body>
+</html>
+{{end}}

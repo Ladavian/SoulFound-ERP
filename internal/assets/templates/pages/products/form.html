@@ -1,0 +1,149 @@
+{{define "content"}}
+{{$p := .Product}}
+{{$backURL := "/products"}}
+{{if not .IsNew}}{{$backURL = printf "/products/%d" $p.ID}}{{end}}
+
+<div class="page-head">
+  <div class="page-head__main">
+    <div class="page-head__title">{{if .IsNew}}新建产品{{else}}编辑「{{$p.Name}}」{{end}}</div>
+    <div class="page-head__meta">
+      {{if .IsNew}}
+      <span>填好基本信息后保存，接着就能录入采购入库</span>
+      {{else}}
+      <span class="mono">{{$p.SKU}}</span>
+      {{if $p.Category}}<span>{{$p.Category}}</span>{{end}}
+      {{if not $p.IsActive}}<span class="badge badge--muted">已停用</span>{{end}}
+      {{end}}
+    </div>
+  </div>
+  <div class="page-head__actions">
+    <a class="btn" href="{{$backURL}}">{{template "icon" "back"}}<span>返回</span></a>
+  </div>
+</div>
+
+<form method="post" action="{{.FormAction}}">
+  <div class="card">
+    <div class="card__head">
+      <div class="card__title">基本信息</div>
+    </div>
+    <div class="card__body">
+      <div class="form-grid">
+        <div class="field">
+          <label class="field__label" for="sku">产品编码<span class="req">*</span></label>
+          <input class="input mono" id="sku" name="sku" type="text" value="{{$p.SKU}}" required
+                 placeholder="例如：ICE-2020-375"{{if .IsNew}} autofocus{{end}}>
+          <div class="field__hint">建议用「品牌-年份-容量」，编码不能重复。</div>
+        </div>
+        <div class="field">
+          <label class="field__label" for="name">产品名称<span class="req">*</span></label>
+          <input class="input" id="name" name="name" type="text" value="{{$p.Name}}" required
+                 placeholder="例如：威代尔冰酒">
+        </div>
+        <div class="field">
+          <label class="field__label" for="name_en">英文名</label>
+          <input class="input" id="name_en" name="name_en" type="text" value="{{$p.NameEn}}"
+                 placeholder="例如：Vidal Icewine">
+        </div>
+        <div class="field">
+          <label class="field__label" for="category">品类</label>
+          <select class="select" id="category" name="category">
+            {{$curCat := $p.Category}}
+            {{range .Categories}}<option value="{{.}}"{{if eq . $curCat}} selected{{end}}>{{.}}</option>{{end}}
+          </select>
+        </div>
+        <div class="field">
+          <label class="field__label" for="vintage">年份</label>
+          <input class="input input--num" id="vintage" name="vintage" type="number" min="0" max="2100" step="1"
+                 value="{{if $p.Vintage}}{{$p.Vintage}}{{end}}" placeholder="例如：2020">
+        </div>
+        <div class="field">
+          <label class="field__label" for="volume_ml">容量（ml）</label>
+          <input class="input input--num" id="volume_ml" name="volume_ml" type="number" min="0" max="10000" step="1"
+                 value="{{if $p.VolumeML}}{{$p.VolumeML}}{{end}}" placeholder="例如：375">
+          <div class="field__hint">常见规格：200ml / 375ml / 750ml。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card__head">
+      <div class="card__title">规格、价格与库存<span class="card__sub">售价与预警线用于市集现场录入时的默认值</span></div>
+    </div>
+    <div class="card__body">
+      <div class="form-grid">
+        <div class="field">
+          <label class="field__label" for="unit">计量单位</label>
+          <select class="select" id="unit" name="unit">
+            {{$curUnit := $p.Unit}}
+            {{range .Units}}<option value="{{.}}"{{if eq . $curUnit}} selected{{end}}>{{.}}</option>{{end}}
+          </select>
+        </div>
+        <div class="field">
+          <label class="field__label" for="bottles_per_case">每箱瓶数</label>
+          <input class="input input--num" id="bottles_per_case" name="bottles_per_case" type="number" min="1" step="1"
+                 value="{{$p.BottlesPerCase}}" placeholder="例如：6">
+          <div class="field__hint">用于按箱折算库存，单瓶填 1。</div>
+        </div>
+        <div class="field">
+          <label class="field__label" for="sale_price">建议售价</label>
+          <input class="input input--num" id="sale_price" name="sale_price" type="text" inputmode="decimal"
+                 value="{{moneyInput2 $p.SalePrice}}" placeholder="0.00">
+          <div class="field__hint">市集录入销售时的默认单价，现场可以临时改。</div>
+        </div>
+        <div class="field">
+          <label class="field__label" for="low_stock_qty">库存预警线</label>
+          <input class="input input--num" id="low_stock_qty" name="low_stock_qty" type="text" inputmode="decimal"
+                 value="{{qtyInput $p.LowStockQty}}" placeholder="6">
+          <div class="field__hint">库存低于或等于这个数量时，列表会提示补货。</div>
+        </div>
+        <div class="field">
+          <label class="field__label" for="supplier_id">供应商</label>
+          {{$curSupID := deref $p.SupplierID}}
+          <select class="select" id="supplier_id" name="supplier_id">
+            <option value="">— 无 —</option>
+            {{range .Suppliers}}<option value="{{.ID}}"{{if eq .ID $curSupID}} selected{{end}}>{{.Name}}</option>{{end}}
+          </select>
+        </div>
+        <div class="field">
+          <label class="field__label" for="image_url">图片地址</label>
+          <input class="input" id="image_url" name="image_url" type="text" value="{{$p.ImageURL}}"
+                 placeholder="https://...">
+          <div class="field__hint">可填图片 URL，方便现场比对酒标。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card__head">
+      <div class="card__title">备注与状态</div>
+    </div>
+    <div class="card__body">
+      <div class="form-grid">
+        <div class="field span-2">
+          <label class="field__label" for="notes">备注</label>
+          <textarea class="textarea" id="notes" name="notes" rows="3"
+                    placeholder="口感、获奖、包装、清关信息等，方便下次采购时参考。">{{$p.Notes}}</textarea>
+        </div>
+        <div class="field span-2">
+          <label class="checkbox">
+            <input type="checkbox" name="is_active" value="1"{{if .Product.IsActive}} checked{{end}}>
+            <span>启用（停用后不会出现在市集与采购的产品下拉里）</span>
+          </label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sticky-bar">
+    <div class="sticky-bar__info">
+      {{if .IsNew}}保存后可以录入采购入库。{{else}}改动会立即影响库存与利润统计口径。{{end}}
+    </div>
+    <div class="sticky-bar__actions">
+      <a class="btn" href="{{$backURL}}">取消</a>
+      <button class="btn btn--primary" type="submit">{{template "icon" "save"}}<span>{{if .IsNew}}创建产品{{else}}保存修改{{end}}</span></button>
+    </div>
+  </div>
+</form>
+{{end}}

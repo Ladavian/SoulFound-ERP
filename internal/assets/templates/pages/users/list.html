@@ -1,0 +1,97 @@
+{{define "content"}}
+<div class="page-head">
+  <div class="page-head__main">
+    <div class="page-head__title">用户管理</div>
+    <div class="page-head__meta"><span>共 {{.Count}} 个账号 · 每个账号登录后可见的范围由角色决定</span></div>
+  </div>
+  <div class="page-head__actions">
+    <a class="btn btn--primary" href="/users/new">{{template "icon" "plus"}}<span>新建用户</span></a>
+  </div>
+</div>
+
+<div class="alert alert--info">
+  {{template "icon" "info"}}
+  <div class="alert__body">
+    不能删除或停用最后一个管理员；也不能停用当前登录的账号。用户被停用后立即无法登录，但历史操作记录会完整保留。
+  </div>
+</div>
+
+<div class="grid grid--sidebar">
+  <div>
+    <div class="card">
+      <div class="card__head">
+        <div class="card__title">账号列表<span class="card__sub">共 {{.Count}} 个</span></div>
+      </div>
+
+      {{if .Users}}
+      <div class="table-wrap">
+        <table class="data">
+          <thead>
+            <tr>
+              <th>用户</th>
+              <th>角色</th>
+              <th>状态</th>
+              <th>最后登录</th>
+              <th>创建时间</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {{range $u := .Users}}
+            <tr>
+              <td>
+                <div class="user-chip" style="background:transparent;padding:0">
+                  <div class="user-chip__avatar">{{$u.Initial}}</div>
+                  <div style="min-width:0">
+                    <div class="strong">{{$u.DisplayName}}</div>
+                    <div class="tiny muted mono">@{{$u.Username}}</div>
+                  </div>
+                </div>
+              </td>
+              <td>
+                <span class="badge{{if eq $u.Role "admin"}} badge--warn{{else if eq $u.Role "manager"}} badge--info{{else if eq $u.Role "viewer"}} badge--muted{{end}}">{{$u.RoleLabel}}</span>
+                {{if index $.RoleDescriptionsMap $u.Role}}<div class="tiny muted" style="margin-top:4px;max-width:230px">{{index $.RoleDescriptionsMap $u.Role}}</div>{{end}}
+              </td>
+              <td>
+                {{if $u.IsActive}}<span class="badge badge--ok">启用</span>{{else}}<span class="badge badge--muted">停用</span>{{end}}
+              </td>
+              <td class="nowrap small">
+                {{if $u.LastLoginAt}}{{datetime $u.LastLoginAt}}{{else}}<span class="muted">从未登录</span>{{end}}
+              </td>
+              <td class="nowrap small muted">{{if $u.CreatedAt}}{{datetime $u.CreatedAt}}{{else}}—{{end}}</td>
+              <td>
+                <div class="row-actions">
+                  <a class="btn btn--sm" href="/users/{{$u.ID}}/edit">{{template "icon" "edit"}}<span>编辑</span></a>
+                  <a class="btn btn--sm" href="/users/{{$u.ID}}/password">{{template "icon" "check"}}<span>重置密码</span></a>
+                  <form method="post" action="/users/{{$u.ID}}/delete" class="inline" onsubmit="return confirm('删除后该账号立即失效，操作记录会保留。确定删除？')">
+                    <button class="btn btn--sm btn--ghost" type="submit" title="删除用户">{{template "icon" "trash"}}<span>删除</span></button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+      {{else}}
+      {{template "empty" (dict "Icon" "users" "Title" "还没有用户" "Hint" "除管理员之外，可以为录单的店员创建一个账号。" "ActionHref" "/users/new" "ActionLabel" "新建用户")}}
+      {{end}}
+    </div>
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="card__head"><div class="card__title">角色权限说明</div></div>
+      <div class="card__body">
+        {{range .RoleDescriptions}}
+        <div style="padding:10px 0;border-bottom:1px dashed var(--line)">
+          <div class="strong">{{.Label}}</div>
+          <div class="small text-2" style="margin-top:2px">{{.Description}}</div>
+        </div>
+        {{end}}
+        <div class="small muted" style="margin-top:12px">角色越高权限越大：管理员全部权限，经理有全部业务权限但不能管理用户，店员只能录单，只读只能查看。</div>
+      </div>
+    </div>
+  </div>
+</div>
+{{end}}

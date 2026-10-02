@@ -1,0 +1,15 @@
+{{define "content"}}
+<div class="card" style="max-width:560px;margin:40px auto">
+  <div class="card__body" style="text-align:center;padding:34px 24px">
+    <div style="width:56px;height:56px;border-radius:16px;margin:0 auto 16px;display:grid;place-items:center;background:{{if eq .Status 403}}#FDF3E2{{else}}#FCEDEB{{end}};color:{{if eq .Status 403}}#A96A12{{else}}#B4342A{{end}}">
+      {{template "icon" "alert"}}
+    </div>
+    <h1 style="font-size:20px;margin-bottom:8px">{{.Title}}</h1>
+    <p class="muted" style="margin-bottom:20px">{{.Detail}}</p>
+    <div class="btn-group" style="justify-content:center">
+      <a class="btn btn--primary" href="/">{{template "icon" "dashboard"}}<span>回到看板</span></a>
+      <button class="btn" type="button" onclick="history.back()">{{template "icon" "back"}}<span>返回上一页</span></button>
+    </div>
+  </div>
+</div>
+{{end}}

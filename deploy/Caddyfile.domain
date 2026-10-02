@@ -1,0 +1,32 @@
+# 有公网域名时用这份配置：Caddy 会自动申请并续期 Let's Encrypt 证书。
+# 前提：域名已解析到这台服务器，且 80 / 443 端口可从公网访问。
+{$ERP_DOMAIN} {
+	encode zstd gzip
+
+	reverse_proxy erp:8000 {
+		# 市集现场网络慢，适当放宽超时
+		transport http {
+			read_timeout 120s
+			write_timeout 120s
+		}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# Service Worker 必须能拿到最新的 sw.js
+		-Server
+	}
+
+	@sw path /static/sw.js
+	header @sw Cache-Control "no-cache, no-store, must-revalidate"
+
+	log {
+		output file /data/access.log {
+			roll_size 10mb
+			roll_keep 3
+		}
+	}
+}

@@ -1,0 +1,192 @@
+{{define "content"}}
+<div class="page-head">
+  <div class="page-head__main">
+    <div class="page-head__title">市集利润报表</div>
+    <div class="page-head__meta">
+      <span class="mono">{{default "全部时间" .From}} ~ {{default "今天" .To}}</span>
+      <span>净利润 = 销售额 − 售出成本 − 试饮成本 − 赠送损耗 − 活动费用</span>
+    </div>
+  </div>
+  <div class="page-head__actions">
+    <a class="btn" href="{{.ExportURL}}">{{template "icon" "download"}}<span>导出 Excel</span></a>
+    <a class="btn" href="/reports/products">{{template "icon" "trending"}}<span>产品销售报表</span></a>
+  </div>
+</div>
+
+<div class="stat-grid">
+  <div class="stat">
+    <div class="stat__label">{{template "icon" "market"}}场次</div>
+    <div class="stat__value">{{.Totals.Count}}</div>
+    <div class="stat__meta">符合条件的市集</div>
+  </div>
+  <div class="stat stat--ice">
+    <div class="stat__label">{{template "icon" "coins"}}销售额</div>
+    <div class="stat__value">{{money .Totals.Revenue}}</div>
+    <div class="stat__meta">售出 {{.Totals.SoldQty}} 瓶</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">{{template "icon" "chart"}}净利润</div>
+    <div class="stat__value {{if .Totals.NetProfit.IsNeg}}neg{{else}}pos{{end}}">{{money .Totals.NetProfit}}</div>
+    <div class="stat__meta">净利率 {{pct .Totals.NetMargin}}</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">{{template "icon" "trending"}}净利率</div>
+    <div class="stat__value {{if lt .Totals.NetMargin 0.0}}neg{{end}}">{{pct .Totals.NetMargin}}</div>
+    <div class="stat__meta">净利润 ÷ 销售额</div>
+  </div>
+  <div class="stat stat--ice">
+    <div class="stat__label">{{template "icon" "glass"}}售出 / 试饮</div>
+    <div class="stat__value stat__value--sm">{{.Totals.SoldQty}} / {{.Totals.TastingQty}} 瓶</div>
+    <div class="stat__meta">销售瓶数 / 试饮瓶数</div>
+  </div>
+  <div class="stat stat--gold">
+    <div class="stat__label">{{template "icon" "trending"}}试饮带动倍数</div>
+    <div class="stat__value">{{if .Totals.TastingQty}}{{fixed 1 .Totals.Conversion}} ×{{else}}<span class="muted">—</span>{{end}}</div>
+    <div class="stat__meta">每投入 1 瓶试饮带动卖出的瓶数</div>
+  </div>
+</div>
+
+<div class="grid grid--sidebar">
+  <div>
+    <div class="card">
+      <form class="filters" method="get" action="/reports/markets">
+        <div class="field field--wide">
+          <label class="field__label" for="q">搜索</label>
+          <input class="input" id="q" name="q" type="search" value="{{.Keyword}}" placeholder="市集名称或单据号">
+        </div>
+        <div class="field">
+          <label class="field__label" for="status">状态</label>
+          <select class="select" id="status" name="status">
+            {{$cur := .Status}}
+            {{range .StatusOptions}}<option value="{{.Value}}"{{if eq .Value $cur}} selected{{end}}>{{.Label}}</option>{{end}}
+          </select>
+        </div>
+        <div class="field">
+          <label class="field__label" for="from">开始日期</label>
+          <input class="input" id="from" name="from" type="date" value="{{.From}}">
+        </div>
+        <div class="field">
+          <label class="field__label" for="to">结束日期</label>
+          <input class="input" id="to" name="to" type="date" value="{{.To}}">
+        </div>
+        <div class="field field--actions">
+          <button class="btn btn--primary" type="submit">{{template "icon" "search"}}<span>筛选</span></button>
+          <a class="btn" href="/reports/markets">重置</a>
+        </div>
+      </form>
+
+      <div class="filters" style="border-top:0">
+        <div class="field field--wide">
+          <span class="field__label">快捷时间</span>
+          <div class="segmented">
+            {{range .Presets}}<a class="{{if .Active}}is-active{{end}}" href="/reports/markets?from={{.From}}&amp;to={{.To}}">{{.Label}}</a>{{end}}
+          </div>
+        </div>
+      </div>
+
+      <div class="card__head">
+        <div class="card__title">市集明细<span class="card__sub">共 {{.Totals.Count}} 场</span></div>
+      </div>
+
+      {{if .Rows}}
+      <div class="table-wrap">
+        <table class="data">
+          <thead>
+            <tr>
+              <th>市集</th>
+              <th>日期</th>
+              <th>状态</th>
+              <th class="num">试饮</th>
+              <th class="num">销售</th>
+              <th class="num">带动</th>
+              <th class="num">销售额</th>
+              <th class="num">售出成本</th>
+              <th class="num">试饮成本</th>
+              <th class="num">赠送损耗</th>
+              <th class="num">活动费用</th>
+              <th class="num">毛利</th>
+              <th class="num">净利润</th>
+              <th class="num">净利率</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{range .Rows}}
+            <tr>
+              <td>
+                <a class="strong" href="/markets/{{.ID}}">{{.Name}}</a>
+                <div class="tiny muted mono">{{.Code}}</div>
+              </td>
+              <td class="nowrap small">{{.DateRange}}<div class="tiny muted">{{.Days}} 天</div></td>
+              <td>{{template "market_status" .Status}}</td>
+              <td class="num">{{.TastingQty}}</td>
+              <td class="num">{{.SoldQty}}</td>
+              <td class="num">{{if .TastingQty}}{{fixed 1 .Conversion}} ×{{else}}<span class="muted">—</span>{{end}}</td>
+              <td class="num strong">{{money .Revenue}}</td>
+              <td class="num muted">{{money .CogsSold}}</td>
+              <td class="num muted">{{money .TastingCost}}</td>
+              <td class="num muted">{{money .LossCost}}</td>
+              <td class="num muted">{{money .ExpenseTotal}}</td>
+              <td class="num">{{money .GrossProfit}}</td>
+              <td class="num strong {{if .NetProfit.IsNeg}}neg{{else}}pos{{end}}">{{money .NetProfit}}</td>
+              <td class="num small {{if .NetProfit.IsNeg}}neg{{end}}">{{pct .NetMargin}}</td>
+            </tr>
+            {{end}}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td>合计</td>
+              <td class="small">{{.Totals.Count}} 场</td>
+              <td></td>
+              <td class="num">{{.Totals.TastingQty}}</td>
+              <td class="num">{{.Totals.SoldQty}}</td>
+              <td class="num">{{if .Totals.TastingQty}}{{fixed 1 .Totals.Conversion}} ×{{else}}—{{end}}</td>
+              <td class="num">{{money .Totals.Revenue}}</td>
+              <td class="num">{{money .Totals.CogsSold}}</td>
+              <td class="num">{{money .Totals.TastingCost}}</td>
+              <td class="num">{{money .Totals.LossCost}}</td>
+              <td class="num">{{money .Totals.ExpenseTotal}}</td>
+              <td class="num">{{money .Totals.GrossProfit}}</td>
+              <td class="num">{{money .Totals.NetProfit}}</td>
+              <td class="num">{{pct .Totals.NetMargin}}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      {{else}}
+      {{template "empty" (dict "Icon" "market" "Title" "这段时间没有市集数据" "Hint" "换个时间范围或状态试试；只有已结算的市集才会完整计入成本与利润。" "ActionHref" "/markets" "ActionLabel" "查看市集活动")}}
+      {{end}}
+    </div>
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="card__head">
+        <div class="card__title">活动费用明细<span class="card__sub">按金额从高到低</span></div>
+      </div>
+      <div class="card__body">
+        {{if .Expenses}}
+        {{$max := (index .Expenses 0).Total.Float}}
+        <div class="bar-list">
+          {{range .Expenses}}
+          <div>
+            <div class="bar-item__top">
+              <span class="bar-item__name">{{.Label}}</span>
+              <span class="bar-item__val">{{money .Total}}</span>
+            </div>
+            <div class="progress">
+              <div class="progress__bar" style="width: {{if $max}}{{pct (mul (div .Total.Float $max) 100.0)}}{{else}}0%{{end}}"></div>
+            </div>
+          </div>
+          {{end}}
+        </div>
+        <dl class="kv" style="margin-top:14px">
+          <dt>费用合计</dt><dd>{{money .Totals.ExpenseTotal}}</dd>
+        </dl>
+        {{else}}
+        {{template "empty" (dict "Icon" "receipt" "Title" "没有活动费用" "Hint" "在已结算市集的详情页里录入摊位费、交通费等，这里会自动汇总。")}}
+        {{end}}
+      </div>
+    </div>
+  </div>
+</div>
+{{end}}

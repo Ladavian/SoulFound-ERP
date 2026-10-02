@@ -1,0 +1,216 @@
+{{define "content"}}
+{{$p := .Product}}
+{{$showCost := .Perms.Has "report.view"}}
+
+<div class="page-head">
+  <div class="page-head__main">
+    <div class="page-head__title">{{$p.Name}}</div>
+    <div class="page-head__meta">
+      <span class="mono">{{$p.SKU}}</span>
+      {{if $p.Category}}<span>{{template "icon" "tag"}} {{$p.Category}}</span>{{end}}
+      {{if $p.Vintage}}<span>{{template "icon" "calendar"}} {{$p.Vintage}} 年</span>{{end}}
+      {{if $p.Spec}}<span>{{template "icon" "glass"}} {{$p.Spec}}</span>{{end}}
+      {{if not $p.IsActive}}<span class="badge badge--muted">已停用</span>{{end}}
+    </div>
+  </div>
+  <div class="page-head__actions">
+    <a class="btn" href="/products">{{template "icon" "back"}}<span>产品列表</span></a>
+    {{if .CanManage}}<a class="btn" href="/products/{{$p.ID}}/edit">{{template "icon" "edit"}}<span>编辑</span></a>{{end}}
+    {{if .Perms.Has "inventory.adjust"}}<a class="btn btn--primary" href="/inventory/adjust?product={{$p.ID}}">{{template "icon" "adjust"}}<span>出入库登记</span></a>{{end}}
+    {{if .CanManage}}
+    <form method="post" action="/products/{{$p.ID}}/toggle" class="inline"
+          onsubmit="return confirm('确定{{if $p.IsActive}}停用{{else}}启用{{end}}「{{$p.Name}}」？')">
+      <button class="btn" type="submit">{{template "icon" "refresh"}}<span>{{if $p.IsActive}}停用{{else}}启用{{end}}</span></button>
+    </form>
+    <form method="post" action="/products/{{$p.ID}}/delete" class="inline"
+          onsubmit="return confirm('删除后无法恢复，已有流水的产品不能删除；建议改用停用。确定删除「{{$p.Name}}」？')">
+      <button class="btn" type="submit">{{template "icon" "trash"}}<span>删除</span></button>
+    </form>
+    {{end}}
+  </div>
+</div>
+
+{{if not $p.IsActive}}
+<div class="alert alert--warn">
+  {{template "icon" "alert"}}
+  <div class="alert__body">
+    <div class="alert__title">该产品已停用</div>
+    停用后不会出现在市集与采购的产品下拉里，历史流水与成本仍会保留。
+  </div>
+</div>
+{{end}}
+
+<div class="stat-grid">
+  <div class="stat {{if $p.IsOutOfStock}}stat--danger{{else if $p.IsLowStock}}stat--warn{{end}}">
+    <div class="stat__label">{{template "icon" "box"}}当前库存</div>
+    <div class="stat__value">{{$p.StockQty}}</div>
+    <div class="stat__meta">
+      {{if $p.IsOutOfStock}}已无库存，需要尽快补货
+      {{else if $p.IsLowStock}}低于预警线 {{$p.LowStockQty}}
+      {{else}}库存正常（预警线 {{$p.LowStockQty}}）{{end}}
+    </div>
+  </div>
+  {{if $showCost}}
+  <div class="stat stat--ice">
+    <div class="stat__label">{{template "icon" "coins"}}平均成本</div>
+    <div class="stat__value stat__value--sm">{{money4 $p.AvgCost}}</div>
+    <div class="stat__meta">移动加权平均（含运费与关税分摊）</div>
+  </div>
+  <div class="stat stat--gold">
+    <div class="stat__label">{{template "icon" "layers"}}库存成本</div>
+    <div class="stat__value stat__value--sm">{{money $p.StockValue}}</div>
+    <div class="stat__meta">库存数量 × 平均成本</div>
+  </div>
+  {{end}}
+  <div class="stat">
+    <div class="stat__label">{{template "icon" "tag"}}建议售价</div>
+    <div class="stat__value stat__value--sm">{{money $p.SalePrice}}</div>
+    <div class="stat__meta">
+      {{if $showCost}}毛利率 {{pct $p.Margin}}{{else}}市集录入销售时的默认单价{{end}}
+    </div>
+  </div>
+</div>
+
+<div class="grid grid--sidebar">
+  <div>
+    <div class="card">
+      <div class="card__head">
+        <div class="card__title">市集表现<span class="card__sub">该产品在各场市集的试饮与销售</span></div>
+        <div class="card__actions"><a class="btn btn--sm" href="/reports/products">{{template "icon" "chart"}}<span>产品销售报表</span></a></div>
+      </div>
+      {{if .MarketStats}}
+      <div class="table-wrap">
+        <table class="data">
+          <thead>
+            <tr>
+              <th>市集</th>
+              <th>日期</th>
+              <th>状态</th>
+              <th class="num">试饮</th>
+              <th class="num">销售</th>
+              {{if $showCost}}<th class="num">销售额</th><th class="num">净贡献</th>{{end}}
+            </tr>
+          </thead>
+          <tbody>
+            {{range $s := .MarketStats}}
+            <tr>
+              <td>
+                <a class="strong" href="/markets/{{$s.MarketID}}">{{$s.Name}}</a>
+                <div class="tiny muted mono">{{$s.Code}}</div>
+              </td>
+              <td class="nowrap small">{{$s.DateRange}}</td>
+              <td>{{template "market_status" $s.Status}}</td>
+              <td class="num">{{$s.TastingQty}}</td>
+              <td class="num">{{$s.SoldQty}}</td>
+              {{if $showCost}}
+              <td class="num strong">{{money $s.Revenue}}</td>
+              <td class="num {{if $s.Profit.IsNeg}}neg{{else}}pos{{end}}">{{money $s.Profit}}</td>
+              {{end}}
+            </tr>
+            {{end}}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td>合计 {{len .MarketStats}} 场</td>
+              <td></td>
+              <td></td>
+              <td class="num">{{.TotalTasting}}</td>
+              <td class="num">{{.TotalSold}}</td>
+              {{if $showCost}}
+              <td class="num">{{money .TotalRevenue}}</td>
+              <td class="num {{if .TotalProfit.IsNeg}}neg{{else}}pos{{end}}">{{money .TotalProfit}}</td>
+              {{end}}
+            </tr>
+            <tr>
+              <td colspan="{{if $showCost}}7{{else}}5{{end}}">
+                试饮带动倍数
+                {{if .TotalTasting}}{{fixed 1 .Conversion}} ×{{else}}<span class="muted">—</span>{{end}}
+                <span class="tiny muted">（每投入 1 瓶试饮带动卖出的瓶数）</span>
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      {{else}}
+      {{template "empty" (dict "Icon" "market" "Title" "还没有市集记录" "Hint" "把这个产品加到市集活动里，记录试饮与销售后，这里会显示每场的表现。")}}
+      {{end}}
+    </div>
+
+    <div class="card">
+      <div class="card__head">
+        <div class="card__title">最近库存流水<span class="card__sub">最近 30 条</span></div>
+        <div class="card__actions">
+          {{if .Perms.Has "inventory.adjust"}}<a class="btn btn--sm btn--primary" href="/inventory/adjust?product={{$p.ID}}">{{template "icon" "adjust"}}<span>出入库登记</span></a>{{end}}
+        </div>
+      </div>
+      {{if .Movements}}
+      <div class="table-wrap">
+        <table class="data data--compact">
+          <thead>
+            <tr>
+              <th>日期</th>
+              <th>类型</th>
+              <th class="num">数量</th>
+              {{if $showCost}}<th class="num">单位成本</th><th class="num">金额</th>{{end}}
+              <th class="num">结存数量</th>
+              <th>来源单号</th>
+              <th>操作人</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{range $mv := .Movements}}
+            <tr>
+              <td class="nowrap small">{{date $mv.OccurredOn}}</td>
+              <td class="small">{{$mv.ReasonLabel}}</td>
+              <td class="num {{if $mv.IsIn}}pos{{end}}">{{if $mv.IsIn}}+{{end}}{{$mv.Qty}}</td>
+              {{if $showCost}}
+              <td class="num muted">{{money4 $mv.UnitCost}}</td>
+              <td class="num">{{money $mv.TotalCost}}</td>
+              {{end}}
+              <td class="num">{{$mv.QtyAfter}}</td>
+              <td class="small">{{if $mv.RefCode}}<span class="mono">{{$mv.RefCode}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
+              <td class="small">{{if $mv.CreatedByName}}{{$mv.CreatedByName}}{{else}}<span class="muted">—</span>{{end}}</td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+      <div class="card__foot">
+        <a class="btn btn--sm" href="/inventory/movements?product={{$p.ID}}">{{template "icon" "layers"}}<span>查看全部库存流水</span></a>
+      </div>
+      {{else}}
+      {{template "empty" (dict "Icon" "layers" "Title" "还没有库存流水" "Hint" "录入采购入库或做一次出入库登记后，这里会显示每次的库存变化。")}}
+      {{end}}
+    </div>
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="card__head">
+        <div class="card__title">档案信息</div>
+      </div>
+      <div class="card__body">
+        <dl class="kv">
+          <dt>产品编码</dt><dd><span class="mono">{{$p.SKU}}</span></dd>
+          <dt>英文名</dt><dd>{{if $p.NameEn}}{{$p.NameEn}}{{else}}<span class="muted">—</span>{{end}}</dd>
+          <dt>品类</dt><dd>{{if $p.Category}}{{$p.Category}}{{else}}<span class="muted">—</span>{{end}}</dd>
+          <dt>年份</dt><dd>{{if $p.Vintage}}{{$p.Vintage}}{{else}}<span class="muted">—</span>{{end}}</dd>
+          <dt>容量</dt><dd>{{if $p.VolumeML}}{{$p.VolumeML}} ml{{else}}<span class="muted">—</span>{{end}}</dd>
+          <dt>计量单位</dt><dd>{{if $p.Unit}}{{$p.Unit}}{{else}}<span class="muted">—</span>{{end}}</dd>
+          <dt>每箱瓶数</dt><dd>{{$p.BottlesPerCase}}</dd>
+          <dt>供应商</dt><dd>{{if $p.SupplierName}}{{$p.SupplierName}}{{else}}<span class="muted">—</span>{{end}}</dd>
+          <dt>库存预警线</dt><dd>{{$p.LowStockQty}}</dd>
+          <dt>创建时间</dt><dd class="small">{{datetime $p.CreatedAt}}</dd>
+          <dt>更新时间</dt><dd class="small">{{datetime $p.UpdatedAt}}</dd>
+          <dt>备注</dt><dd style="text-align:left;white-space:pre-wrap">{{if $p.Notes}}{{$p.Notes}}{{else}}<span class="muted">—</span>{{end}}</dd>
+        </dl>
+        {{if $p.ImageURL}}
+        <div style="margin-top:12px">
+          <img src="{{$p.ImageURL}}" alt="{{$p.Name}}" style="width:100%;border-radius:10px;border:1px solid var(--line)">
+        </div>
+        {{end}}
+      </div>
+    </div>
+  </div>
+</div>
+{{end}}

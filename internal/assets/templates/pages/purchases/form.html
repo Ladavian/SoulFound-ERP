@@ -1,0 +1,234 @@
+{{define "content"}}
+{{$p := .Purchase}}
+<script>
+window.purchaseLines = function () {
+  return {
+    rows: {{.RowsJSON}},
+    products: {{.ProductsJSON}},
+    alloc: {{if $p.AllocMethod}}"{{$p.AllocMethod}}"{{else}}"amount"{{end}},
+    extra: { shipping: {{moneyInput2 $p.ShippingCost}}, tariff: {{moneyInput2 $p.TariffCost}}, other: {{moneyInput2 $p.OtherCost}} },
+    addRow: function () { this.rows.push({ productId: 0, qty: 0, unitPrice: 0, note: '' }); },
+    removeRow: function (i) { this.rows.splice(i, 1); if (!this.rows.length) this.addRow(); },
+    onProduct: function (row) {
+      if (row.productId) {
+        var p = this.products.find(function (x) { return String(x.id) === String(row.productId); });
+        if (p) { if (!row.unitPrice) { row.unitPrice = p.price; } }
+      }
+    },
+    lineAmount: function (row) { return (parseFloat(row.qty) || 0) * (parseFloat(row.unitPrice) || 0); },
+    goods: function () { var t = 0, self = this; this.rows.forEach(function (r) { t += self.lineAmount(r); }); return t; },
+    extraTotal: function () { return (parseFloat(this.extra.shipping) || 0) + (parseFloat(this.extra.tariff) || 0) + (parseFloat(this.extra.other) || 0); },
+    grandTotal: function () { return this.goods() + this.extraTotal(); },
+    fmt: function (v) { return (Math.round((v || 0) * 100) / 100).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  };
+};
+</script>
+
+<div class="page-head">
+  <div class="page-head__main">
+    <div class="page-head__title">{{if .IsNew}}录入采购入库{{else}}编辑采购单{{end}}</div>
+    <div class="page-head__meta">
+      <span class="mono">{{if .IsNew}}{{.NextCode}}{{else}}{{$p.Code}}{{end}}</span>
+      {{if not .IsNew}}{{template "purchase_status" $p.Status}}{{end}}
+      <span>{{template "icon" "calendar"}} {{if .IsNew}}{{.Today}}{{else}}{{date $p.PurchaseDate}}{{end}}</span>
+      {{if not .IsNew}}<span>{{$p.ItemCount}} 行明细 · {{$p.TotalQty}} 瓶</span>{{end}}
+    </div>
+  </div>
+  <div class="page-head__actions">
+    <a class="btn" href="{{if .IsNew}}/purchases{{else}}/purchases/{{$p.ID}}{{end}}">{{template "icon" "back"}}<span>{{if .IsNew}}返回列表{{else}}返回详情{{end}}</span></a>
+  </div>
+</div>
+
+<div class="alert alert--info">
+  {{template "icon" "info"}}
+  <div class="alert__body">
+    保存为草稿后，确认无误再点「确认入库」才会写入库存。数量与单价按实际到货填写；附加费用会按所选分摊方式计入每一行的到岸成本。
+  </div>
+</div>
+
+<form method="post" action="{{.FormAction}}" x-data="purchaseLines()">
+  <div class="grid grid--sidebar">
+    <div>
+      <div class="card">
+        <div class="card__head">
+          <div class="card__title">单据信息<span class="card__sub">采购日期必填，供应商可留空</span></div>
+        </div>
+        <div class="card__body">
+          <div class="form-grid">
+            <div class="field">
+              <label class="field__label" for="purchase_date">采购日期<span class="req">*</span></label>
+              <input class="input" id="purchase_date" name="purchase_date" type="date" required
+                     value="{{if .IsNew}}{{.Today}}{{else}}{{date $p.PurchaseDate}}{{end}}">
+            </div>
+            <div class="field">
+              <label class="field__label" for="supplier_id">供应商</label>
+              {{/* 供应商 ID 是 *int64，模板无法直接与 .ID 比较，这里统一转成字符串再比较 */}}
+              {{$sid := json $p.SupplierID}}
+              <select class="select" id="supplier_id" name="supplier_id">
+                <option value="">— 未指定 —</option>
+                {{range .Suppliers}}<option value="{{.ID}}"{{if eq (printf "%d" .ID) $sid}} selected{{end}}>{{.Name}}</option>{{end}}
+              </select>
+            </div>
+            <div class="field">
+              <label class="field__label" for="alloc_method">附加费用分摊方式</label>
+              <select class="select" id="alloc_method" name="alloc_method">
+                {{$cur := $p.AllocMethod}}
+                {{range .AllocOptions}}<option value="{{.Value}}"{{if eq .Value $cur}} selected{{end}}>{{.Label}}</option>{{end}}
+              </select>
+              <div class="field__hint">按金额：附加费用按各行货款占比分摊；按数量：按入库瓶数平均分摊。</div>
+            </div>
+            <div class="field">
+              <label class="field__label" for="code">单据号</label>
+              <input class="input mono" id="code" type="text" value="{{if .IsNew}}{{.NextCode}}{{else}}{{$p.Code}}{{end}}" readonly>
+              <div class="field__hint">单据号由系统自动生成，不能修改。</div>
+            </div>
+            <div class="field span-2">
+              <label class="field__label" for="notes">备注</label>
+              <textarea class="textarea" id="notes" name="notes" rows="2" placeholder="到货情况、发票号、验货说明……">{{$p.Notes}}</textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card__head">
+          <div class="card__title">采购明细<span class="card__sub">单价为不含附加费用的采购单价；数量与单价都可以直接改</span></div>
+          <div class="card__actions">
+            <button class="btn btn--sm" type="button" @click="addRow()">{{template "icon" "plus"}}<span>添加一行</span></button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="data entry-table">
+            <thead>
+              <tr>
+                <th style="min-width:220px">产品</th>
+                <th class="num" style="width:96px">数量</th>
+                <th class="num" style="width:112px">单价</th>
+                <th class="num" style="width:112px">货款</th>
+                <th style="min-width:150px">备注 / 批次</th>
+                <th style="width:52px"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="(row, index) in rows" :key="index">
+                <tr>
+                  <td class="entry-cell--name" data-label="产品">
+                    {{/* placeholder 用 value="0"：保证 select 始终有选中项，提交时行与行之间不会错位。
+                         :selected 兜底：行是 Alpine 克隆出来的，选项出现得比 x-model 初始化晚，靠它恢复已选产品。 */}}
+                    <select class="select" name="product_id" x-model="row.productId"
+                            @change="row.productId = $event.target.value; onProduct(row)">
+                      <option value="0">— 选择产品 —</option>
+                      <template x-for="p in products" :key="p.id">
+                        <option :value="p.id" :selected="String(p.id) === String(row.productId)" x-text="p.label + '（售价 ' + p.price + ' / 库存 ' + p.stock + '）'"></option>
+                      </template>
+                    </select>
+                  </td>
+                  <td class="num" data-label="数量">
+                    <input class="input entry-input" name="qty" type="text" inputmode="decimal" x-model="row.qty" placeholder="0">
+                  </td>
+                  <td class="num" data-label="单价">
+                    <input class="input entry-input entry-input--price" name="unit_price" type="text" inputmode="decimal" x-model="row.unitPrice" placeholder="0.00">
+                  </td>
+                  <td class="num entry-cell--calc" data-label="货款">
+                    <span class="strong" x-text="'{{default "$" .Settings.CurrencySymbol}}' + fmt(lineAmount(row))"></span>
+                  </td>
+                  <td data-label="备注">
+                    <input class="input entry-input" name="note" type="text" x-model="row.note" placeholder="批次/备注" style="text-align:left">
+                  </td>
+                  <td class="right" data-label="">
+                    <button class="btn btn--ghost btn--icon" type="button" @click="removeRow(index)" title="删除该行">{{template "icon" "trash"}}</button>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+            <tfoot>
+              <tr>
+                <td>合计</td>
+                <td class="num muted">见右侧汇总</td>
+                <td class="num"></td>
+                <td class="num">{{default "$" .Settings.CurrencySymbol}}<span x-text="fmt(goods())"></span></td>
+                <td colspan="2"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        <div class="card__foot small muted">
+          没有合适的产品？先到 <a href="/products">产品档案</a> 新建产品；每行都要选择产品并填写数量，空行会被自动忽略。
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card__head">
+          <div class="card__title">附加费用<span class="card__sub">这些费用会按所选方式分摊到每一行的到岸成本，进而影响库存平均成本</span></div>
+        </div>
+        <div class="card__body">
+          <div class="form-grid form-grid--3">
+            <div class="field">
+              <label class="field__label" for="shipping_cost">运费</label>
+              <input class="input input--num" id="shipping_cost" name="shipping_cost" type="text" inputmode="decimal"
+                     x-model="extra.shipping" value="{{moneyInput2 $p.ShippingCost}}" placeholder="0.00">
+              <div class="field__hint">国际运输、清关转运、本地配送等。</div>
+            </div>
+            <div class="field">
+              <label class="field__label" for="tariff_cost">关税 / 税费</label>
+              <input class="input input--num" id="tariff_cost" name="tariff_cost" type="text" inputmode="decimal"
+                     x-model="extra.tariff" value="{{moneyInput2 $p.TariffCost}}" placeholder="0.00">
+              <div class="field__hint">关税、消费税、报关服务费。</div>
+            </div>
+            <div class="field">
+              <label class="field__label" for="other_cost">其他费用</label>
+              <input class="input input--num" id="other_cost" name="other_cost" type="text" inputmode="decimal"
+                     x-model="extra.other" value="{{moneyInput2 $p.OtherCost}}" placeholder="0.00">
+              <div class="field__hint">仓储、装卸、保险等杂费。</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <div class="card__head">
+          <div class="card__title">本单合计<span class="card__sub">随录入实时变化</span></div>
+        </div>
+        <div class="card__body">
+          <div class="pl">
+            <div class="pl__row">
+              <span class="pl__label">货款合计<small x-text="rows.length + ' 行明细'"></small></span>
+              <span class="pl__val" x-text="'{{default "$" .Settings.CurrencySymbol}}' + fmt(goods())"></span>
+            </div>
+            <div class="pl__row pl__row--sub">
+              <span class="pl__label">附加费用合计<small>运费 + 关税 + 其他费用</small></span>
+              <span class="pl__val" x-text="'{{default "$" .Settings.CurrencySymbol}}' + fmt(extraTotal())"></span>
+            </div>
+            <div class="pl__row pl__row--total">
+              <span class="pl__label">合计<small>到岸总成本</small></span>
+              <span class="pl__val" x-text="'{{default "$" .Settings.CurrencySymbol}}' + fmt(grandTotal())"></span>
+            </div>
+          </div>
+          <div class="small muted" style="margin-top:10px">
+            保存后，系统会按所选分摊方式把附加费用分到每一行，得到每瓶的到岸成本。
+          </div>
+        </div>
+        <div class="card__foot" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <div class="small muted" style="flex:1;min-width:150px">保存为草稿后，确认无误再点「确认入库」才会写入库存。</div>
+          <div style="display:flex;gap:8px">
+            <a class="btn" href="{{if .IsNew}}/purchases{{else}}/purchases/{{$p.ID}}{{end}}">取消</a>
+            <button class="btn btn--primary" type="submit">{{template "icon" "save"}}<span>{{if .IsNew}}保存草稿{{else}}保存修改{{end}}</span></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card__head"><div class="card__title">填写提示</div></div>
+        <div class="card__body tiny text-2" style="line-height:1.8">
+          1. 先选产品，单价会自动带出售价，可改成实际采购价。<br>
+          2. 数量单位是「瓶」，支持小数。<br>
+          3. 附加费用留在「附加费用」卡里填，不要加到单价上。<br>
+          4. 保存后单据是草稿状态，库存不变；点「确认入库」才会写库存并重算移动加权平均成本。
+        </div>
+      </div>
+    </div>
+  </div>
+</form>
+{{end}}

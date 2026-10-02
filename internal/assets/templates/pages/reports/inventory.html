@@ -1,0 +1,167 @@
+{{define "content"}}
+<div class="page-head">
+  <div class="page-head__main">
+    <div class="page-head__title">库存报表</div>
+    <div class="page-head__meta">
+      <span>按库存价值从高到低排列，可直接打印用于月度盘点与估值</span>
+      <span>共 {{.Count}} 个 SKU</span>
+    </div>
+  </div>
+  <div class="page-head__actions">
+    <a class="btn" href="{{.ExportURL}}">{{template "icon" "download"}}<span>导出 Excel</span></a>
+    <a class="btn" href="/inventory">{{template "icon" "box"}}<span>库存查询</span></a>
+  </div>
+</div>
+
+<div class="stat-grid">
+  <div class="stat">
+    <div class="stat__label">{{template "icon" "tag"}}SKU 数</div>
+    <div class="stat__value">{{.Count}}</div>
+    <div class="stat__meta">含已停用档案</div>
+  </div>
+  <div class="stat stat--ice">
+    <div class="stat__label">{{template "icon" "box"}}库存数量</div>
+    <div class="stat__value">{{.TotalQty}}</div>
+    <div class="stat__meta">全部产品合计</div>
+  </div>
+  {{if .Perms.Has "report.view"}}
+  <div class="stat stat--gold">
+    <div class="stat__label">{{template "icon" "coins"}}库存总值</div>
+    <div class="stat__value">{{money .TotalValue}}</div>
+    <div class="stat__meta">按移动加权平均成本</div>
+  </div>
+  {{end}}
+</div>
+
+<div class="grid grid--sidebar">
+  <div>
+    <div class="card">
+      <div class="card__head">
+        <div class="card__title">库存估值表<span class="card__sub">数据截至 {{today}}</span></div>
+        <div class="card__actions">
+          <button class="btn btn--sm" type="button" onclick="window.print()">{{template "icon" "print"}}<span>打印</span></button>
+        </div>
+      </div>
+
+      {{if .Products}}
+      <div class="table-wrap">
+        <table class="data">
+          <thead>
+            <tr>
+              <th>产品</th>
+              <th>品类</th>
+              <th class="num">库存数量</th>
+              {{if $.Perms.Has "report.view"}}
+              <th class="num">平均成本</th>
+              <th class="num">库存成本</th>
+              {{end}}
+              <th class="num">建议售价</th>
+              {{if $.Perms.Has "report.view"}}<th class="num">潜在毛利率</th>{{end}}
+              <th>供应商</th>
+              <th>状态</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{range .Products}}
+            <tr>
+              <td>
+                <span class="strong">{{.Name}}</span>
+                <div class="tiny muted">
+                  <span class="mono">{{.SKU}}</span>
+                  {{if .Vintage}} · {{.Vintage}} 年{{end}}
+                  {{if .Spec}} · {{.Spec}}{{end}}
+                </div>
+              </td>
+              <td class="small">{{default "—" .Category}}</td>
+              <td class="num strong">{{.StockQty}} <span class="tiny muted">{{default "瓶" .Unit}}</span></td>
+              {{if $.Perms.Has "report.view"}}
+              <td class="num muted">{{money4 .AvgCost}}</td>
+              <td class="num">{{money .StockValue}}</td>
+              {{end}}
+              <td class="num">{{if .SalePrice}}{{money .SalePrice}}{{else}}<span class="muted">—</span>{{end}}</td>
+              {{if $.Perms.Has "report.view"}}
+              <td class="num small">
+                {{if .SalePrice}}{{pct .Margin}}{{else}}<span class="muted">—</span>{{end}}
+              </td>
+              {{end}}
+              <td class="small">{{default "—" .SupplierName}}</td>
+              <td>
+                {{if .IsActive}}<span class="badge badge--ok">在用</span>{{else}}<span class="badge badge--muted">停用</span>{{end}}
+              </td>
+            </tr>
+            {{end}}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td>合计</td>
+              <td class="small">{{.Count}} 个 SKU</td>
+              <td class="num">{{.TotalQty}}</td>
+              {{if .Perms.Has "report.view"}}
+              <td></td>
+              <td class="num">{{money .TotalValue}}</td>
+              {{end}}
+              <td></td>
+              {{if .Perms.Has "report.view"}}<td></td>{{end}}
+              <td></td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      {{else}}
+      {{template "empty" (dict "Icon" "coins" "Title" "还没有库存数据" "Hint" "先在产品档案里建好产品，再用出入库登记录入期初库存。" "ActionHref" "/inventory/adjust" "ActionLabel" "出入库登记")}}
+      {{end}}
+    </div>
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="card__head">
+        <div class="card__title">按品类汇总<span class="card__sub">仅统计在用产品</span></div>
+      </div>
+      {{if .CategoryStock}}
+      <div class="table-wrap">
+        <table class="data data--compact">
+          <thead>
+            <tr>
+              <th>品类</th>
+              <th class="num">SKU</th>
+              <th class="num">数量</th>
+              {{if .Perms.Has "report.view"}}<th class="num">成本金额</th>{{end}}
+            </tr>
+          </thead>
+          <tbody>
+            {{range .CategoryStock}}
+            <tr>
+              <td>{{default "未分类" .Category}}</td>
+              <td class="num">{{.SKUCount}}</td>
+              <td class="num">{{.Qty}}</td>
+              {{if $.Perms.Has "report.view"}}<td class="num">{{money .Value}}</td>{{end}}
+            </tr>
+            {{end}}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td>合计</td>
+              <td class="num">{{.Count}}</td>
+              <td class="num">{{.TotalQty}}</td>
+              {{if .Perms.Has "report.view"}}<td class="num">{{money .TotalValue}}</td>{{end}}
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      {{else}}
+      {{template "empty" (dict "Icon" "layers" "Title" "还没有品类数据" "Hint" "在产品档案里填写品类后，这里会自动汇总。")}}
+      {{end}}
+    </div>
+
+    <div class="card">
+      <div class="card__head"><div class="card__title">口径说明</div></div>
+      <div class="card__body tiny text-2" style="line-height:1.8">
+        库存数量来自全部出入库流水的累计；平均成本为<strong>移动加权平均成本</strong>（采购到岸成本，含运费与关税分摊）。<br>
+        潜在毛利率按「建议售价 − 平均成本」÷ 建议售价计算，仅供参考，实际毛利以市集结算为准。
+      </div>
+    </div>
+  </div>
+</div>
+{{end}}

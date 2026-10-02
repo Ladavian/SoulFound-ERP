@@ -1,0 +1,25 @@
+# 数据与密钥：绝对不能提交
+data/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+secret.key
+.env
+.env.local
+backups/
+root.crt
+
+# Go 本地缓存（为适配沙箱环境放在工作区内）
+.gopath/
+
+# 编译产物
+bin/
+erp
+dist/
+tmp/
+
+# 编辑器与系统
+.DS_Store
+.idea/
+.vscode/
+*.swp

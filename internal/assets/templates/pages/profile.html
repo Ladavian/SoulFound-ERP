@@ -1,0 +1,147 @@
+{{define "content"}}
+{{$u := .User}}
+
+<div class="page-head">
+  <div class="page-head__main">
+    <div class="page-head__title">我的账号</div>
+    <div class="page-head__meta"><span>查看自己的资料、修改密码与安装到手机桌面</span></div>
+  </div>
+</div>
+
+<div class="grid grid--sidebar">
+  <div>
+    <div class="card">
+      <div class="card__head"><div class="card__title">账号信息</div></div>
+      <div class="card__body">
+        <div class="user-chip" style="background:var(--brand-50);padding:12px;margin-bottom:14px">
+          <div class="user-chip__avatar" style="width:44px;height:44px;flex:0 0 44px;font-size:18px">{{$u.Initial}}</div>
+          <div style="min-width:0">
+            <div class="strong" style="font-size:15px">{{$u.DisplayName}}</div>
+            <div class="tiny muted mono">@{{$u.Username}} · {{$u.RoleLabel}}</div>
+          </div>
+        </div>
+        <dl class="kv">
+          <dt>用户名</dt><dd class="mono" style="font-weight:500">{{$u.Username}}</dd>
+          <dt>姓名</dt><dd>{{if $u.FullName}}{{$u.FullName}}{{else}}<span class="muted">未填写</span>{{end}}</dd>
+          <dt>角色</dt><dd><span class="badge{{if eq $u.Role "admin"}} badge--warn{{else if eq $u.Role "manager"}} badge--info{{else if eq $u.Role "viewer"}} badge--muted{{end}}">{{$u.RoleLabel}}</span></dd>
+          <dt style="grid-column:1 / -1;text-align:left">角色权限说明</dt>
+          <dd style="grid-column:1 / -1;text-align:left;font-weight:450;color:var(--text-2)">{{default "—" .RoleDescription}}</dd>
+          <dt>最后登录</dt><dd>{{if $u.LastLoginAt}}{{datetime $u.LastLoginAt}}{{else}}—{{end}}</dd>
+          <dt>创建时间</dt><dd>{{if $u.CreatedAt}}{{datetime $u.CreatedAt}}{{else}}—{{end}}</dd>
+        </dl>
+        <div class="small muted" style="margin-top:12px">姓名、角色等信息需要管理员在「用户管理」里修改。</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card__head"><div class="card__title">修改密码<span class="card__sub">建议定期更换</span></div></div>
+      <form method="post" action="/profile/password">
+        <div class="card__body">
+          <div class="form-grid">
+            <div class="field span-2">
+              <label class="field__label" for="old_password">当前密码<span class="req">*</span></label>
+              <input class="input" id="old_password" name="old_password" type="password" required
+                     autocomplete="current-password" placeholder="用于确认是你本人操作">
+            </div>
+            <div class="field">
+              <label class="field__label" for="new_password">新密码<span class="req">*</span></label>
+              <input class="input" id="new_password" name="new_password" type="password" required
+                     autocomplete="new-password" placeholder="新密码至少 6 位">
+              <div class="field__hint">新密码至少 6 位。</div>
+            </div>
+            <div class="field">
+              <label class="field__label" for="confirm_password">确认新密码<span class="req">*</span></label>
+              <input class="input" id="confirm_password" name="confirm_password" type="password" required
+                     autocomplete="new-password" placeholder="再输入一次">
+              <div class="field__hint">两次输入必须一致。</div>
+            </div>
+          </div>
+        </div>
+        <div class="card__foot" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <div class="small muted">修改成功后请用新密码登录其他设备。</div>
+          <div style="margin-left:auto">
+            <button class="btn btn--primary" type="submit">{{template "icon" "save"}}<span>保存新密码</span></button>
+          </div>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <div class="card__head"><div class="card__title">安装到手机桌面（PWA）<span class="card__sub">像 App 一样全屏打开</span></div></div>
+      <div class="card__body">
+        <div class="grid grid--2">
+          <div>
+            <div class="strong">{{template "icon" "phone"}} iPhone / iPad（Safari）</div>
+            <ol class="small text-2" style="margin:8px 0 0;padding-left:20px;line-height:1.9">
+              <li>用 Safari 打开本站（必须是 Safari，微信内置浏览器不支持安装）。</li>
+              <li>点击屏幕底部的「分享」按钮（方框 + 向上箭头）。</li>
+              <li>在弹出菜单里选择「添加到主屏幕」。</li>
+              <li>确认名称后点「添加」，桌面就会出现图标。</li>
+            </ol>
+          </div>
+          <div>
+            <div class="strong">{{template "icon" "phone"}} Android（Chrome）</div>
+            <ol class="small text-2" style="margin:8px 0 0;padding-left:20px;line-height:1.9">
+              <li>用 Chrome 打开本站。</li>
+              <li>点击右上角的「⋮」菜单。</li>
+              <li>选择「安装应用」或「添加到主屏幕」。</li>
+              <li>按提示确认安装，图标会出现在桌面或应用列表。</li>
+            </ol>
+          </div>
+        </div>
+        <div class="alert alert--info" style="margin:14px 0 0">
+          {{template "icon" "info"}}
+          <div class="alert__body">
+            安装后可以全屏打开（没有浏览器地址栏），市集现场一键进入；网络不稳时页面顶部会提示，已保存的操作会留在手机上，等恢复网络后再确认是否同步。
+            页面里出现的「立即安装」按钮只在浏览器允许安装时显示，点它等同于上面的步骤。
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="card__head"><div class="card__title">退出登录</div></div>
+      <div class="card__body">
+        <p class="small text-2" style="margin:0 0 12px">
+          退出后需要重新输入用户名与密码。在别人手机上或市集结束后，记得退出登录。
+        </p>
+        <form method="post" action="/logout" style="margin:0">
+          <button class="btn btn--danger btn--block" type="submit" onclick="return confirm('确定退出当前账号？')">{{template "icon" "logout"}}<span>退出登录</span></button>
+        </form>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card__head"><div class="card__title">常用入口</div></div>
+      <div class="action-list">
+        <a class="action-item" href="/">
+          <span class="action-item__icon">{{template "icon" "dashboard"}}</span>
+          <div class="action-item__main">
+            <div class="action-item__title">经营看板</div>
+            <div class="action-item__sub">本月销售、利润与库存概览</div>
+          </div>
+          <span class="action-item__go">{{template "icon" "right"}}</span>
+        </a>
+        <a class="action-item" href="/markets">
+          <span class="action-item__icon">{{template "icon" "market"}}</span>
+          <div class="action-item__main">
+            <div class="action-item__title">市集活动</div>
+            <div class="action-item__sub">现场录入试饮与销售</div>
+          </div>
+          <span class="action-item__go">{{template "icon" "right"}}</span>
+        </a>
+        <a class="action-item" href="/inventory">
+          <span class="action-item__icon">{{template "icon" "box"}}</span>
+          <div class="action-item__main">
+            <div class="action-item__title">库存查询</div>
+            <div class="action-item__sub">看每个产品的库存与预警</div>
+          </div>
+          <span class="action-item__go">{{template "icon" "right"}}</span>
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+{{end}}

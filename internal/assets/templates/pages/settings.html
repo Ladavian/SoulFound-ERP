@@ -1,0 +1,154 @@
+{{define "content"}}
+<div class="page-head">
+  <div class="page-head__main">
+    <div class="page-head__title">系统设置</div>
+    <div class="page-head__meta"><span>公司信息、业务默认值与数据维护</span></div>
+  </div>
+</div>
+
+<form method="post" action="/settings">
+  <div class="card">
+    <div class="card__head">
+      <div class="card__title">公司信息与币种<span class="card__sub">显示在侧栏标题与所有页面</span></div>
+    </div>
+    <div class="card__body">
+      <div class="form-grid">
+        <div class="field span-2">
+          <label class="field__label" for="company_name">公司名称</label>
+          <input class="input" id="company_name" name="company_name" type="text" value="{{.FormSettings.CompanyName}}"
+                 placeholder="例如：Northice Icewine">
+          <div class="field__hint">显示在侧栏顶部、页面标题与安装提示里。</div>
+        </div>
+        <div class="field">
+          <label class="field__label" for="currency">币种代码</label>
+          <input class="input" id="currency" name="currency" type="text" value="{{.FormSettings.Currency}}"
+                 placeholder="CAD" autocomplete="off">
+          <div class="field__hint">例如 CAD，仅作记录与报表标注。</div>
+        </div>
+        <div class="field">
+          <label class="field__label" for="currency_symbol">货币符号</label>
+          <input class="input" id="currency_symbol" name="currency_symbol" type="text" value="{{.FormSettings.CurrencySymbol}}"
+                 placeholder="C$" autocomplete="off">
+          <div class="field__hint">例如 C$，会显示在所有金额前面。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card__head">
+      <div class="card__title">业务默认值<span class="card__sub">新建产品与市集时的预填值</span></div>
+    </div>
+    <div class="card__body">
+      <div class="form-grid">
+        <div class="field">
+          <label class="field__label" for="default_low_qty">默认库存预警线</label>
+          <input class="input input--num" id="default_low_qty" name="default_low_qty" type="text" inputmode="decimal"
+                 value="{{qtyInput .FormSettings.DefaultLowQty}}" autocomplete="off">
+          <div class="field__hint">新建产品时的默认库存预警线。</div>
+        </div>
+        <div class="field">
+          <label class="field__label" for="default_booth_fee">默认摊位费</label>
+          <input class="input input--num" id="default_booth_fee" name="default_booth_fee" type="text" inputmode="decimal"
+                 value="{{moneyInput2 .FormSettings.DefaultBoothFee}}" autocomplete="off">
+          <div class="field__hint">新建市集活动时，费用里的摊位费会预填这个金额。</div>
+        </div>
+        <div class="field span-2">
+          <label class="checkbox" for="allow_negative_stock">
+            <input id="allow_negative_stock" name="allow_negative_stock" type="checkbox" value="1"{{if .FormSettings.AllowNegative}} checked{{end}}>
+            <span>允许库存为负数</span>
+          </label>
+          <div class="field__hint">默认关闭。开启后允许库存为负数，一般只在盘点不及时的情况下临时开启。</div>
+        </div>
+      </div>
+    </div>
+    <div class="card__foot" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <div class="small muted">{{if .FormSettings.UpdatedAt}}上次保存：{{datetime .FormSettings.UpdatedAt}}{{else}}尚未保存过设置{{end}}</div>
+      <div style="margin-left:auto">
+        <button class="btn btn--primary" type="submit">{{template "icon" "save"}}<span>保存设置</span></button>
+      </div>
+    </div>
+  </div>
+</form>
+
+<div class="card">
+  <div class="card__head"><div class="card__title">数据维护<span class="card__sub">重算库存与备份数据库</span></div></div>
+  <div class="card__body" style="display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
+      <div style="flex:1;min-width:230px">
+        <div class="strong">重算全部库存</div>
+        <div class="small text-2" style="margin-top:4px">
+          按时间顺序回放全部库存流水，重新计算每个产品的库存数量与移动加权平均成本。
+          正常录单不会用到它；当库存或成本看起来不对（例如手工改过数据库、导入过历史数据、或发现某段时间的流水被误删）时，可以用它把缓存值修正回来。
+          重算只影响产品的库存与成本缓存，不会新增或删除任何流水，操作不可撤销，建议先备份数据库。
+        </div>
+      </div>
+      <form method="post" action="/settings/rebuild" onsubmit="return confirm('将根据全部库存流水重算每个产品的库存数量与移动加权平均成本，用于修正历史数据。确定继续？')">
+        <button class="btn btn--danger" type="submit">{{template "icon" "refresh"}}<span>重算全部库存</span></button>
+      </form>
+    </div>
+
+    <hr style="margin:0">
+
+    <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
+      <div style="flex:1;min-width:230px">
+        <div class="strong">立即备份数据库</div>
+        <div class="small text-2" style="margin-top:4px">
+          把当前数据完整复制一份到备份目录 <span class="mono">{{.BackupDir}}</span>，文件名为带时间戳的数据库副本。
+          备份可以在服务器文件系统里直接取走，建议在重算库存、批量导入或月末结账前先做一次。
+        </div>
+      </div>
+      <form method="post" action="/settings/backup" onsubmit="return confirm('将在备份目录生成一份数据库副本。确定立即备份？')">
+        <button class="btn btn--primary" type="submit">{{template "icon" "save"}}<span>立即备份数据库</span></button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__head"><div class="card__title">系统信息</div></div>
+  <div class="card__body">
+    <dl class="kv">
+      <dt>应用版本</dt><dd>{{default "—" .Version}}</dd>
+      <dt>数据库结构版本</dt><dd>v{{.SchemaVersion}}</dd>
+      <dt>数据文件路径</dt><dd class="mono" style="font-weight:500">{{.DBPath}}</dd>
+      <dt>备份目录</dt><dd class="mono" style="font-weight:500">{{.BackupDir}}</dd>
+      <dt>登录会话有效期</dt><dd>{{.SessionHours}} 小时</dd>
+    </dl>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__head">
+    <div class="card__title">最近操作<span class="card__sub">最新 10 条</span></div>
+    <div class="card__actions">
+      <a class="btn btn--sm" href="/logs">{{template "icon" "log"}}<span>查看全部日志</span></a>
+    </div>
+  </div>
+  {{if .Logs}}
+  <div class="table-wrap">
+    <table class="data data--compact">
+      <thead>
+        <tr><th>时间</th><th>操作人</th><th>动作</th><th>详情</th></tr>
+      </thead>
+      <tbody>
+        {{range $i, $l := .Logs}}{{if lt $i 10}}
+        <tr>
+          <td class="nowrap small muted">{{datetime $l.CreatedAt}}</td>
+          <td class="nowrap small">{{default "系统" $l.Username}}</td>
+          <td><span class="badge badge--muted">{{$l.Action}}</span></td>
+          <td class="small text-2">
+            {{$l.Detail}}
+            {{if $l.Entity}}<span class="tiny muted">{{$l.Entity}}{{with $l.EntityID}} #{{.}}{{end}}</span>{{end}}
+          </td>
+        </tr>
+        {{end}}{{end}}
+      </tbody>
+    </table>
+  </div>
+  {{else}}
+  {{template "empty" (dict "Icon" "log" "Title" "还没有操作记录" "Hint" "任何改动设置、库存或单据的操作都会在这里留下痕迹。")}}
+  {{end}}
+  <div class="card__foot small muted">日志只增不改，建议定期备份数据库。</div>
+</div>
+{{end}}

@@ -1,0 +1,133 @@
+{{define "content"}}
+<div class="page-head">
+  <div class="page-head__main">
+    <div class="page-head__title">产品销售报表</div>
+    <div class="page-head__meta">
+      <span class="mono">{{default "全部时间" .From}} ~ {{default "今天" .To}}</span>
+      <span>按已结算市集的销售与试饮数据统计，带动倍数 = 销售瓶数 ÷ 试饮瓶数</span>
+    </div>
+  </div>
+  <div class="page-head__actions">
+    <a class="btn" href="{{.ExportURL}}">{{template "icon" "download"}}<span>导出 Excel</span></a>
+    <a class="btn" href="/reports/markets">{{template "icon" "market"}}<span>市集利润报表</span></a>
+  </div>
+</div>
+
+<div class="stat-grid">
+  <div class="stat stat--ice">
+    <div class="stat__label">{{template "icon" "coins"}}销售额</div>
+    <div class="stat__value">{{money .TotalRevenue}}</div>
+    <div class="stat__meta">售出 {{.TotalSold}} 瓶</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">{{template "icon" "box"}}售出成本</div>
+    <div class="stat__value stat__value--sm">{{money .TotalCogs}}</div>
+    <div class="stat__meta">按售出时的加权平均成本</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">{{template "icon" "chart"}}毛利</div>
+    <div class="stat__value {{if .TotalProfit.IsNeg}}neg{{else}}pos{{end}}">{{money .TotalProfit}}</div>
+    <div class="stat__meta">销售额 − 售出成本</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">{{template "icon" "trending"}}毛利率</div>
+    <div class="stat__value {{if lt .TotalMargin 0.0}}neg{{end}}">{{pct .TotalMargin}}</div>
+    <div class="stat__meta">毛利 ÷ 销售额</div>
+  </div>
+  <div class="stat stat--gold">
+    <div class="stat__label">{{template "icon" "glass"}}售出瓶数</div>
+    <div class="stat__value">{{.TotalSold}}</div>
+    <div class="stat__meta">试饮 {{.TotalTasting}} 瓶</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">{{template "icon" "trending"}}试饮带动倍数</div>
+    <div class="stat__value">{{if .TotalTasting}}{{fixed 1 .Conversion}} ×{{else}}<span class="muted">—</span>{{end}}</div>
+    <div class="stat__meta">每投入 1 瓶试饮带动卖出的瓶数</div>
+  </div>
+</div>
+
+<div class="card">
+  <form class="filters" method="get" action="/reports/products">
+    <div class="field">
+      <label class="field__label" for="from">开始日期</label>
+      <input class="input" id="from" name="from" type="date" value="{{.From}}">
+    </div>
+    <div class="field">
+      <label class="field__label" for="to">结束日期</label>
+      <input class="input" id="to" name="to" type="date" value="{{.To}}">
+    </div>
+    <div class="field field--actions">
+      <button class="btn btn--primary" type="submit">{{template "icon" "search"}}<span>筛选</span></button>
+      <a class="btn" href="/reports/products">重置</a>
+    </div>
+  </form>
+
+  <div class="filters" style="border-top:0">
+    <div class="field field--wide">
+      <span class="field__label">快捷时间</span>
+      <div class="segmented">
+        {{range .Presets}}<a class="{{if .Active}}is-active{{end}}" href="/reports/products?from={{.From}}&amp;to={{.To}}">{{.Label}}</a>{{end}}
+      </div>
+    </div>
+  </div>
+
+  <div class="card__head">
+    <div class="card__title">产品排行<span class="card__sub">按毛利额从高到低</span></div>
+  </div>
+
+  {{if .Rows}}
+  <div class="table-wrap">
+    <table class="data">
+      <thead>
+        <tr>
+          <th class="num">排名</th>
+          <th>产品</th>
+          <th class="num">试饮</th>
+          <th class="num">销售</th>
+          <th class="num">带动</th>
+          <th class="num">销售额</th>
+          <th class="num">售出成本</th>
+          <th class="num">毛利</th>
+          <th class="num">毛利率</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range $i, $r := .Rows}}
+        <tr>
+          <td class="num muted">{{add $i 1}}</td>
+          <td>
+            <a class="strong" href="/products/{{$r.ProductID}}">{{$r.ProductName}}</a>
+            <div class="tiny muted mono">{{$r.ProductSKU}}</div>
+          </td>
+          <td class="num">{{$r.TastingQty}}</td>
+          <td class="num">{{$r.SoldQty}}</td>
+          <td class="num">{{if $r.TastingQty}}{{fixed 1 $r.Conversion}} ×{{else}}<span class="muted">—</span>{{end}}</td>
+          <td class="num strong">{{money $r.Revenue}}</td>
+          <td class="num muted">{{money $r.Cogs}}</td>
+          <td class="num {{if $r.Profit.IsNeg}}neg{{else}}pos{{end}}">{{money $r.Profit}}</td>
+          <td class="num small {{if $r.Profit.IsNeg}}neg{{end}}">
+            {{if $r.Revenue}}{{pct (mul (div $r.Profit.Float $r.Revenue.Float) 100.0)}}{{else}}<span class="muted">—</span>{{end}}
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td></td>
+          <td class="small">合计 {{len .Rows}} 个产品</td>
+          <td class="num">{{.TotalTasting}}</td>
+          <td class="num">{{.TotalSold}}</td>
+          <td class="num">{{if .TotalTasting}}{{fixed 1 .Conversion}} ×{{else}}—{{end}}</td>
+          <td class="num">{{money .TotalRevenue}}</td>
+          <td class="num">{{money .TotalCogs}}</td>
+          <td class="num">{{money .TotalProfit}}</td>
+          <td class="num">{{pct .TotalMargin}}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+  {{else}}
+  {{template "empty" (dict "Icon" "trending" "Title" "这段时间没有销售数据" "Hint" "换个时间范围试试；只有已结算的市集才会计入销售与成本。" "ActionHref" "/reports/markets" "ActionLabel" "看市集利润报表")}}
+  {{end}}
+</div>
+{{end}}

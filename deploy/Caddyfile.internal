@@ -1,0 +1,36 @@
+# 只有局域网 IP、没有公网域名时用这份配置：Caddy 用自签证书提供 HTTPS。
+#
+# 注意：自签证书要让手机「信任」一次，Service Worker / PWA 才会生效。
+# 步骤见 README「手机安装成 App（PWA）」一节，简述：
+#   1. docker compose --profile https up -d
+#   2. docker compose exec caddy cat /data/caddy/pki/authorities/local/root.crt > root.crt
+#   3. 把 root.crt 发到手机并安装 → 在系统设置里「信任」该证书
+#   4. 手机浏览器打开 https://<你的局域网IP> 即可安装到桌面
+{$ERP_DOMAIN} {
+	encode zstd gzip
+	tls internal
+
+	reverse_proxy erp:8000 {
+		transport http {
+			read_timeout 120s
+			write_timeout 120s
+		}
+	}
+
+	header {
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	@sw path /static/sw.js
+	header @sw Cache-Control "no-cache, no-store, must-revalidate"
+
+	log {
+		output file /data/access.log {
+			roll_size 10mb
+			roll_keep 3
+		}
+	}
+}

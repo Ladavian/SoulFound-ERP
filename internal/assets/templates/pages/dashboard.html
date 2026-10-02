@@ -1,0 +1,298 @@
+{{define "content"}}
+<div class="stat-grid">
+  {{if .ShowCost}}
+  <div class="stat stat--gold">
+    <div class="stat__label">{{template "icon" "coins"}}库存总值</div>
+    <div class="stat__value">{{money .Stats.StockValue}}</div>
+    <div class="stat__meta">{{.Stats.StockQty}} 瓶 · {{.Stats.SKUCount}} 个产品</div>
+  </div>
+  {{else}}
+  <div class="stat stat--gold">
+    <div class="stat__label">{{template "icon" "box"}}库存数量</div>
+    <div class="stat__value">{{.Stats.StockQty}}</div>
+    <div class="stat__meta">{{.Stats.SKUCount}} 个在售产品</div>
+  </div>
+  {{end}}
+  <div class="stat">
+    <div class="stat__label">{{template "icon" "trending"}}本月销售额</div>
+    <div class="stat__value">{{money .Stats.MonthRevenue}}</div>
+    <div class="stat__meta">售出 {{.Stats.MonthSoldQty}} 瓶 · {{.Stats.MonthMarkets}} 场市集</div>
+  </div>
+  {{if .ShowCost}}
+  <div class="stat {{if .Stats.MonthProfit.IsNeg}}stat--danger{{else}}stat--ice{{end}}">
+    <div class="stat__label">{{template "icon" "chart"}}本月净利润</div>
+    <div class="stat__value {{if .Stats.MonthProfit.IsNeg}}neg{{end}}">{{money .Stats.MonthProfit}}</div>
+    <div class="stat__meta">
+      {{if .Stats.MonthRevenue.IsZero}}本月还没有市集销售{{else}}净利率 {{pct (ratio .Stats.MonthProfit .Stats.MonthRevenue)}}{{end}}
+    </div>
+  </div>
+  {{else}}
+  <div class="stat stat--ice">
+    <div class="stat__label">{{template "icon" "market"}}本月市集</div>
+    <div class="stat__value">{{.Stats.MonthMarkets}}</div>
+    <div class="stat__meta">售出 {{.Stats.MonthSoldQty}} 瓶</div>
+  </div>
+  {{end}}
+  <div class="stat {{if gt .Stats.LowStockCount 0}}stat--warn{{end}}">
+    <div class="stat__label">{{template "icon" "alert"}}库存预警</div>
+    <div class="stat__value">{{.Stats.LowStockCount}}</div>
+    <div class="stat__meta">
+      {{if gt .Stats.ActiveMarkets 0}}{{.Stats.ActiveMarkets}} 场市集进行中 · {{end}}{{.DraftPurchases}} 张采购草稿
+    </div>
+  </div>
+</div>
+
+{{if .LowStock}}
+<div class="alert alert--warn">
+  {{template "icon" "alert"}}
+  <div class="alert__body">
+    <div class="alert__title">有 {{len .LowStock}} 个产品库存偏低</div>
+    {{range $i, $p := .LowStock}}{{if $i}}、{{end}}<a href="/products/{{$p.ID}}">{{$p.Name}}</a>（剩 {{$p.StockQty}}）{{end}}
+    <div class="small" style="margin-top:6px"><a href="/inventory?low=1">查看全部低库存产品 →</a></div>
+  </div>
+</div>
+{{end}}
+
+<div class="grid grid--sidebar">
+  <div>
+    <div class="card">
+      <div class="card__head">
+        <div class="card__title">{{if .ShowCost}}近 12 个月销售与利润{{else}}近 12 个月市集销售额{{end}}</div>
+        <div class="card__actions">{{if .ShowCost}}<a class="btn btn--sm" href="/reports/markets">{{template "icon" "chart"}}<span>完整报表</span></a>{{end}}</div>
+      </div>
+      <div class="card__body">
+        <div class="chart-box"><canvas id="trend-chart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card__head">
+        <div class="card__title">最近市集</div>
+        <div class="card__actions"><a class="btn btn--sm btn--primary" href="/markets/new">{{template "icon" "plus"}}<span>新建市集</span></a></div>
+      </div>
+      {{if .RecentMarkets}}
+      <div class="table-wrap">
+        <table class="data">
+          <thead><tr><th>市集</th><th>日期</th><th>状态</th><th class="num">试饮</th><th class="num">销售</th><th class="num">销售额</th>{{if .ShowCost}}<th class="num">净利润</th>{{end}}</tr></thead>
+          <tbody>
+          {{range .RecentMarkets}}
+            <tr>
+              <td><a href="/markets/{{.ID}}" class="strong">{{.Name}}</a><div class="tiny muted">{{.Venue}}{{if .City}} · {{.City}}{{end}}</div></td>
+              <td class="nowrap small">{{.DateRange}}</td>
+              <td>{{template "market_status" .Status}}</td>
+              <td class="num">{{.TastingQty}}</td>
+              <td class="num">{{.SoldQty}}</td>
+              <td class="num">{{money .Revenue}}</td>
+              {{if $.ShowCost}}<td class="num {{if .NetProfit.IsNeg}}neg{{else}}pos{{end}}">{{money .NetProfit}}</td>{{end}}
+            </tr>
+          {{end}}
+          </tbody>
+        </table>
+      </div>
+      {{else}}
+      {{template "empty" (dict "Icon" "market" "Title" "还没有市集活动" "Hint" "创建第一场市集，记录试饮与销售数量，系统会自动算出这场活动的销售额和净利润。" "ActionHref" "/markets/new" "ActionLabel" "新建市集活动")}}
+      {{end}}
+    </div>
+
+    <div class="card">
+      <div class="card__head">
+        <div class="card__title">最近库存变动</div>
+        <div class="card__actions"><a class="btn btn--sm" href="/inventory/movements">{{template "icon" "layers"}}<span>全部流水</span></a></div>
+      </div>
+      {{if .RecentMovements}}
+      <div class="table-wrap">
+        <table class="data data--compact">
+          <thead><tr><th>日期</th><th>产品</th><th>类型</th><th class="num">数量</th><th class="num">结存</th></tr></thead>
+          <tbody>
+          {{range .RecentMovements}}
+            <tr>
+              <td class="nowrap small">{{.OccurredOn}}</td>
+              <td><a href="/products/{{.ProductID}}">{{.ProductName}}</a></td>
+              <td><span class="badge {{if .IsIn}}badge--ok{{else}}badge--muted{{end}}">{{.ReasonLabel}}</span></td>
+              <td class="num {{if .IsIn}}pos{{end}}">{{if .IsIn}}+{{end}}{{.Qty}}</td>
+              <td class="num muted">{{.QtyAfter}}</td>
+            </tr>
+          {{end}}
+          </tbody>
+        </table>
+      </div>
+      {{else}}
+      {{template "empty" (dict "Icon" "layers" "Title" "还没有库存记录" "Hint" "从「采购入库」或「出入库登记」开始建立库存。" "ActionHref" "/purchases/new" "ActionLabel" "录入采购入库")}}
+      {{end}}
+    </div>
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="card__head"><div class="card__title">快捷操作</div></div>
+      <div class="card__body card__body--flush">
+        <div class="action-list">
+          {{if .Perms.Has "market.manage"}}
+          <a class="action-item" href="/markets/new">
+            <span class="action-item__icon">{{template "icon" "market"}}</span>
+            <span class="action-item__main"><span class="action-item__title">新建市集活动</span><span class="action-item__sub">记录试饮与销售，自动算利润</span></span>
+            <span class="action-item__go">{{template "icon" "right"}}</span>
+          </a>
+          {{end}}
+          {{if .Perms.Has "purchase.manage"}}
+          <a class="action-item" href="/purchases/new">
+            <span class="action-item__icon">{{template "icon" "truck"}}</span>
+            <span class="action-item__main"><span class="action-item__title">录入采购入库</span><span class="action-item__sub">含运费关税自动分摊到岸成本</span></span>
+            <span class="action-item__go">{{template "icon" "right"}}</span>
+          </a>
+          {{end}}
+          {{if .Perms.Has "inventory.adjust"}}
+          <a class="action-item" href="/inventory/adjust">
+            <span class="action-item__icon">{{template "icon" "adjust"}}</span>
+            <span class="action-item__main"><span class="action-item__title">出入库登记</span><span class="action-item__sub">期初建账、盘点、损耗</span></span>
+            <span class="action-item__go">{{template "icon" "right"}}</span>
+          </a>
+          {{end}}
+          {{if .Perms.Has "product.manage"}}
+          <a class="action-item" href="/products/new">
+            <span class="action-item__icon">{{template "icon" "tag"}}</span>
+            <span class="action-item__main"><span class="action-item__title">新建产品</span><span class="action-item__sub">录入 SKU、年份、售价</span></span>
+            <span class="action-item__go">{{template "icon" "right"}}</span>
+          </a>
+          {{end}}
+        </div>
+      </div>
+    </div>
+
+    {{if .ShowMarketChart}}
+    <div class="card">
+      <div class="card__head"><div class="card__title">各市集净利润对比</div></div>
+      <div class="card__body"><div class="chart-box chart-box--sm"><canvas id="market-chart"></canvas></div></div>
+    </div>
+    {{end}}
+
+    {{if .TopProducts}}
+    <div class="card">
+      <div class="card__head">
+        <div class="card__title">今年畅销产品</div>
+        <div class="card__actions"><a class="btn btn--sm" href="/reports/products">明细</a></div>
+      </div>
+      <div class="card__body">
+        <div class="bar-list">
+          {{$max := 0.0}}
+          {{range .TopProducts}}{{if gt .Revenue.Float $max}}{{$max = .Revenue.Float}}{{end}}{{end}}
+          {{range .TopProducts}}
+          <div class="bar-item">
+            <div class="bar-item__top">
+              <span class="bar-item__name">{{.ProductName}}</span>
+              <span class="bar-item__val">{{money .Revenue}} · {{.SoldQty}} 瓶</span>
+            </div>
+            <div class="progress"><div class="progress__bar" style="width:{{if gt $max 0.0}}{{pct0 (div (mul .Revenue.Float 100.0) $max)}}{{else}}0%{{end}}"></div></div>
+          </div>
+          {{end}}
+        </div>
+      </div>
+    </div>
+    {{end}}
+
+    {{if .CategoryStock}}
+    <div class="card">
+      <div class="card__head"><div class="card__title">库存分布</div></div>
+      <div class="card__body">
+        <dl class="kv">
+          {{range .CategoryStock}}
+          <dt>{{.Category}}（{{.SKUCount}} 个）</dt>
+          <dd>{{.Qty}} 瓶 · {{money .Value}}</dd>
+          {{end}}
+        </dl>
+      </div>
+    </div>
+    {{end}}
+  </div>
+</div>
+
+<script src="/static/vendor/chart.umd.js"></script>
+<script>
+(function () {
+  var D = {{.ChartJSON}};
+
+  Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+  Chart.defaults.font.size = 12;
+  Chart.defaults.color = '#55635F';
+
+  var trend = document.getElementById('trend-chart');
+  if (trend) {
+    new Chart(trend, {
+      type: 'line',
+      data: {
+        labels: D.labels,
+        datasets: [
+          {
+            label: '销售额',
+            data: D.revenue,
+            borderColor: '#2A5F50',
+            backgroundColor: 'rgba(42,95,80,.12)',
+            fill: true,
+            tension: .35,
+            borderWidth: 2,
+            pointRadius: 2.5,
+            pointHoverRadius: 5
+          },
+          {{if .ShowCost}}{
+            label: '净利润',
+            data: D.profit,
+            borderColor: '#C39A4E',
+            backgroundColor: 'rgba(195,154,78,.14)',
+            fill: true,
+            tension: .35,
+            borderWidth: 2,
+            pointRadius: 2.5,
+            pointHoverRadius: 5
+          }{{end}}
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8, padding: 16 } },
+          tooltip: {
+            callbacks: {
+              label: function (c) { return c.dataset.label + '：' + c.parsed.y.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+            }
+          }
+        },
+        scales: {
+          y: { beginAtZero: true, grid: { color: '#EDF1F0' }, ticks: { callback: function (v) { return v >= 1000 ? (v / 1000) + 'k' : v; } } },
+          x: { grid: { display: false } }
+        }
+      }
+    });
+  }
+
+  {{if .ShowMarketChart}}
+  var market = document.getElementById('market-chart');
+  if (market && D.marketLabels.length) {
+    new Chart(market, {
+      type: 'bar',
+      data: {
+        labels: D.marketLabels,
+        datasets: [{
+          label: '净利润',
+          data: D.marketProfit,
+          backgroundColor: D.marketProfit.map(function (v) { return v < 0 ? '#D4553F' : '#3B7A67'; }),
+          borderRadius: 6,
+          maxBarThickness: 38
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          y: { beginAtZero: true, grid: { color: '#EDF1F0' } },
+          x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: false, font: { size: 10 } } }
+        }
+      }
+    });
+  }
+  {{end}}
+})();
+</script>
+{{end}}

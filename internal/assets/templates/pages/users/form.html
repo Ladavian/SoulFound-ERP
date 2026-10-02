@@ -1,0 +1,93 @@
+{{define "content"}}
+{{$u := .Target}}
+{{$isSelf := and (not .IsNew) .User (eq .User.ID $u.ID)}}
+
+<div class="page-head">
+  <div class="page-head__main">
+    <div class="page-head__title">{{if .IsNew}}新建用户{{else}}编辑「{{$u.DisplayName}}」{{end}}</div>
+    <div class="page-head__meta">
+      {{if .IsNew}}<span>新账号创建后即可用用户名与密码登录</span>{{else}}<span class="mono">@{{$u.Username}}</span><span>创建于 {{if $u.CreatedAt}}{{datetime $u.CreatedAt}}{{else}}—{{end}}</span>{{end}}
+    </div>
+  </div>
+  <div class="page-head__actions">
+    <a class="btn" href="/users">{{template "icon" "back"}}<span>返回用户列表</span></a>
+    {{if not .IsNew}}<a class="btn" href="/users/{{$u.ID}}/password">{{template "icon" "check"}}<span>重置密码</span></a>{{end}}
+  </div>
+</div>
+
+{{if $isSelf}}
+<div class="alert alert--warn">
+  {{template "icon" "alert"}}
+  <div class="alert__body">这是你当前登录的账号。取消「启用」会让自己立即无法登录，请谨慎操作。</div>
+</div>
+{{end}}
+
+<form method="post" action="{{.FormAction}}" x-data="{ role: '{{$u.Role}}' }">
+  <div class="card">
+    <div class="card__head"><div class="card__title">账号信息</div></div>
+    <div class="card__body">
+      <div class="form-grid">
+        <div class="field">
+          <label class="field__label" for="username">用户名<span class="req">*</span></label>
+          {{if .IsNew}}
+          <input class="input" id="username" name="username" type="text" value="{{$u.Username}}" required autofocus
+                 autocomplete="off" placeholder="例如：amy">
+          <div class="field__hint">登录时使用，建议用英文或拼音，不要有空格。</div>
+          {{else}}
+          <input class="input mono" id="username" name="username" type="text" value="{{$u.Username}}" readonly
+                 autocomplete="off">
+          <div class="field__hint">用户名创建后不可修改。</div>
+          {{end}}
+        </div>
+
+        {{if .IsNew}}
+        <div class="field">
+          <label class="field__label" for="password">初始密码<span class="req">*</span></label>
+          <input class="input" id="password" name="password" type="password" required
+                 autocomplete="new-password" placeholder="给这个账号设置一个初始密码">
+          <div class="field__hint">至少 6 位。创建后请把密码安全地告知本人，对方可在「我的账号」自行修改。</div>
+        </div>
+        {{end}}
+
+        <div class="field span-2">
+          <label class="field__label" for="full_name">姓名</label>
+          <input class="input" id="full_name" name="full_name" type="text" value="{{$u.FullName}}"
+                 placeholder="例如：李梅">
+          <div class="field__hint">留空时界面显示用户名。</div>
+        </div>
+
+        <div class="field span-2">
+          <label class="field__label" for="role">角色<span class="req">*</span></label>
+          <select class="select" id="role" name="role" x-model="role">
+            {{range .RoleOptions}}
+            <option value="{{.Value}}"{{if eq .Value $u.Role}} selected{{end}}>{{.Label}}</option>
+            {{end}}
+          </select>
+          <div class="field__hint">角色决定这个账号能看到什么、能改什么。</div>
+          <div class="small text-2" style="margin-top:6px;padding:9px 11px;background:var(--surface-2);border:1px solid var(--line);border-radius:9px">
+            <div x-show="role === 'manager'">{{index .RoleDescriptions "manager"}}</div>
+            <div x-show="role === 'staff'">{{index .RoleDescriptions "staff"}}</div>
+            <div x-show="role === 'viewer'">{{index .RoleDescriptions "viewer"}}</div>
+            <div x-show="role === 'admin'">管理员拥有全部权限：业务操作、用户管理与系统设置。</div>
+          </div>
+        </div>
+
+        <div class="field span-2">
+          <label class="checkbox" for="is_active">
+            <input id="is_active" name="is_active" type="checkbox" value="1"{{if $u.IsActive}} checked{{end}}>
+            <span>启用该账号</span>
+          </label>
+          <div class="field__hint">取消勾选后该账号立即无法登录，已有的操作记录会保留。</div>
+        </div>
+      </div>
+    </div>
+    <div class="card__foot" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <div class="small muted">{{if .IsNew}}创建后可以在列表里继续调整角色或停用账号。{{else}}保存后立即生效。{{end}}</div>
+      <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
+        <a class="btn" href="/users">取消</a>
+        <button class="btn btn--primary" type="submit">{{template "icon" "save"}}<span>{{if .IsNew}}创建用户{{else}}保存修改{{end}}</span></button>
+      </div>
+    </div>
+  </div>
+</form>
+{{end}}

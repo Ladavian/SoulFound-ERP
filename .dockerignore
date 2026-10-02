@@ -1,0 +1,39 @@
+# ---- 构建上下文排除项：把不需要进镜像的东西全部挡掉，加快构建 ----
+
+# Go 模块缓存（本地为绕过沙箱放在工作区里，非常大，必须排除）
+.gopath/
+vendor/
+
+# 本地数据与备份：绝不能打进镜像
+data/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+secret.key
+
+# 版本控制与编辑器
+.git/
+.gitignore
+.github/
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# 本地开发产物
+tmp/
+dist/
+*.log
+bin/
+
+# 文档（运行不需要）
+*.md
+!README.md
+docs/
+screenshots/
+
+# 测试与脚本（运行不需要，但保留 entrypoint）
+scripts/
+*_test.go
+.env
+.env.local

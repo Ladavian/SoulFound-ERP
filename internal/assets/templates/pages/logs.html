@@ -1,0 +1,52 @@
+{{define "content"}}
+<div class="page-head">
+  <div class="page-head__main">
+    <div class="page-head__title">操作日志</div>
+    <div class="page-head__meta"><span>记录谁在什么时候改了什么，便于追溯 · 共 {{.Count}} 条</span></div>
+  </div>
+</div>
+
+<div class="alert alert--info">
+  {{template "icon" "info"}}
+  <div class="alert__body">
+    日志只增不改，建议定期备份数据库。这里的记录包含了每次登录、单据确认、库存调整与设置修改。
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__head">
+    <div class="card__title">操作记录<span class="card__sub">按时间倒序，最多显示最近 300 条</span></div>
+  </div>
+
+  {{if .Logs}}
+  <div class="table-wrap">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>时间</th>
+          <th>操作人</th>
+          <th>动作</th>
+          <th>对象</th>
+          <th>详情</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range $l := .Logs}}
+        <tr>
+          <td class="nowrap small muted">{{datetime $l.CreatedAt}}</td>
+          <td class="nowrap small">{{default "系统" $l.Username}}</td>
+          <td><span class="badge badge--muted">{{$l.Action}}</span></td>
+          <td class="nowrap small text-2">
+            {{if $l.Entity}}{{$l.Entity}}{{with $l.EntityID}} #{{.}}{{end}}{{else}}<span class="muted">—</span>{{end}}
+          </td>
+          <td class="small text-2">{{if $l.Detail}}{{$l.Detail}}{{else}}<span class="muted">—</span>{{end}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{else}}
+  {{template "empty" (dict "Icon" "log" "Title" "还没有操作记录" "Hint" "创建用户、确认采购单、结算市集之后，这里会显示对应的记录。")}}
+  {{end}}
+</div>
+{{end}}

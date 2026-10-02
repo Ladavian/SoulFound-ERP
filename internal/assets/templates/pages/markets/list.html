@@ -1,0 +1,155 @@
+{{define "content"}}
+<div class="hero">
+  <div>
+    <div class="hero__title">市集活动</div>
+    <div class="hero__sub">{{if .ShowCost}}每场市集的试饮、销售、费用与净利润都会自动汇总{{else}}记录每场市集的试饮、销售与活动费用{{end}}</div>
+  </div>
+  <div class="hero__stats">
+    <div>
+      <div class="hero__stat-label">场次</div>
+      <div class="hero__stat-value">{{.Count}}</div>
+    </div>
+    <div>
+      <div class="hero__stat-label">销售额</div>
+      <div class="hero__stat-value">{{money .Summary.Revenue}}</div>
+    </div>
+    {{if .ShowCost}}
+    <div>
+      <div class="hero__stat-label">净利润</div>
+      <div class="hero__stat-value">{{money .Summary.NetProfit}}</div>
+    </div>
+    {{end}}
+    <div>
+      <div class="hero__stat-label">售出 / 试饮</div>
+      <div class="hero__stat-value">{{.TotalSold}} / {{.TotalTasting}} 瓶</div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <form class="filters" method="get" action="/markets">
+    <div class="field field--wide">
+      <label class="field__label" for="q">搜索</label>
+      <input class="input" id="q" name="q" type="search" value="{{.Keyword}}" placeholder="市集名称、场地、城市、主办方或单据号">
+    </div>
+    <div class="field">
+      <label class="field__label" for="status">状态</label>
+      <select class="select" id="status" name="status">
+        {{$cur := .Status}}
+        {{range .StatusOptions}}<option value="{{.Value}}"{{if eq .Value $cur}} selected{{end}}>{{.Label}}</option>{{end}}
+      </select>
+    </div>
+    <div class="field">
+      <label class="field__label" for="from">开始日期</label>
+      <input class="input" id="from" name="from" type="date" value="{{.From}}">
+    </div>
+    <div class="field">
+      <label class="field__label" for="to">结束日期</label>
+      <input class="input" id="to" name="to" type="date" value="{{.To}}">
+    </div>
+    <div class="field">
+      <label class="field__label" for="sort">排序</label>
+      <select class="select" id="sort" name="sort">
+        {{$s := .Sort}}
+        <option value=""{{if eq $s ""}} selected{{end}}>最近在前</option>
+        <option value="oldest"{{if eq $s "oldest"}} selected{{end}}>最早在前</option>
+        <option value="revenue"{{if eq $s "revenue"}} selected{{end}}>销售额最高</option>
+        {{if $.ShowCost}}<option value="profit"{{if eq $s "profit"}} selected{{end}}>净利润最高</option>{{end}}
+      </select>
+    </div>
+    <div class="field field--actions">
+      <button class="btn btn--primary" type="submit">{{template "icon" "search"}}<span>筛选</span></button>
+      <a class="btn" href="/markets">重置</a>
+    </div>
+  </form>
+
+  <div class="card__head">
+    <div class="card__title">共 {{.Count}} 场市集<span class="card__sub">{{if .ShowCost}}净利润 = 销售额 − 售出成本 − 试饮成本 − 赠送损耗 − 活动费用{{else}}按试饮、销售与费用汇总每场活动{{end}}</span></div>
+    <div class="card__actions">
+      {{if .Perms.Has "report.export"}}<a class="btn btn--sm" href="/export/markets.xlsx?from={{.From}}&amp;to={{.To}}&amp;status={{.Status}}&amp;q={{.Keyword}}">{{template "icon" "download"}}<span>导出 Excel</span></a>{{end}}
+      {{if .CanManage}}<a class="btn btn--sm btn--primary" href="/markets/new">{{template "icon" "plus"}}<span>新建市集</span></a>{{end}}
+    </div>
+  </div>
+
+  {{if .Rows}}
+  <div class="table-wrap">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>市集</th>
+          <th>日期</th>
+          <th>状态</th>
+          <th class="num">试饮</th>
+          <th class="num">销售</th>
+          <th class="num">带动</th>
+          <th class="num">销售额</th>
+          {{if .ShowCost}}
+          <th class="num">售出成本</th>
+          <th class="num">试饮成本</th>
+          <th class="num">费用</th>
+          <th class="num">净利润</th>
+          <th class="num">净利率</th>
+          {{end}}
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range $r := .Rows}}
+        {{$m := $r.Market}}{{$t := $r.Totals}}
+        <tr>
+          <td>
+            <a class="strong" href="/markets/{{$m.ID}}">{{$m.Name}}</a>
+            <div class="tiny muted">
+              <span class="mono">{{$m.Code}}</span>
+              {{if $m.Venue}} · {{$m.Venue}}{{end}}
+              {{if $m.Organizer}} · {{$m.Organizer}}{{end}}
+            </div>
+          </td>
+          <td class="nowrap small">{{$m.DateRange}}<div class="tiny muted">{{$m.Days}} 天</div></td>
+          <td>{{template "market_status" $m.Status}}</td>
+          <td class="num">{{$m.TastingQty}}</td>
+          <td class="num">{{$m.SoldQty}}</td>
+          <td class="num">{{if $m.TastingQty}}{{fixed 1 $m.SalesMultiplier}}×{{else}}<span class="muted">—</span>{{end}}</td>
+          <td class="num strong">{{money $t.Revenue}}</td>
+          {{if $.ShowCost}}
+          <td class="num muted">{{money $t.CogsSold}}</td>
+          <td class="num muted">{{money $t.TastingCost}}</td>
+          <td class="num muted">{{money $t.ExpenseCost}}</td>
+          <td class="num strong {{if $t.NetProfit.IsNeg}}neg{{else}}pos{{end}}">{{money $t.NetProfit}}</td>
+          <td class="num small {{if $t.NetProfit.IsNeg}}neg{{end}}">{{pct $t.NetMargin}}</td>
+          {{end}}
+          <td class="right">
+            <div class="row-actions">
+              <a class="btn btn--sm" href="/markets/{{$m.ID}}">明细</a>
+              {{if and $.CanManage (not $m.IsSettled)}}<a class="btn btn--sm btn--ghost" href="/markets/{{$m.ID}}/edit" title="编辑">{{template "icon" "edit"}}</a>{{end}}
+            </div>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td>合计</td>
+          <td></td>
+          <td></td>
+          <td class="num">{{.TotalTasting}}</td>
+          <td class="num">{{.TotalSold}}</td>
+          <td class="num">{{if .TotalTasting}}{{fixed 1 .Conversion}}×{{else}}—{{end}}</td>
+          <td class="num">{{money .Summary.Revenue}}</td>
+          {{if .ShowCost}}
+          <td class="num">{{money .Summary.CogsSold}}</td>
+          <td class="num">{{money .Summary.TastingCost}}</td>
+          <td class="num">{{money .Summary.ExpenseCost}}</td>
+          <td class="num">{{money .Summary.NetProfit}}</td>
+          <td class="num">{{pct .Summary.NetMargin}}</td>
+          {{end}}
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+  {{else}}
+  {{template "empty" (dict "Icon" "market" "Title" "没有符合条件的市集" "Hint" "换个筛选条件试试，或者新建一场市集活动。" "ActionHref" "/markets/new" "ActionLabel" "新建市集活动")}}
+  {{end}}
+</div>
+{{end}}

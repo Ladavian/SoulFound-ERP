@@ -1,0 +1,109 @@
+{{define "content"}}
+{{$base := .BasePath}}
+{{$label := .KindLabel}}
+{{$row := .Row}}
+{{$backURL := $base}}
+{{if not .IsNew}}{{$backURL = printf "%s/%d" $base $row.ID}}{{end}}
+
+<div class="page-head">
+  <div class="page-head__main">
+    <div class="page-head__title">{{if .IsNew}}新建{{$label}}{{else}}编辑「{{$row.Name}}」{{end}}</div>
+    <div class="page-head__meta">
+      {{if .IsNew}}
+      <span>{{if .IsSupplier}}酒庄或进口商{{else}}市集与门店的常客{{end}}，保存后可在采购单或销售中关联</span>
+      {{else}}
+      <span>创建于 {{date $row.CreatedAt}}</span>
+      {{if not $row.IsActive}}<span class="badge badge--muted">已停用</span>{{end}}
+      {{end}}
+    </div>
+  </div>
+  <div class="page-head__actions">
+    <a class="btn" href="{{$backURL}}">{{template "icon" "back"}}<span>返回</span></a>
+  </div>
+</div>
+
+<form method="post" action="{{.FormAction}}">
+  <div class="card">
+    <div class="card__head">
+      <div class="card__title">基本信息</div>
+    </div>
+    <div class="card__body">
+      <div class="form-grid">
+        <div class="field{{if .IsSupplier}} span-2{{end}}">
+          <label class="field__label" for="name">{{$label}}名称<span class="req">*</span></label>
+          <input class="input" id="name" name="name" type="text" value="{{$row.Name}}" required
+                 placeholder="{{if .IsSupplier}}例如：Peller Estates{{else}}例如：张先生{{end}}"{{if .IsNew}} autofocus{{end}}>
+        </div>
+        {{if .IsSupplier}}
+        <div class="field">
+          <label class="field__label" for="contact_name">联系人</label>
+          <input class="input" id="contact_name" name="contact_name" type="text" value="{{$row.ContactName}}"
+                 placeholder="例如：Jean-Luc">
+        </div>
+        <div class="field">
+          <label class="field__label" for="country">国家 / 地区</label>
+          <select class="select" id="country" name="country">
+            {{$curCountry := $row.Country}}
+            {{range .Countries}}<option value="{{.}}"{{if eq . $curCountry}} selected{{end}}>{{.}}</option>{{end}}
+          </select>
+        </div>
+        {{end}}
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card__head">
+      <div class="card__title">联系方式<span class="card__sub">手机上点电话即可直接拨打</span></div>
+    </div>
+    <div class="card__body">
+      <div class="form-grid">
+        <div class="field">
+          <label class="field__label" for="phone">电话</label>
+          <input class="input" id="phone" name="phone" type="tel" inputmode="tel" value="{{$row.Phone}}"
+                 placeholder="例如：+1 416 555 0132">
+        </div>
+        <div class="field">
+          <label class="field__label" for="email">邮箱</label>
+          <input class="input" id="email" name="email" type="email" value="{{$row.Email}}"
+                 placeholder="例如：sales@example.com">
+        </div>
+        <div class="field span-2">
+          <label class="field__label" for="address">地址</label>
+          <input class="input" id="address" name="address" type="text" value="{{$row.Address}}"
+                 placeholder="例如：2225 King St, Niagara-on-the-Lake, ON">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card__head">
+      <div class="card__title">备注与状态</div>
+    </div>
+    <div class="card__body">
+      <div class="form-grid">
+        <div class="field span-2">
+          <label class="field__label" for="notes">备注</label>
+          <textarea class="textarea" id="notes" name="notes" rows="3"
+                    placeholder="{{if .IsSupplier}}付款方式、到岸成本习惯、交货周期等{{else}}偏好口味、常买产品、是否加微信等{{end}}">{{$row.Notes}}</textarea>
+        </div>
+        <div class="field span-2">
+          <label class="checkbox">
+            <input type="checkbox" name="is_active" value="1"{{if $row.IsActive}} checked{{end}}>
+            <span>启用（停用后不会出现在采购单与销售的下拉里）</span>
+          </label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sticky-bar">
+    <div class="sticky-bar__info">{{if .IsNew}}保存后可在采购单与市集销售里关联该{{$label}}。{{else}}停用比删除更安全，历史单据会保留。{{end}}</div>
+    <div class="sticky-bar__actions">
+      <a class="btn" href="{{$backURL}}">取消</a>
+      <button class="btn btn--primary" type="submit">{{template "icon" "save"}}<span>{{if .IsNew}}创建{{$label}}{{else}}保存修改{{end}}</span></button>
+    </div>
+  </div>
+</form>
+{{end}}

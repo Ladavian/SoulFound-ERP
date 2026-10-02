@@ -1,0 +1,390 @@
+{{define "content"}}
+{{$m := .Market}}
+{{$showCost := .ShowCost}}
+
+<div class="page-head">
+  <div class="page-head__main">
+    <div class="page-head__title">{{$m.Name}}</div>
+    <div class="page-head__meta">
+      <span class="mono">{{$m.Code}}</span>
+      {{template "market_status" $m.Status}}
+      <span>{{template "icon" "calendar"}} {{$m.DateRange}} · {{$m.Days}} 天</span>
+      {{if $m.Venue}}<span>{{template "icon" "pin"}} {{$m.Venue}}{{if $m.City}} · {{$m.City}}{{end}}</span>{{end}}
+      {{if $m.Organizer}}<span>{{$m.Organizer}}</span>{{end}}
+    </div>
+  </div>
+  <div class="page-head__actions">
+    <a class="btn" href="/markets">{{template "icon" "back"}}<span>市集列表</span></a>
+    {{if and .CanManage (not $m.IsSettled)}}<a class="btn" href="/markets/{{$m.ID}}/edit">{{template "icon" "edit"}}<span>编辑信息</span></a>{{end}}
+    {{if $showCost}}<a class="btn" href="/export/market.xlsx?id={{$m.ID}}">{{template "icon" "download"}}<span>导出 Excel</span></a>{{end}}
+  </div>
+</div>
+
+{{if $m.IsSettled}}
+<div class="alert alert--success">
+  {{template "icon" "check"}}
+  <div class="alert__body">
+    <div class="alert__title">本场已结算</div>
+    {{if $showCost}}库存已按结算时的加权平均成本扣减，成本与利润已经锁定{{else}}本场数据已锁定，库存已按试饮、销售、赠送与损耗扣减{{end}}（结算时间 {{datetime $m.SettledAt}}{{if $m.SettledByName}}，操作人 {{$m.SettledByName}}{{end}}）。
+    如需修改试饮或销售数量，请先撤销结算。
+  </div>
+</div>
+{{else}}
+  {{if .Shortages}}
+  <div class="alert alert--error">
+    {{template "icon" "alert"}}
+    <div class="alert__body">
+      <div class="alert__title">库存不足，暂时无法结算</div>
+      <ul style="margin:6px 0 0;padding-left:20px">
+        {{range .Shortages}}<li>{{.}}</li>{{end}}
+      </ul>
+      <div class="small" style="margin-top:6px">请先补录采购入库，或到<a href="/inventory/adjust">出入库登记</a>做库存调整。</div>
+    </div>
+  </div>
+  {{end}}
+  {{if and $showCost $m.Items}}
+  <div class="alert alert--info">
+    {{template "icon" "info"}}
+    <div class="alert__body">
+      当前显示的成本与利润是按产品<strong>当前平均成本</strong>的预估值。点「结算本场市集」后会锁定成本快照并扣减库存。
+    </div>
+  </div>
+  {{end}}
+{{end}}
+
+{{if .CanSettle}}
+<div class="card">
+  <div class="card__body" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+    {{if $m.IsSettled}}
+      <div class="text-2 small" style="flex:1">撤销结算会删除本场产生的库存流水，并按剩余流水重算受影响产品的加权平均成本。</div>
+      {{template "confirm_form" (dict "Action" (printf "/markets/%d/unsettle" $m.ID) "Message" "确定撤销结算？库存将回滚，市集重新变为可编辑状态。" "Class" "" "Icon" "refresh" "Label" "撤销结算")}}
+    {{else}}
+      <div class="text-2 small" style="flex:1">确认数量无误后结算：系统会扣减库存（试饮 + 销售 + 赠送 + 损耗），并把本场利润写入报表。</div>
+      <form method="post" action="/markets/{{$m.ID}}/settle" onsubmit="return confirm('确认结算本场市集？结算后库存会立即扣减。')">
+        <button class="btn btn--primary btn--lg" type="submit">{{template "icon" "check"}}<span>结算本场市集</span></button>
+      </form>
+    {{end}}
+  </div>
+</div>
+{{end}}
+
+{{template "market_panel" .}}
+{{end}}
+
+
+{{/* ============================ 实时面板（HTMX 局部刷新区域） ============================ */}}
+{{define "market_panel"}}
+{{$m := .Market}}
+{{$showCost := .ShowCost}}
+<div class="grid grid--sidebar" id="market-panel">
+  <div>
+    {{if .RowError}}
+    <div class="alert alert--error">
+      {{template "icon" "alert"}}
+      <div class="alert__body"><div class="alert__title">没有保存成功</div>{{.RowError}}</div>
+    </div>
+    {{end}}
+
+    <div class="card">
+      <div class="card__head">
+        <div class="card__title">试饮与销售录入<span class="card__sub">改动后自动保存，单位：瓶</span></div>
+        <div class="card__actions">
+          <span class="save-state save-state--idle tiny">已同步</span>
+        </div>
+      </div>
+
+      {{if $m.Items}}
+      <div class="table-wrap">
+        <table class="data entry-table">
+          <thead>
+            <tr>
+              <th style="min-width:190px">产品</th>
+              <th class="num" style="width:74px">带去</th>
+              <th class="num" style="width:74px">试饮</th>
+              <th class="num" style="width:74px">销售</th>
+              <th class="num" style="width:74px">赠送</th>
+              <th class="num" style="width:74px">损耗</th>
+              <th class="num" style="width:96px">单价</th>
+              <th class="num" style="width:84px">优惠</th>
+              {{if $showCost}}<th class="num" style="width:96px">销售额</th><th class="num" style="width:96px">净贡献</th>{{end}}
+              <th style="width:56px"></th>
+            </tr>
+          </thead>
+          <tbody>
+          {{range $it := $m.Items}}
+            <tr class="entry-row{{if eq $it.ID $.RowErrorID}} is-error{{end}}" data-item-id="{{$it.ID}}"
+                {{if and $.CanManage (not $m.IsSettled)}}data-retryable="1"
+                hx-post="/markets/{{$m.ID}}/items/{{$it.ID}}"
+                hx-trigger="change"
+                hx-target="#market-panel"
+                hx-swap="outerHTML"
+                hx-include="this"{{end}}>
+              <td class="entry-cell--name" data-label="产品">
+                <div class="strong">{{$it.ProductName}}</div>
+                <div class="tiny muted">
+                  {{$it.ProductSKU}}
+                  {{if $showCost}} · 成本 {{money4 $it.CostBasis}}{{end}}
+                  {{if not $m.IsSettled}} · 库存 {{$it.StockQty}}{{end}}
+                  {{if and $showCost $it.HasSnapshot}} <span class="badge badge--muted">已锁定</span>{{end}}
+                </div>
+              </td>
+              <td class="num" data-label="带去">
+                {{if and $.CanManage (not $m.IsSettled)}}
+                <input class="input input--sm entry-input" type="text" inputmode="decimal" name="carried_qty" value="{{qtyInput $it.CarriedQty}}">
+                {{else}}{{$it.CarriedQty}}{{end}}
+              </td>
+              <td class="num" data-label="试饮">
+                {{if and $.CanManage (not $m.IsSettled)}}
+                <input class="input input--sm entry-input" type="text" inputmode="decimal" name="tasting_qty" value="{{qtyInput $it.TastingQty}}">
+                {{else}}{{$it.TastingQty}}{{end}}
+              </td>
+              <td class="num" data-label="销售">
+                {{if and $.CanManage (not $m.IsSettled)}}
+                <input class="input input--sm entry-input" type="text" inputmode="decimal" name="sold_qty" value="{{qtyInput $it.SoldQty}}">
+                {{else}}{{$it.SoldQty}}{{end}}
+              </td>
+              <td class="num" data-label="赠送">
+                {{if and $.CanManage (not $m.IsSettled)}}
+                <input class="input input--sm entry-input" type="text" inputmode="decimal" name="gift_qty" value="{{qtyInput $it.GiftQty}}">
+                {{else}}{{$it.GiftQty}}{{end}}
+              </td>
+              <td class="num" data-label="损耗">
+                {{if and $.CanManage (not $m.IsSettled)}}
+                <input class="input input--sm entry-input" type="text" inputmode="decimal" name="loss_qty" value="{{qtyInput $it.LossQty}}">
+                {{else}}{{$it.LossQty}}{{end}}
+              </td>
+              <td class="num" data-label="单价">
+                {{if and $.CanManage (not $m.IsSettled)}}
+                <input class="input input--sm entry-input entry-input--price" type="text" inputmode="decimal" name="unit_price" value="{{moneyInput2 $it.UnitPrice}}">
+                {{else}}{{money $it.UnitPrice}}{{end}}
+              </td>
+              <td class="num" data-label="优惠">
+                {{if and $.CanManage (not $m.IsSettled)}}
+                <input class="input input--sm entry-input" type="text" inputmode="decimal" name="discount_amt" value="{{moneyInput2 $it.DiscountAmt}}">
+                {{else}}{{money $it.DiscountAmt}}{{end}}
+              </td>
+              {{if $showCost}}
+              <td class="num strong" data-label="销售额">{{money $it.Revenue}}</td>
+              <td class="num {{if $it.NetProfit.IsNeg}}neg{{else}}pos{{end}}" data-label="净贡献">{{money $it.NetProfit}}</td>
+              {{end}}
+              <td class="right" data-label="">
+                {{if and $.CanManage (not $m.IsSettled)}}
+                <form method="post" action="/markets/{{$m.ID}}/items/{{$it.ID}}/delete"
+                      onsubmit="return confirm('确定删除「{{$it.ProductName}}」这一行？')">
+                  <button class="btn btn--ghost btn--icon" type="submit" title="删除该行">{{template "icon" "trash"}}</button>
+                </form>
+                {{end}}
+              </td>
+            </tr>
+          {{end}}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td>合计 {{len $m.Items}} 个产品</td>
+              <td class="num">{{$m.CarriedQty}}</td>
+              <td class="num">{{$m.TastingQty}}</td>
+              <td class="num">{{$m.SoldQty}}</td>
+              <td class="num">{{$m.GiftQty}}</td>
+              <td class="num">{{$m.LossQty}}</td>
+              <td colspan="2"></td>
+              {{if $showCost}}
+              <td class="num">{{money .Totals.Revenue}}</td>
+              <td class="num {{if .Totals.NetProfit.IsNeg}}neg{{else}}pos{{end}}">{{money .Totals.NetProfit}}</td>
+              {{end}}
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      {{else}}
+      {{template "empty" (dict "Icon" "market" "Title" "还没有添加产品" "Hint" "从下面选择本次市集要带的冰酒，添加后填写试饮与销售数量。")}}
+      {{end}}
+
+      {{if and .CanManage (not $m.IsSettled)}}
+      <div class="card__foot">
+        <form hx-post="/markets/{{$m.ID}}/items" hx-target="#market-panel" hx-swap="outerHTML" class="entry-actions">
+          <div class="field" style="min-width:240px;flex:1">
+            <label class="field__label" for="add-product">添加产品到本场市集</label>
+            <select class="select" id="add-product" name="product_id">
+              <option value="">— 选择产品 —</option>
+              {{range .AvailableProducts}}
+              <option value="{{.ID}}">{{.Label}}（售价 {{.Price}} / 库存 {{.Stock}}）</option>
+              {{end}}
+            </select>
+          </div>
+          <button class="btn btn--primary" type="submit">{{template "icon" "plus"}}<span>添加</span></button>
+        </form>
+      </div>
+      {{end}}
+    </div>
+
+    <div class="card">
+      <div class="card__head">
+        <div class="card__title">活动费用<span class="card__sub">摊位费、交通、餐饮等</span></div>
+      </div>
+      <form hx-post="/markets/{{$m.ID}}/expenses" hx-target="#market-panel" hx-swap="outerHTML">
+        <div class="table-wrap">
+          <table class="data data--compact entry-table" x-data="{ extra: 0 }">
+            <thead>
+              <tr><th style="width:150px">类别</th><th class="num" style="width:120px">金额</th><th>备注</th>
+              {{if and .CanManage (not $m.IsSettled)}}<th style="width:48px"></th>{{end}}</tr>
+            </thead>
+            <tbody>
+              {{range $e := $m.Expenses}}
+              <tr>
+                <td data-label="类别">
+                  {{if and $.CanManage (not $m.IsSettled)}}
+                  <select class="select input--sm" name="category">
+                    {{$cur := $e.Category}}
+                    {{range $.ExpenseCategories}}<option value="{{.Value}}"{{if eq .Value $cur}} selected{{end}}>{{.Label}}</option>{{end}}
+                  </select>
+                  {{else}}{{template "icon" "receipt"}} {{$e.CategoryLabel}}{{end}}
+                </td>
+                <td class="num" data-label="金额">
+                  {{if and $.CanManage (not $m.IsSettled)}}
+                  <input class="input input--sm entry-input" type="text" inputmode="decimal" name="amount" value="{{moneyInput2 $e.Amount}}">
+                  {{else}}{{money $e.Amount}}{{end}}
+                </td>
+                <td data-label="备注">
+                  {{if and $.CanManage (not $m.IsSettled)}}
+                  <input class="input input--sm" type="text" name="note" value="{{$e.Note}}">
+                  {{else}}{{$e.Note}}{{end}}
+                </td>
+                {{if and $.CanManage (not $m.IsSettled)}}<td></td>{{end}}
+              </tr>
+              {{end}}
+              {{if and .CanManage (not $m.IsSettled)}}
+              <template x-for="i in extra" :key="i">
+                <tr>
+                  <td data-label="类别">
+                    <select class="select input--sm" name="category">
+                      {{range .ExpenseCategories}}<option value="{{.Value}}">{{.Label}}</option>{{end}}
+                    </select>
+                  </td>
+                  <td class="num" data-label="金额">
+                    <input class="input input--sm entry-input" type="text" inputmode="decimal" name="amount" value="">
+                  </td>
+                  <td data-label="备注"><input class="input input--sm" type="text" name="note" value=""></td>
+                  <td></td>
+                </tr>
+              </template>
+              {{end}}
+              {{if not $m.Expenses}}{{if not .CanManage}}
+              <tr><td colspan="3" class="muted center">还没有记录费用</td></tr>
+              {{end}}{{end}}
+            </tbody>
+          </table>
+        </div>
+        {{if and .CanManage (not $m.IsSettled)}}
+        <div class="card__foot" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <button class="btn btn--sm" type="button" @click="extra++" x-data>{{template "icon" "plus"}}<span>添加一行费用</span></button>
+          <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+            <span class="save-state save-state--idle tiny">已同步</span>
+            <button class="btn btn--primary" type="submit">{{template "icon" "save"}}<span>保存费用</span></button>
+          </div>
+        </div>
+        {{end}}
+      </form>
+    </div>
+
+    {{if $m.Notes}}
+    <div class="card">
+      <div class="card__head"><div class="card__title">备注</div></div>
+      <div class="card__body text-2" style="white-space:pre-wrap">{{$m.Notes}}</div>
+    </div>
+    {{end}}
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="card__head">
+        <div class="card__title">{{if $showCost}}本场损益{{else}}本场数据{{end}}</div>
+        <div class="card__actions">
+          {{if $showCost}}{{if $m.IsSettled}}<span class="badge badge--ok">已锁定</span>{{else}}<span class="badge badge--warn">预估值</span>{{end}}{{end}}
+        </div>
+      </div>
+      <div class="card__body">
+        {{if $showCost}}
+        <div class="pl">
+          <div class="pl__row">
+            <span class="pl__label">销售额<small>{{$m.SoldQty}} 瓶 · 均价 {{money $m.AvgOrderValue}}</small></span>
+            <span class="pl__val">{{money .Totals.Revenue}}</span>
+          </div>
+          <div class="pl__row pl__row--sub">
+            <span class="pl__label">售出成本</span>
+            <span class="pl__val">−{{money .Totals.CogsSold}}</span>
+          </div>
+          <div class="pl__row">
+            <span class="pl__label strong">毛利</span>
+            <span class="pl__val">{{money .Totals.GrossProfit}} <span class="tiny muted">{{pct .Totals.GrossMargin}}</span></span>
+          </div>
+          <div class="pl__row pl__row--sub">
+            <span class="pl__label">试饮成本<small>试饮 {{$m.TastingQty}} 瓶 · 每瓶 {{money $m.CostPerTasting}}</small></span>
+            <span class="pl__val">−{{money .Totals.TastingCost}}</span>
+          </div>
+          <div class="pl__row pl__row--sub">
+            <span class="pl__label">赠送 / 损耗<small>{{$m.GiftQty}} 瓶赠送 · {{$m.LossQty}} 瓶损耗</small></span>
+            <span class="pl__val">−{{money .Totals.LossCost}}</span>
+          </div>
+          <div class="pl__row pl__row--sub">
+            <span class="pl__label">活动费用</span>
+            <span class="pl__val">−{{money .Totals.ExpenseCost}}</span>
+          </div>
+          <div class="pl__row pl__row--total">
+            <span class="pl__label">净利润</span>
+            <span class="pl__val {{if .Totals.NetProfit.IsNeg}}neg{{else}}pos{{end}}">{{money .Totals.NetProfit}}</span>
+          </div>
+          <div class="pl__row" style="border:0">
+            <span class="pl__label muted">净利率</span>
+            <span class="pl__val muted">{{pct .Totals.NetMargin}}</span>
+          </div>
+        </div>
+        {{else}}
+        <div class="pl">
+          <div class="pl__row">
+            <span class="pl__label">试饮数量</span><span class="pl__val">{{$m.TastingQty}} 瓶</span>
+          </div>
+          <div class="pl__row">
+            <span class="pl__label">销售数量</span><span class="pl__val">{{$m.SoldQty}} 瓶</span>
+          </div>
+          <div class="pl__row">
+            <span class="pl__label">销售额</span><span class="pl__val">{{money .Totals.Revenue}}</span>
+          </div>
+        </div>
+        <div class="alert alert--info small" style="margin-top:12px;margin-bottom:0">
+          {{template "icon" "info"}}
+          <div class="alert__body">你的账号看不到成本与利润，如需查看请联系管理员调整角色。</div>
+        </div>
+        {{end}}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card__head"><div class="card__title">关键指标</div></div>
+      <div class="card__body">
+        <dl class="kv">
+          <dt>出库合计</dt><dd>{{$m.OutQty}} 瓶</dd>
+          <dt>带去数量</dt><dd>{{if $m.CarriedQty}}{{$m.CarriedQty}} 瓶{{else}}<span class="muted">未填写</span>{{end}}</dd>
+          <dt>试饮带动倍数</dt><dd>{{if $m.TastingQty}}{{fixed 1 $m.SalesMultiplier}} ×{{else}}<span class="muted">—</span>{{end}}</dd>
+          {{if $showCost}}<dt>日均净利润</dt><dd>{{money $m.NetProfitPerDay}}</dd>{{end}}
+          <dt>销售瓶数</dt><dd>{{$m.SoldQty}} 瓶</dd>
+          <dt>试饮瓶数</dt><dd>{{$m.TastingQty}} 瓶</dd>
+        </dl>
+        <div class="small muted" style="margin-top:12px">
+          「试饮带动倍数」= 销售瓶数 ÷ 试饮瓶数，表示每投入 1 瓶试饮能带动卖出几瓶。
+        </div>
+      </div>
+    </div>
+
+    {{if $showCost}}
+    <div class="card">
+      <div class="card__head"><div class="card__title">成本口径</div></div>
+      <div class="card__body tiny text-2" style="line-height:1.8">
+        单位成本为该产品结算时的<strong>移动加权平均成本</strong>（采购到岸成本，含运费、关税分摊）。<br>
+        试饮、赠送、损耗都会按同一单位成本计入支出；{{if $m.IsSettled}}本场已结算，成本已锁定，之后采购价变化不会影响本场利润。{{else}}本场尚未结算，成本会随新的采购入库而变化。{{end}}
+      </div>
+    </div>
+    {{end}}
+  </div>
+</div>
+{{end}}

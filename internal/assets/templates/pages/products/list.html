@@ -1,0 +1,170 @@
+{{define "content"}}
+{{$showCost := .Perms.Has "report.view"}}
+
+<div class="stat-grid">
+  {{if $showCost}}
+  <div class="stat stat--gold">
+    <div class="stat__label">{{template "icon" "coins"}}库存总值</div>
+    <div class="stat__value">{{money .TotalValue}}</div>
+    <div class="stat__meta">按移动加权平均成本估算</div>
+  </div>
+  {{end}}
+  <div class="stat">
+    <div class="stat__label">{{template "icon" "box"}}库存瓶数</div>
+    <div class="stat__value">{{.TotalQty}}</div>
+    <div class="stat__meta">当前筛选范围内合计</div>
+  </div>
+  <div class="stat stat--ice">
+    <div class="stat__label">{{template "icon" "tag"}}SKU 数量</div>
+    <div class="stat__value">{{.Count}}</div>
+    <div class="stat__meta">个产品档案</div>
+  </div>
+  <div class="stat {{if gt .LowCount 0}}stat--warn{{end}}">
+    <div class="stat__label">{{template "icon" "alert"}}低库存</div>
+    <div class="stat__value">{{.LowCount}}</div>
+    <div class="stat__meta">{{if gt .LowCount 0}}低于预警线，需要补货{{else}}暂无需补货{{end}}</div>
+  </div>
+</div>
+
+<div class="card">
+  <form class="filters" method="get" action="/products">
+    <div class="field field--wide">
+      <label class="field__label" for="q">搜索</label>
+      <input class="input" id="q" name="q" type="search" value="{{.Keyword}}" placeholder="产品名称、英文名或产品编码">
+    </div>
+    <div class="field">
+      <label class="field__label" for="category">品类</label>
+      <select class="select" id="category" name="category">
+        {{$curCat := .Category}}
+        <option value=""{{if eq $curCat ""}} selected{{end}}>全部品类</option>
+        {{range .Categories}}<option value="{{.}}"{{if eq . $curCat}} selected{{end}}>{{.}}</option>{{end}}
+      </select>
+    </div>
+    <div class="field">
+      <label class="field__label" for="supplier">供应商</label>
+      <select class="select" id="supplier" name="supplier">
+        {{$curSup := .SupplierID}}
+        <option value=""{{if eq $curSup 0}} selected{{end}}>全部供应商</option>
+        {{range .Suppliers}}<option value="{{.ID}}"{{if eq .ID $curSup}} selected{{end}}>{{.Name}}</option>{{end}}
+      </select>
+    </div>
+    <div class="field">
+      <label class="field__label" for="sort">排序</label>
+      <select class="select" id="sort" name="sort">
+        {{$curSort := .Sort}}
+        <option value=""{{if eq $curSort ""}} selected{{end}}>默认排序</option>
+        <option value="stock"{{if eq $curSort "stock"}} selected{{end}}>库存多在前</option>
+        <option value="stock_asc"{{if eq $curSort "stock_asc"}} selected{{end}}>库存少在前</option>
+        <option value="value"{{if eq $curSort "value"}} selected{{end}}>库存价值高</option>
+        <option value="price"{{if eq $curSort "price"}} selected{{end}}>售价高在前</option>
+        <option value="sku"{{if eq $curSort "sku"}} selected{{end}}>按产品编码</option>
+        <option value="updated"{{if eq $curSort "updated"}} selected{{end}}>最近更新</option>
+      </select>
+    </div>
+    <div class="field" style="flex:0 1 auto">
+      <span class="field__label">更多筛选项</span>
+      <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;min-height:38px">
+        <label class="checkbox" style="min-height:auto">
+          <input type="checkbox" name="low" value="1"{{if .LowStockOnly}} checked{{end}}><span>只看低库存</span>
+        </label>
+        <label class="checkbox" style="min-height:auto">
+          <input type="checkbox" name="all" value="1"{{if .IncludeInactive}} checked{{end}}><span>包含已停用</span>
+        </label>
+      </div>
+    </div>
+    <div class="field field--actions">
+      <button class="btn btn--primary" type="submit">{{template "icon" "search"}}<span>筛选</span></button>
+      <a class="btn" href="/products">重置</a>
+    </div>
+  </form>
+
+  <div class="card__head">
+    <div class="card__title">共 {{.Count}} 个产品<span class="card__sub">库存为实时结存数量{{if $showCost}}，成本为移动加权平均成本（含运费与关税分摊）{{end}}</span></div>
+    <div class="card__actions">
+      {{if .CanManage}}<a class="btn btn--sm btn--primary" href="/products/new">{{template "icon" "plus"}}<span>新建产品</span></a>{{end}}
+    </div>
+  </div>
+
+  {{if .Products}}
+  <div class="table-wrap">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>产品</th>
+          <th>品类</th>
+          <th class="num">库存</th>
+          {{if $showCost}}<th class="num">平均成本</th><th class="num">库存成本</th>{{end}}
+          <th class="num">售价</th>
+          {{if $showCost}}<th class="num">毛利率</th>{{end}}
+          <th>供应商</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range $p := .Products}}
+        <tr>
+          <td>
+            <a class="strong" href="/products/{{$p.ID}}">{{$p.Name}}</a>
+            {{if not $p.IsActive}}<span class="badge badge--muted">已停用</span>{{end}}
+            <div class="tiny muted">
+              <span class="mono">{{$p.SKU}}</span>
+              {{if $p.Vintage}} · {{$p.Vintage}} 年{{end}}
+              {{if $p.Spec}} · {{$p.Spec}}{{end}}
+            </div>
+          </td>
+          <td class="small">{{if $p.Category}}{{$p.Category}}{{else}}<span class="muted">—</span>{{end}}</td>
+          <td class="num">
+            {{$p.StockQty}}
+            {{if $p.IsOutOfStock}} <span class="badge badge--warn">无库存</span>
+            {{else if $p.IsLowStock}} <span class="badge badge--danger">低于预警线</span>{{end}}
+            {{if $p.IsLowStock}}<div class="tiny muted">预警线 {{$p.LowStockQty}}</div>{{end}}
+          </td>
+          {{if $showCost}}
+          <td class="num muted">{{money4 $p.AvgCost}}</td>
+          <td class="num">{{money $p.StockValue}}</td>
+          {{end}}
+          <td class="num">{{money $p.SalePrice}}</td>
+          {{if $showCost}}<td class="num small {{if lt $p.Margin 0.0}}neg{{end}}">{{pct $p.Margin}}</td>{{end}}
+          <td class="small">{{if $p.SupplierName}}{{$p.SupplierName}}{{else}}<span class="muted">—</span>{{end}}</td>
+          <td class="right">
+            <div class="row-actions">
+              <a class="btn btn--sm" href="/products/{{$p.ID}}">详情</a>
+              {{if $.CanManage}}
+              <a class="btn btn--sm btn--ghost" href="/products/{{$p.ID}}/edit" title="编辑">{{template "icon" "edit"}}</a>
+              <form method="post" action="/products/{{$p.ID}}/toggle" class="inline"
+                    onsubmit="return confirm('确定{{if $p.IsActive}}停用{{else}}启用{{end}}「{{$p.Name}}」？')">
+                <button class="btn btn--sm btn--ghost" type="submit" title="{{if $p.IsActive}}停用{{else}}启用{{end}}">{{template "icon" "refresh"}}</button>
+              </form>
+              <form method="post" action="/products/{{$p.ID}}/delete" class="inline"
+                    onsubmit="return confirm('删除后无法恢复，已有流水的产品不能删除；建议改用停用。确定删除「{{$p.Name}}」？')">
+                <button class="btn btn--sm btn--ghost" type="submit" title="删除">{{template "icon" "trash"}}</button>
+              </form>
+              {{end}}
+            </div>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td>合计 {{.Count}} 个产品</td>
+          <td></td>
+          <td class="num">{{.TotalQty}}</td>
+          {{if $showCost}}<td></td><td class="num">{{money .TotalValue}}</td>{{end}}
+          <td></td>
+          {{if $showCost}}<td></td>{{end}}
+          <td></td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+  {{else}}
+    {{if .CanManage}}
+    {{template "empty" (dict "Icon" "tag" "Title" "没有符合条件的产品" "Hint" "换个筛选条件试试，或者先建一个产品档案，之后就能录入采购入库了。" "ActionHref" "/products/new" "ActionLabel" "新建产品")}}
+    {{else}}
+    {{template "empty" (dict "Icon" "tag" "Title" "没有符合条件的产品" "Hint" "换个筛选条件试试。")}}
+    {{end}}
+  {{end}}
+</div>
+{{end}}

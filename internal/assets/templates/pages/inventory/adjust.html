@@ -1,0 +1,126 @@
+{{define "content"}}
+<div class="page-head">
+  <div class="page-head__main">
+    <div class="page-head__title">出入库登记</div>
+    <div class="page-head__meta"><span>手工登记会立即更新库存与加权平均成本</span></div>
+  </div>
+  <div class="page-head__actions">
+    <a class="btn" href="/inventory">{{template "icon" "box"}}<span>库存查询</span></a>
+    <a class="btn" href="/inventory/movements">{{template "icon" "layers"}}<span>库存流水</span></a>
+  </div>
+</div>
+
+<div class="alert alert--info">
+  {{template "icon" "info"}}
+  <div class="alert__body">
+    <div class="alert__title">什么时候用这张单？</div>
+    <ul style="margin:6px 0 0;padding-left:20px">
+      <li><strong>期初建账</strong>：刚开始用系统时，把仓库里实际现有的库存一次性录进来，数量填正数，并填写单位成本。</li>
+      <li><strong>盘点调增 / 调减</strong>：实物比账面多就填正数，实物比账面少就填负数。</li>
+      <li><strong>破损 / 损耗</strong>：直接填负数（例如 −2），库存会相应减少，不用填成本。</li>
+      <li><strong>退货入库</strong>：客户退回的酒，填正数并填写单位成本。</li>
+    </ul>
+  </div>
+</div>
+
+<div class="grid grid--sidebar">
+  <div>
+    <div class="card">
+      <form method="post" action="/inventory/adjust">
+        <div class="card__head">
+          <div class="card__title">登记一笔出入库<span class="card__sub">带 * 为必填</span></div>
+        </div>
+        <div class="card__body">
+          <div class="form-grid">
+            <div class="field span-2">
+              <label class="field__label" for="product_id">产品<span class="req">*</span></label>
+              <select class="select" id="product_id" name="product_id" required>
+                <option value="">— 选择产品 —</option>
+                {{range .Products}}
+                <option value="{{.ID}}"{{if eq .ID $.Preselect}} selected{{end}}>{{.Label}}（库存 {{.Stock}}）</option>
+                {{end}}
+              </select>
+              <div class="field__hint">按 SKU 或名称查找，括号内是当前库存。</div>
+            </div>
+
+            <div class="field">
+              <label class="field__label" for="reason">登记类型<span class="req">*</span></label>
+              <select class="select" id="reason" name="reason">
+                {{range .Reasons}}<option value="{{.Value}}">{{.Label}}</option>{{end}}
+              </select>
+            </div>
+
+            <div class="field">
+              <label class="field__label" for="qty">数量<span class="req">*</span></label>
+              <input class="input input--num" id="qty" name="qty" type="text" inputmode="decimal" value="" placeholder="例如 12 或 -2" required>
+              <div class="field__hint">入库填正数，出库填负数，例如 -2。</div>
+            </div>
+
+            <div class="field">
+              <label class="field__label" for="unit_cost">单位成本</label>
+              <input class="input input--num" id="unit_cost" name="unit_cost" type="text" inputmode="decimal" value="" placeholder="例如 35.00">
+              <div class="field__hint">入库时的单位成本；期初建账、退货入库必填。出库不用填。</div>
+            </div>
+
+            <div class="field">
+              <label class="field__label" for="occurred_on">发生日期</label>
+              <input class="input" id="occurred_on" name="occurred_on" type="date" value="{{.Today}}">
+              <div class="field__hint">补录以前的单据时记得改日期，流水按日期排序。</div>
+            </div>
+
+            <div class="field span-2">
+              <label class="field__label" for="note">备注</label>
+              <textarea class="textarea" id="note" name="note" rows="3" placeholder="例如：酒庄直发到仓库，运费另计"></textarea>
+            </div>
+          </div>
+        </div>
+        <div class="card__foot">
+          <button class="btn btn--primary btn--lg btn--block" type="submit">{{template "icon" "save"}}<span>保存登记</span></button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="card__head">
+        <div class="card__title">最近手工登记<span class="card__sub">最近 15 条</span></div>
+        <div class="card__actions"><a class="btn btn--sm" href="/inventory/movements">全部流水</a></div>
+      </div>
+      {{if .RecentMovements}}
+      <div class="table-wrap">
+        <table class="data data--compact">
+          <thead>
+            <tr>
+              <th>日期</th>
+              <th>产品</th>
+              <th>类型</th>
+              <th class="num">数量</th>
+              <th class="num">单位成本</th>
+              <th>备注</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{range .RecentMovements}}
+            <tr>
+              <td class="nowrap small">{{.OccurredOn}}</td>
+              <td>
+                <a href="/products/{{.ProductID}}">{{.ProductName}}</a>
+                <div class="tiny muted mono">{{.ProductSKU}}</div>
+              </td>
+              <td><span class="badge{{if .IsIn}} badge--ok{{else}} badge--muted{{end}}">{{.ReasonLabel}}</span></td>
+              <td class="num {{if not .IsIn}}neg{{end}}">{{if .IsIn}}+{{end}}{{.Qty}}</td>
+              <td class="num muted">{{money4 .UnitCost}}</td>
+              <td class="small">{{if .Note}}{{.Note}}{{else}}<span class="muted">—</span>{{end}}</td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+      {{else}}
+      {{template "empty" (dict "Icon" "adjust" "Title" "还没有手工登记" "Hint" "用左边的表单登记期初库存或盘点差异，记录会显示在这里。")}}
+      {{end}}
+    </div>
+  </div>
+</div>
+{{end}}

@@ -1,0 +1,63 @@
+{{define "content"}}
+{{$m := .Market}}
+<div class="page-head">
+  <div class="page-head__main">
+    <div class="page-head__title">{{if .IsNew}}新建市集活动{{else}}编辑「{{$m.Name}}」{{end}}</div>
+    <div class="page-head__meta">
+      {{if .IsNew}}<span>先填基本信息，保存后再录入试饮与销售数量</span>{{else}}<span class="mono">{{$m.Code}}</span>{{template "market_status" $m.Status}}{{end}}
+    </div>
+  </div>
+  <div class="page-head__actions">
+    <a class="btn" href="{{if .IsNew}}/markets{{else}}/markets/{{$m.ID}}{{end}}">{{template "icon" "back"}}<span>返回</span></a>
+  </div>
+</div>
+
+<form method="post" action="{{.FormAction}}">
+  <div class="card">
+    <div class="card__head"><div class="card__title">基本信息</div></div>
+    <div class="card__body">
+      <div class="form-grid">
+        <div class="field span-2">
+          <label class="field__label" for="name">市集名称<span class="req">*</span></label>
+          <input class="input" id="name" name="name" type="text" value="{{$m.Name}}" required
+                 placeholder="例如：圣劳伦斯市场圣诞市集" autofocus>
+          <div class="field__hint">建议带上城市或季节，方便日后按名称筛选。</div>
+        </div>
+        <div class="field">
+          <label class="field__label" for="start_date">开始日期<span class="req">*</span></label>
+          <input class="input" id="start_date" name="start_date" type="date" value="{{$m.StartDate}}" required>
+        </div>
+        <div class="field">
+          <label class="field__label" for="end_date">结束日期</label>
+          <input class="input" id="end_date" name="end_date" type="date" value="{{$m.EndDate}}">
+          <div class="field__hint">单日活动与开始日期相同即可。</div>
+        </div>
+        <div class="field">
+          <label class="field__label" for="venue">场地</label>
+          <input class="input" id="venue" name="venue" type="text" value="{{$m.Venue}}" placeholder="例如：St. Lawrence Market">
+        </div>
+        <div class="field">
+          <label class="field__label" for="city">城市</label>
+          <input class="input" id="city" name="city" type="text" value="{{$m.City}}" placeholder="例如：多伦多">
+        </div>
+        <div class="field span-2">
+          <label class="field__label" for="organizer">主办方</label>
+          <input class="input" id="organizer" name="organizer" type="text" value="{{$m.Organizer}}" placeholder="例如：Toronto Food Events">
+        </div>
+        <div class="field span-2">
+          <label class="field__label" for="notes">备注</label>
+          <textarea class="textarea" id="notes" name="notes" rows="3"
+                    placeholder="现场情况、天气、人流、下次要注意的事……">{{$m.Notes}}</textarea>
+        </div>
+      </div>
+    </div>
+    <div class="card__foot" style="display:flex;gap:10px;align-items:center">
+      <div class="small muted">保存后即可录入每个产品的试饮与销售数量。</div>
+      <div style="margin-left:auto;display:flex;gap:8px">
+        <a class="btn" href="{{if .IsNew}}/markets{{else}}/markets/{{$m.ID}}{{end}}">取消</a>
+        <button class="btn btn--primary" type="submit">{{template "icon" "save"}}<span>{{if .IsNew}}创建市集{{else}}保存修改{{end}}</span></button>
+      </div>
+    </div>
+  </div>
+</form>
+{{end}}

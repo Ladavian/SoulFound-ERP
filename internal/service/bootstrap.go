@@ -1,0 +1,434 @@
+package service
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"log"
+	"regexp"
+	"strings"
+
+	"icewine-erp/internal/model"
+)
+
+// Bootstrap 首次启动初始化：全局设置、默认管理员、可选演示数据。
+func (s *Service) Bootstrap(ctx context.Context) error {
+	if err := s.Store.EnsureSettings(ctx, model.Settings{
+		CompanyName:    s.Cfg.AppName,
+		Currency:       s.Cfg.Currency,
+		CurrencySymbol: s.Cfg.CurrencySymbol,
+		DefaultLowQty:  s.Cfg.DefaultLowQty,
+	}); err != nil {
+		return fmt.Errorf("初始化设置失败: %w", err)
+	}
+
+	count, err := s.Store.CountUsers(ctx)
+	if err != nil {
+		return fmt.Errorf("检查用户失败: %w", err)
+	}
+	if count == 0 {
+		hash, err := HashPassword(s.Cfg.AdminPassword)
+		if err != nil {
+			return err
+		}
+		if _, err := s.Store.CreateUser(ctx, &model.User{
+			Username:     s.Cfg.AdminUsername,
+			PasswordHash: hash,
+			FullName:     s.Cfg.AdminName,
+			Role:         model.RoleAdmin,
+			IsActive:     true,
+		}); err != nil {
+			return fmt.Errorf("创建管理员失败: %w", err)
+		}
+		log.Printf("已创建管理员账号：%s / %s（请登录后立即修改密码）",
+			s.Cfg.AdminUsername, s.Cfg.AdminPassword)
+	}
+
+	if s.Cfg.SeedDemo {
+		existing, _, err := s.Store.CountProducts(ctx)
+		if err != nil {
+			return err
+		}
+		if existing == 0 {
+			admin, err := s.Store.UserByUsername(ctx, s.Cfg.AdminUsername)
+			if err != nil {
+				return err
+			}
+			if err := s.seedDemo(ctx, admin); err != nil {
+				return fmt.Errorf("写入演示数据失败: %w", err)
+			}
+			log.Printf("已写入演示数据（产品、采购入库、市集活动）")
+		}
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------- 用户管理
+
+var usernamePattern = regexp.MustCompile(`^[A-Za-z0-9._-]{3,32}$`)
+
+func validRole(role string) bool {
+	switch role {
+	case model.RoleAdmin, model.RoleManager, model.RoleStaff, model.RoleViewer:
+		return true
+	}
+	return false
+}
+
+// CreateUser 新建用户。
+func (s *Service) CreateUser(ctx context.Context, username, password, fullName, role string, actor *model.User) (int64, error) {
+	username = strings.TrimSpace(username)
+	if !usernamePattern.MatchString(username) {
+		return 0, UserErrf("用户名只能是 3-32 位字母、数字、点、下划线或中划线")
+	}
+	if err := ValidatePassword(password); err != nil {
+		return 0, err
+	}
+	if !validRole(role) {
+		return 0, UserErrf("请选择有效的角色")
+	}
+	if existing, err := s.Store.UserByUsername(ctx, username); err != nil {
+		return 0, err
+	} else if existing != nil {
+		return 0, UserErrf("用户名「%s」已存在", username)
+	}
+	hash, err := HashPassword(password)
+	if err != nil {
+		return 0, err
+	}
+	var newID int64
+	err = s.Store.Tx(ctx, func(tx *sql.Tx) error {
+		id, err := s.Store.CreateUserTx(ctx, tx, &model.User{
+			Username:     username,
+			PasswordHash: hash,
+			FullName:     strings.TrimSpace(fullName),
+			Role:         role,
+			IsActive:     true,
+		})
+		if err != nil {
+			return err
+		}
+		newID = id
+		return s.Store.Log(ctx, tx, actor, "新建用户", "user", &id, username+" / "+model.RoleLabel(role))
+	})
+	return newID, err
+}
+
+// UpdateUser 修改用户资料、角色与启用状态。
+func (s *Service) UpdateUser(ctx context.Context, id int64, fullName, role string, isActive bool, actor *model.User) error {
+	if !validRole(role) {
+		return UserErrf("请选择有效的角色")
+	}
+	target, err := s.Store.UserByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if target == nil {
+		return UserErrf("用户不存在")
+	}
+	if actor != nil && actor.ID == id {
+		if !isActive {
+			return UserErrf("不能停用当前登录的账号")
+		}
+		if target.Role == model.RoleAdmin && role != model.RoleAdmin {
+			return UserErrf("不能修改自己的管理员角色")
+		}
+	}
+	// 防止把最后一个管理员降级或停用
+	if target.Role == model.RoleAdmin && (role != model.RoleAdmin || !isActive) {
+		admins, err := s.Store.CountActiveAdmins(ctx)
+		if err != nil {
+			return err
+		}
+		if admins <= 1 {
+			return UserErrf("系统必须保留至少一个启用状态的管理员")
+		}
+	}
+	return s.Store.Tx(ctx, func(tx *sql.Tx) error {
+		if err := s.Store.UpdateUserTx(ctx, tx, &model.User{
+			ID:       id,
+			FullName: strings.TrimSpace(fullName),
+			Role:     role,
+			IsActive: isActive,
+		}); err != nil {
+			return err
+		}
+		return s.Store.Log(ctx, tx, actor, "修改用户", "user", &id, target.Username)
+	})
+}
+
+// ResetPassword 管理员重置他人密码。
+func (s *Service) ResetPassword(ctx context.Context, id int64, newPassword string, actor *model.User) error {
+	if err := ValidatePassword(newPassword); err != nil {
+		return err
+	}
+	target, err := s.Store.UserByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if target == nil {
+		return UserErrf("用户不存在")
+	}
+	hash, err := HashPassword(newPassword)
+	if err != nil {
+		return err
+	}
+	return s.Store.Tx(ctx, func(tx *sql.Tx) error {
+		if err := s.Store.UpdatePasswordTx(ctx, tx, id, hash); err != nil {
+			return err
+		}
+		return s.Store.Log(ctx, tx, actor, "重置密码", "user", &id, target.Username)
+	})
+}
+
+// DeleteUser 删除用户。
+func (s *Service) DeleteUser(ctx context.Context, id int64, actor *model.User) error {
+	if actor != nil && actor.ID == id {
+		return UserErrf("不能删除当前登录的账号")
+	}
+	target, err := s.Store.UserByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if target == nil {
+		return UserErrf("用户不存在")
+	}
+	if target.Role == model.RoleAdmin {
+		admins, err := s.Store.CountActiveAdmins(ctx)
+		if err != nil {
+			return err
+		}
+		if admins <= 1 {
+			return UserErrf("系统必须保留至少一个管理员")
+		}
+	}
+	return s.Store.Tx(ctx, func(tx *sql.Tx) error {
+		if err := s.Store.DeleteUserTx(ctx, tx, id); err != nil {
+			return err
+		}
+		return s.Store.Log(ctx, tx, actor, "删除用户", "user", &id, target.Username)
+	})
+}
+
+// ---------------------------------------------------------------- 演示数据
+
+func (s *Service) seedDemo(ctx context.Context, admin *model.User) error {
+	supplier1, err := s.Store.CreateSupplier(ctx, &model.Supplier{
+		Name: "Peller Estates 皮勒酒庄", ContactName: "Linda", Phone: "+1 905-468-4673",
+		Email: "sales@pellerestates.example", Country: "加拿大",
+		Address: "290 John St E, Niagara-on-the-Lake, ON", IsActive: true,
+	})
+	if err != nil {
+		return err
+	}
+	if _, err := s.Store.CreateSupplier(ctx, &model.Supplier{
+		Name: "Inniskillin 云岭酒庄", ContactName: "Mark", Phone: "+1 905-468-2187",
+		Email: "orders@inniskillin.example", Country: "加拿大",
+		Address: "1499 Line 3, Niagara-on-the-Lake, ON", IsActive: true,
+	}); err != nil {
+		return err
+	}
+
+	type productSeed struct {
+		sku, name, nameEn string
+		vintage, volume   int
+		price, lowStock   string
+	}
+	seeds := []productSeed{
+		{"ICE-VID-375", "威代尔冰酒", "Vidal Icewine", 2019, 375, "89.00", "6"},
+		{"ICE-RIE-375", "雷司令冰酒", "Riesling Icewine", 2020, 375, "99.00", "6"},
+		{"ICE-CAB-200", "品丽珠冰酒", "Cabernet Franc Icewine", 2018, 200, "69.00", "6"},
+		{"ICE-VID-200", "威代尔冰酒 200ml", "Vidal Icewine Half", 2021, 200, "59.00", "12"},
+	}
+	productIDs := make([]int64, 0, len(seeds))
+	for _, sd := range seeds {
+		id, err := s.Store.CreateProduct(ctx, &model.Product{
+			SKU: sd.sku, Name: sd.name, NameEn: sd.nameEn, Category: "冰酒",
+			Vintage: sd.vintage, VolumeML: sd.volume, Unit: "瓶", BottlesPerCase: 6,
+			SalePrice: model.MustMoney(sd.price), LowStockQty: model.MustQty(sd.lowStock),
+			SupplierID: &supplier1, IsActive: true,
+			Notes: "尼亚加拉半岛 VQA 认证",
+		})
+		if err != nil {
+			return err
+		}
+		productIDs = append(productIDs, id)
+	}
+
+	// 一批采购入库（含运费与关税，验证到岸成本分摊）
+	purchaseDate := fmtDate(todayDate().AddDate(0, 0, -60))
+	purchaseID, err := s.SavePurchase(ctx, PurchaseInput{
+		SupplierID:   &supplier1,
+		PurchaseDate: purchaseDate,
+		AllocMethod:  model.AllocByQty,
+		ShippingCost: model.MustMoney("480"),
+		TariffCost:   model.MustMoney("325"),
+		Notes:        "2025 秋季首批到货，海运 + 清关",
+		Items: []PurchaseItemInput{
+			{ProductID: productIDs[0], Qty: model.MustQty("72"), UnitPrice: model.MustMoney("42.50")},
+			{ProductID: productIDs[1], Qty: model.MustQty("48"), UnitPrice: model.MustMoney("48.00")},
+			{ProductID: productIDs[2], Qty: model.MustQty("36"), UnitPrice: model.MustMoney("31.00")},
+			{ProductID: productIDs[3], Qty: model.MustQty("84"), UnitPrice: model.MustMoney("26.00")},
+		},
+	}, admin)
+	if err != nil {
+		return err
+	}
+	if err := s.ConfirmPurchase(ctx, purchaseID, admin); err != nil {
+		return err
+	}
+
+	type demoLine struct {
+		product int
+		carried string
+		tasting string
+		sold    string
+		gift    string
+		loss    string
+		price   string
+		disc    string
+	}
+	type demoExpense struct {
+		category string
+		amount   string
+		note     string
+	}
+	type marketSeed struct {
+		name, venue, city, organizer string
+		daysAgo                      int
+		days                         int
+		lines                        []demoLine
+		expenses                     []demoExpense
+		settle                       bool
+	}
+
+	markets := []marketSeed{
+		{
+			name: "圣劳伦斯市场周末市集", venue: "St. Lawrence Market", city: "多伦多",
+			organizer: "Toronto Food Events", daysAgo: 45, days: 2,
+			lines: []demoLine{
+				{0, "24", "4", "12", "1", "0", "89.00", "0"},
+				{1, "16", "3", "8", "0", "0", "99.00", "20.00"},
+				{3, "32", "5", "16", "1", "1", "59.00", "0"},
+			},
+			expenses: []demoExpense{
+				{model.ExpenseBooth, "180", "两天摊位费"},
+				{model.ExpenseTravel, "65", "油费与停车"},
+				{model.ExpensePackaging, "42.50", "纸袋与冰袋"},
+			},
+			settle: true,
+		},
+		{
+			name: "尼亚加拉冰酒节", venue: "Niagara Icewine Village", city: "尼亚加拉湖滨小镇",
+			organizer: "Niagara Wine Festival", daysAgo: 25, days: 3,
+			lines: []demoLine{
+				{0, "32", "5", "16", "1", "0", "89.00", "50.00"},
+				{1, "24", "4", "12", "0", "0", "99.00", "0"},
+				{2, "18", "3", "9", "0", "0", "69.00", "0"},
+				{3, "40", "6", "20", "1", "0", "59.00", "30.00"},
+			},
+			expenses: []demoExpense{
+				{model.ExpenseBooth, "450", "三天展位"},
+				{model.ExpenseTravel, "180", "住宿与交通"},
+				{model.ExpenseMeal, "120", "团队餐费"},
+				{model.ExpensePackaging, "68", "礼盒与包装"},
+			},
+			settle: true,
+		},
+		{
+			name: "万锦亚洲美食节", venue: "Markham Fairgrounds", city: "万锦",
+			organizer: "Markham Asian Food Fest", daysAgo: 8, days: 1,
+			lines: []demoLine{
+				{0, "16", "3", "9", "0", "0", "89.00", "0"},
+				{3, "24", "4", "13", "1", "0", "59.00", "18.00"},
+			},
+			expenses: []demoExpense{
+				{model.ExpenseBooth, "150", "单日摊位"},
+				{model.ExpenseTravel, "40", "交通"},
+			},
+			settle: true,
+		},
+		{
+			name: "圣诞市集（筹备中）", venue: "Distillery District", city: "多伦多",
+			organizer: "Toronto Christmas Market", daysAgo: -12, days: 4,
+			lines: []demoLine{
+				{0, "0", "0", "0", "0", "0", "89.00", "0"},
+				{2, "0", "0", "0", "0", "0", "69.00", "0"},
+			},
+			expenses: []demoExpense{
+				{model.ExpenseBooth, "600", "四天展位预付"},
+			},
+			settle: false,
+		},
+	}
+
+	for _, ms := range markets {
+		start := todayDate().AddDate(0, 0, -ms.daysAgo)
+		end := start.AddDate(0, 0, ms.days-1)
+		marketID, err := s.SaveMarket(ctx, MarketInput{
+			Name: ms.name, Venue: ms.venue, City: ms.city, Organizer: ms.organizer,
+			StartDate: fmtDate(start), EndDate: fmtDate(end),
+		}, admin)
+		if err != nil {
+			return err
+		}
+		for _, ln := range ms.lines {
+			if _, err := s.AddMarketProduct(ctx, marketID, productIDs[ln.product], admin); err != nil {
+				return err
+			}
+		}
+		m, err := s.Store.MarketByID(ctx, marketID)
+		if err != nil {
+			return err
+		}
+		for i, ln := range ms.lines {
+			if i >= len(m.Items) {
+				break
+			}
+			item := m.Items[i]
+			up := MarketItemUpdate{
+				CarriedQty:  model.MustQty(ln.carried),
+				TastingQty:  model.MustQty(ln.tasting),
+				SoldQty:     model.MustQty(ln.sold),
+				GiftQty:     model.MustQty(ln.gift),
+				LossQty:     model.MustQty(ln.loss),
+				UnitPrice:   model.MustMoney(ln.price),
+				DiscountAmt: model.MustMoney(ln.disc),
+			}
+			if err := s.UpdateMarketItemRow(ctx, marketID, item.ID, up, admin); err != nil {
+				return err
+			}
+		}
+		expenses := make([]model.MarketExpense, 0, len(ms.expenses))
+		for _, e := range ms.expenses {
+			expenses = append(expenses, model.MarketExpense{
+				Category: e.category, Amount: model.MustMoney(e.amount), Note: e.note,
+			})
+		}
+		if err := s.SaveMarketExpenses(ctx, marketID, expenses, admin); err != nil {
+			return err
+		}
+		if ms.settle {
+			if err := s.SettleMarket(ctx, marketID, admin); err != nil {
+				return err
+			}
+		} else {
+			if err := s.SetMarketStatus(ctx, marketID, model.MarketOngoing, admin); err != nil {
+				return err
+			}
+		}
+	}
+
+	// 一笔期初/盘点示例
+	if err := s.AdjustStock(ctx, AdjustInput{
+		ProductID:  productIDs[2],
+		Qty:        model.MustQty("6"),
+		UnitCost:   model.MustMoney("33.00"),
+		OccurredOn: fmtDate(todayDate().AddDate(0, 0, -50)),
+		Reason:     model.ReasonOpening,
+		Note:       "开业前自留样品转库存",
+	}, admin); err != nil {
+		return err
+	}
+	return nil
+}

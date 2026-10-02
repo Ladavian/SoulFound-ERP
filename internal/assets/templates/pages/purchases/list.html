@@ -1,0 +1,136 @@
+{{define "content"}}
+<div class="stat-grid">
+  <div class="stat">
+    <div class="stat__label">{{template "icon" "truck"}}采购单据</div>
+    <div class="stat__value">{{.Count}}</div>
+    <div class="stat__meta">当前筛选条件下的单据数</div>
+  </div>
+  {{if .Perms.Has "report.view"}}
+  <div class="stat stat--gold">
+    <div class="stat__label">{{template "icon" "coins"}}已入库金额</div>
+    <div class="stat__value">{{money .TotalAmount}}</div>
+    <div class="stat__meta">仅统计已入库单据的到岸总成本</div>
+  </div>
+  {{end}}
+  <div class="stat stat--ice">
+    <div class="stat__label">{{template "icon" "box"}}已入库瓶数</div>
+    <div class="stat__value">{{.TotalQty}}</div>
+    <div class="stat__meta">已确认入库的数量合计</div>
+  </div>
+</div>
+
+<div class="card">
+  <form class="filters" method="get" action="/purchases">
+    <div class="field field--wide">
+      <label class="field__label" for="q">关键词</label>
+      <input class="input" id="q" name="q" type="search" value="{{.Keyword}}" placeholder="单据号、产品名、供应商">
+    </div>
+    <div class="field">
+      <label class="field__label" for="status">状态</label>
+      <select class="select" id="status" name="status">
+        {{$cur := .Status}}
+        {{range .StatusOptions}}<option value="{{.Value}}"{{if eq .Value $cur}} selected{{end}}>{{.Label}}</option>{{end}}
+      </select>
+    </div>
+    <div class="field">
+      <label class="field__label" for="supplier">供应商</label>
+      <select class="select" id="supplier" name="supplier">
+        <option value="">全部供应商</option>
+        {{$sid := .SupplierID}}
+        {{range .Suppliers}}<option value="{{.ID}}"{{if eq .ID $sid}} selected{{end}}>{{.Name}}</option>{{end}}
+      </select>
+    </div>
+    <div class="field">
+      <label class="field__label" for="from">开始日期</label>
+      <input class="input" id="from" name="from" type="date" value="{{.From}}">
+    </div>
+    <div class="field">
+      <label class="field__label" for="to">结束日期</label>
+      <input class="input" id="to" name="to" type="date" value="{{.To}}">
+    </div>
+    <div class="field field--actions">
+      <button class="btn btn--primary" type="submit">{{template "icon" "search"}}<span>筛选</span></button>
+      <a class="btn" href="/purchases">重置</a>
+    </div>
+  </form>
+
+  <div class="card__head">
+    <div class="card__title">共 {{.Count}} 张采购单<span class="card__sub">草稿保存后，还要点「确认入库」才会写入库存与成本</span></div>
+    <div class="card__actions">
+      {{if .CanManage}}<a class="btn btn--sm btn--primary" href="/purchases/new">{{template "icon" "plus"}}<span>录入采购入库</span></a>{{end}}
+    </div>
+  </div>
+
+  {{if .Purchases}}
+  <div class="table-wrap">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>单据号</th>
+          <th>供应商</th>
+          <th>采购日期</th>
+          <th>状态</th>
+          <th class="num">明细</th>
+          {{if .Perms.Has "report.view"}}
+          <th class="num">货款</th>
+          <th class="num">附加费用</th>
+          <th class="num">合计</th>
+          {{end}}
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range $p := .Purchases}}
+        <tr>
+          <td>
+            <a class="strong mono" href="/purchases/{{$p.ID}}">{{$p.Code}}</a>
+            {{if $p.CreatedByName}}<div class="tiny muted">{{$p.CreatedByName}} 录入</div>{{end}}
+          </td>
+          <td>{{if $p.SupplierName}}{{$p.SupplierName}}{{else}}<span class="muted">未指定</span>{{end}}</td>
+          <td class="nowrap small">{{date $p.PurchaseDate}}</td>
+          <td>{{template "purchase_status" $p.Status}}</td>
+          <td class="num nowrap">{{$p.ItemCount}} 行<div class="tiny muted">{{$p.TotalQty}} 瓶</div></td>
+          {{if $.Perms.Has "report.view"}}
+          <td class="num">{{money $p.GoodsAmount}}</td>
+          <td class="num muted">{{money $p.ExtraCost}}</td>
+          <td class="num strong">{{money $p.TotalCost}}</td>
+          {{end}}
+          <td class="right">
+            <div class="row-actions">
+              <a class="btn btn--sm" href="/purchases/{{$p.ID}}">详情</a>
+              {{if and $.CanManage $p.IsDraft}}<a class="btn btn--sm btn--ghost" href="/purchases/{{$p.ID}}/edit" title="编辑">{{template "icon" "edit"}}<span>编辑</span></a>{{end}}
+            </div>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td>合计 {{.Count}} 张</td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td class="num">{{.TotalQty}} 瓶</td>
+          {{if .Perms.Has "report.view"}}
+          <td class="num muted">—</td>
+          <td class="num muted">—</td>
+          <td class="num">{{money .TotalAmount}}</td>
+          {{end}}
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+  <div class="card__foot tiny muted">
+    「合计」列为已入库单据的到岸总成本（货款 + 运费 + 关税 + 其他费用）合计；未入库草稿不计入金额与瓶数汇总。平均到岸单价请打开单据详情查看。
+  </div>
+  {{else}}
+  {{$hint := "录入采购单后点「确认入库」，货款、运费与关税会按分摊方式计入库存成本。"}}
+  {{if .CanManage}}
+  {{template "empty" (dict "Icon" "truck" "Title" "还没有采购入库单" "Hint" $hint "ActionHref" "/purchases/new" "ActionLabel" "录入采购入库")}}
+  {{else}}
+  {{template "empty" (dict "Icon" "truck" "Title" "还没有采购入库单" "Hint" $hint)}}
+  {{end}}
+  {{end}}
+</div>
+{{end}}

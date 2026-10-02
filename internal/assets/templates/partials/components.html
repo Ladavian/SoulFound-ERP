@@ -1,0 +1,13 @@
+{{define "flash"}}{{- if .Flash}}<div class="flash-stack">{{- range .Flash}}<div class="alert alert--{{if eq .Level "error"}}error{{else if eq .Level "success"}}success{{else}}info{{end}}" role="status">{{- if eq .Level "error"}}{{template "icon" "alert"}}{{- else if eq .Level "success"}}{{template "icon" "check"}}{{- else}}{{template "icon" "info"}}{{end}}<div class="alert__body">{{.Text}}</div></div>{{- end}}</div>{{- end}}{{end}}
+
+{{define "alert"}}<div class="alert alert--{{.Level}}">{{template "icon" .Icon}}<div class="alert__body">{{if .Title}}<div class="alert__title">{{.Title}}</div>{{end}}{{.Text}}</div></div>{{end}}
+
+{{define "empty"}}<div class="empty">{{template "icon" .Icon}}<div class="empty__title">{{.Title}}</div>{{if .Hint}}<div class="empty__hint">{{.Hint}}</div>{{end}}{{if .ActionHref}}<a class="btn btn--primary" href="{{.ActionHref}}">{{.ActionLabel}}</a>{{end}}</div>{{end}}
+
+{{define "pager"}}{{- if gt .TotalPages 1}}<div class="pager"><div class="pager__info">共 {{.Total}} 条 · 第 {{.Page}} / {{.TotalPages}} 页</div><div class="pager__actions">{{if .HasPrev}}<a class="btn btn--sm" href="{{.PrevURL}}">{{template "icon" "back"}}上一页</a>{{end}}{{if .HasNext}}<a class="btn btn--sm" href="{{.NextURL}}">下一页{{template "icon" "right"}}</a>{{end}}</div></div>{{- end}}{{end}}
+
+{{define "market_status"}}{{if eq . "settled"}}<span class="badge badge--ok">已结算</span>{{else if eq . "ongoing"}}<span class="badge badge--live">进行中</span>{{else}}<span class="badge badge--warn">计划中</span>{{end}}{{end}}
+
+{{define "purchase_status"}}{{if eq . "confirmed"}}<span class="badge badge--ok">已入库</span>{{else if eq . "void"}}<span class="badge badge--muted">已作废</span>{{else}}<span class="badge badge--warn">草稿</span>{{end}}{{end}}
+
+{{define "confirm_form"}}<form method="post" action="{{.Action}}" class="inline" onsubmit="return confirm('{{.Message}}')"><button class="btn {{.Class}}" type="submit">{{template "icon" .Icon}}<span>{{.Label}}</span></button></form>{{end}}

@@ -1,0 +1,219 @@
+{{define "content"}}
+{{$p := .Purchase}}
+{{$showCost := .Perms.Has "report.view"}}
+
+<div class="page-head">
+  <div class="page-head__main">
+    <div class="page-head__title mono">{{$p.Code}}</div>
+    <div class="page-head__meta">
+      {{template "purchase_status" $p.Status}}
+      {{if $p.SupplierName}}<span>{{template "icon" "truck"}} {{$p.SupplierName}}</span>{{end}}
+      <span>{{template "icon" "calendar"}} {{date $p.PurchaseDate}}</span>
+      {{if $p.Currency}}<span>币种 {{$p.Currency}}</span>{{end}}
+      <span>{{$p.ItemCount}} 行 · {{$p.TotalQty}} 瓶</span>
+    </div>
+  </div>
+  <div class="page-head__actions">
+    <a class="btn" href="/purchases">{{template "icon" "back"}}<span>返回列表</span></a>
+    {{if and .CanManage $p.IsDraft}}<a class="btn" href="/purchases/{{$p.ID}}/edit">{{template "icon" "edit"}}<span>编辑</span></a>{{end}}
+    {{if and .CanConfirm $p.IsDraft}}
+    {{template "confirm_form" (dict "Action" (printf "/purchases/%d/confirm" $p.ID) "Message" "确认入库？将按到岸成本写入库存并重算移动加权平均成本。" "Class" "btn--primary" "Icon" "check" "Label" "确认入库")}}
+    {{end}}
+    {{if and .CanConfirm .IsConfirmed}}
+    {{template "confirm_form" (dict "Action" (printf "/purchases/%d/unconfirm" $p.ID) "Message" "撤销入库会删除本单产生的库存流水并重算受影响产品。" "Class" "" "Icon" "refresh" "Label" "撤销入库")}}
+    {{end}}
+    {{if and .CanManage $p.IsDraft}}
+    {{template "confirm_form" (dict "Action" (printf "/purchases/%d/void" $p.ID) "Message" "作废后本单不再参与库存与报表统计，确定作废？" "Class" "" "Icon" "x" "Label" "作废")}}
+    {{end}}
+    {{if and .CanManage $p.IsDraft}}
+    {{template "confirm_form" (dict "Action" (printf "/purchases/%d/delete" $p.ID) "Message" "删除后无法恢复，确定删除这张采购单？" "Class" "btn--danger" "Icon" "trash" "Label" "删除")}}
+    {{end}}
+  </div>
+</div>
+
+{{if $p.IsConfirmed}}
+<div class="alert alert--success">
+  {{template "icon" "check"}}
+  <div class="alert__body">
+    <div class="alert__title">已入库</div>
+    本单已按到岸成本写入库存{{if .Perms.Has "report.view"}}，移动加权平均成本已更新{{end}}{{if $p.ConfirmedAt}}（确认时间 {{datetime $p.ConfirmedAt}}）{{end}}。
+    入库后再改数量或单价不会影响已写入的库存，需要修改请先「撤销入库」。
+  </div>
+</div>
+{{else if $p.IsDraft}}
+<div class="alert alert--info">
+  {{template "icon" "info"}}
+  <div class="alert__body">
+    <div class="alert__title">草稿：尚未入库，库存未变化</div>
+    确认数量与单价无误后，点「确认入库」才会按到岸成本写入库存{{if .Perms.Has "report.view"}}，并重算相关产品的移动加权平均成本{{end}}。
+  </div>
+</div>
+{{else}}
+<div class="alert alert--warn">
+  {{template "icon" "alert"}}
+  <div class="alert__body">
+    <div class="alert__title">已作废</div>
+    本单已作废，不参与库存、成本与报表统计。
+  </div>
+</div>
+{{end}}
+
+<div class="grid grid--sidebar">
+  <div>
+    <div class="card">
+      <div class="card__head">
+        <div class="card__title">采购明细<span class="card__sub">共 {{$p.ItemCount}} 行 · 入库 {{$p.TotalQty}} 瓶</span></div>
+      </div>
+      {{if $p.Items}}
+      <div class="table-wrap">
+        <table class="data entry-table">
+          <thead>
+            <tr>
+              <th style="min-width:190px">产品</th>
+              <th class="num" style="width:84px">数量</th>
+              {{if $showCost}}
+              <th class="num" style="width:104px">单价</th>
+              <th class="num" style="width:104px">货款</th>
+              <th class="num" style="width:110px">分摊费用</th>
+              <th class="num" style="width:120px">到岸单价</th>
+              <th class="num" style="width:112px">到岸总额</th>
+              {{end}}
+            </tr>
+          </thead>
+          <tbody>
+            {{range $it := $p.Items}}
+            <tr>
+              <td class="entry-cell--name" data-label="产品">
+                <div class="strong">{{$it.ProductName}}</div>
+                <div class="tiny muted">
+                  {{if $it.ProductSKU}}<span class="mono">{{$it.ProductSKU}}</span>{{end}}
+                  {{if $it.Note}} · {{$it.Note}}{{end}}
+                </div>
+              </td>
+              <td class="num" data-label="数量">{{$it.Qty}} 瓶</td>
+              {{if $showCost}}
+              <td class="num" data-label="单价">{{money $it.UnitPrice}}</td>
+              <td class="num" data-label="货款">{{money $it.Amount}}</td>
+              <td class="num muted" data-label="分摊费用">{{money $it.ExtraAlloc}}</td>
+              <td class="num" data-label="到岸单价">{{money4 $it.LandedUnitCost}}</td>
+              <td class="num strong" data-label="到岸总额">{{money $it.LandedAmount}}</td>
+              {{end}}
+            </tr>
+            {{end}}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td>合计 {{$p.ItemCount}} 行</td>
+              <td class="num" data-label="数量">{{$p.TotalQty}} 瓶</td>
+              {{if $showCost}}
+              <td class="num"></td>
+              <td class="num" data-label="货款">{{money $p.GoodsAmount}}</td>
+              <td class="num" data-label="分摊费用">{{money .ExtraTotal}}</td>
+              <td class="num"></td>
+              <td class="num" data-label="到岸总额">{{money $p.TotalCost}}</td>
+              {{end}}
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      {{else}}
+      {{template "empty" (dict "Icon" "box" "Title" "这张单据还没有明细行" "Hint" "点「编辑」添加产品与数量，保存后再确认入库。")}}
+      {{end}}
+    </div>
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="card__head">
+        <div class="card__title">金额汇总</div>
+        <div class="card__actions">
+          {{if $p.IsConfirmed}}<span class="badge badge--ok">{{if .Perms.Has "report.view"}}已计入库存成本{{else}}已计入库存{{end}}</span>{{else if $p.IsDraft}}<span class="badge badge--warn">未计入库存</span>{{else}}<span class="badge badge--muted">已作废</span>{{end}}
+        </div>
+      </div>
+      <div class="card__body">
+        {{if $showCost}}
+        <div class="pl">
+          <div class="pl__row">
+            <span class="pl__label">货款合计<small>{{$p.ItemCount}} 行明细</small></span>
+            <span class="pl__val">{{money $p.GoodsAmount}}</span>
+          </div>
+          <div class="pl__row pl__row--sub">
+            <span class="pl__label">运费</span>
+            <span class="pl__val">{{money $p.ShippingCost}}</span>
+          </div>
+          <div class="pl__row pl__row--sub">
+            <span class="pl__label">关税 / 税费</span>
+            <span class="pl__val">{{money $p.TariffCost}}</span>
+          </div>
+          <div class="pl__row pl__row--sub">
+            <span class="pl__label">其他费用</span>
+            <span class="pl__val">{{money $p.OtherCost}}</span>
+          </div>
+          <div class="pl__row pl__row--sub">
+            <span class="pl__label">附加费用合计<small>分摊方式：{{$p.AllocMethodLabel}}</small></span>
+            <span class="pl__val">{{money .ExtraTotal}}</span>
+          </div>
+          <div class="pl__row pl__row--total">
+            <span class="pl__label">到岸总成本<small>货款 + 附加费用</small></span>
+            <span class="pl__val">{{money $p.TotalCost}}</span>
+          </div>
+          <div class="pl__row" style="border:0">
+            <span class="pl__label muted">入库数量</span>
+            <span class="pl__val muted">{{$p.TotalQty}} 瓶</span>
+          </div>
+          <div class="pl__row" style="border:0">
+            <span class="pl__label muted">平均到岸单价<small>到岸总成本 ÷ 入库数量</small></span>
+            <span class="pl__val muted">{{if $p.TotalQty}}{{default "$" .Settings.CurrencySymbol}}{{fixed 4 (div $p.TotalCost.Float $p.TotalQty.Float)}}{{else}}—{{end}}</span>
+          </div>
+        </div>
+        {{else}}
+        <div class="pl">
+          <div class="pl__row">
+            <span class="pl__label">入库数量</span>
+            <span class="pl__val">{{$p.TotalQty}} 瓶</span>
+          </div>
+          <div class="pl__row">
+            <span class="pl__label">明细行数</span>
+            <span class="pl__val">{{$p.ItemCount}} 行</span>
+          </div>
+          <div class="pl__row">
+            <span class="pl__label">状态</span>
+            <span class="pl__val">{{$p.StatusLabel}}</span>
+          </div>
+        </div>
+        <div class="alert alert--info small" style="margin-top:12px;margin-bottom:0">
+          {{template "icon" "info"}}
+          <div class="alert__body">你的账号看不到采购价与到岸成本，如需查看请联系管理员调整角色。</div>
+        </div>
+        {{end}}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card__head"><div class="card__title">单据信息</div></div>
+      <div class="card__body">
+        <dl class="kv">
+          <dt>单据号</dt><dd class="mono">{{$p.Code}}</dd>
+          <dt>供应商</dt><dd>{{if $p.SupplierName}}{{$p.SupplierName}}{{else}}<span class="muted">未指定</span>{{end}}</dd>
+          <dt>采购日期</dt><dd>{{date $p.PurchaseDate}}</dd>
+          <dt>状态</dt><dd>{{template "purchase_status" $p.Status}}</dd>
+          <dt>分摊方式</dt><dd>{{$p.AllocMethodLabel}}</dd>
+          <dt>创建人</dt><dd>{{if $p.CreatedByName}}{{$p.CreatedByName}}{{else}}<span class="muted">—</span>{{end}}</dd>
+          <dt>创建时间</dt><dd>{{if $p.CreatedAt}}{{datetime $p.CreatedAt}}{{else}}<span class="muted">—</span>{{end}}</dd>
+          <dt>更新时间</dt><dd>{{if $p.UpdatedAt}}{{datetime $p.UpdatedAt}}{{else}}<span class="muted">—</span>{{end}}</dd>
+          <dt>确认时间</dt><dd>{{if $p.ConfirmedAt}}{{datetime $p.ConfirmedAt}}{{else}}<span class="muted">—</span>{{end}}</dd>
+          <dt>备注</dt><dd style="text-align:left;white-space:pre-wrap;font-weight:500">{{if $p.Notes}}{{$p.Notes}}{{else}}<span class="muted">—</span>{{end}}</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card__head"><div class="card__title">成本口径</div></div>
+      <div class="card__body tiny text-2" style="line-height:1.8">
+        每瓶到岸成本 = （该行货款 + 按「{{$p.AllocMethodLabel}}」分摊到的附加费用）÷ 该行数量。<br>
+        {{if $p.IsConfirmed}}本单已入库，成本已写入库存{{if .Perms.Has "report.view"}}并参与移动加权平均成本计算{{end}}。{{else}}本单尚未入库，库存不会变化。{{end}}
+      </div>
+    </div>
+  </div>
+</div>
+{{end}}

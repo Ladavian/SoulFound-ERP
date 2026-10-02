@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>当前无法连接 · 冰酒 ERP</title>
+<meta name="theme-color" content="#0F2A24">
+<link rel="stylesheet" href="/static/css/app.css">
+<style>
+  body { background: linear-gradient(160deg, #0F2A24, #1C4A3E 60%, #2A5F50); }
+  .offline-wrap { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+  .offline-card {
+    max-width: 420px; width: 100%; background: #fff; border-radius: 18px;
+    padding: 30px 24px; text-align: center; box-shadow: 0 18px 40px rgba(0,0,0,.28);
+  }
+  .offline-ico {
+    width: 56px; height: 56px; border-radius: 16px; margin: 0 auto 16px;
+    background: #FDF3E2; color: #A96A12; display: grid; place-items: center;
+  }
+  .offline-ico svg { width: 28px; height: 28px; }
+  .offline-card h1 { font-size: 19px; margin-bottom: 8px; }
+  .offline-card p { color: #55635F; font-size: 13.5px; }
+  .offline-card ul { text-align: left; color: #55635F; font-size: 13px; padding-left: 20px; margin: 14px 0; }
+  .offline-card li { margin-bottom: 6px; }
+</style>
+</head>
+<body>
+<div class="offline-wrap">
+  <div class="offline-card">
+    <div class="offline-ico">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 3l18 18"/><path d="M8.5 15.5a5 5 0 017 0"/>
+        <path d="M5 12a10 10 0 013.5-2.3M15.6 9.7A10 10 0 0119 12"/><path d="M12 19h.01"/>
+      </svg>
+    </div>
+    <h1>当前网络不可用</h1>
+    <p>冰酒 ERP 的数据保存在你的服务器上，需要联网才能读写。</p>
+    <ul>
+      <li>请在手机设置里确认 Wi-Fi / 移动数据已开启。</li>
+      <li>市集现场信号较弱时，等信号恢复后重新提交即可，页面会提示保存结果。</li>
+      <li>如果你在摊位用的是随身热点，确认热点仍在工作。</li>
+    </ul>
+    <button class="btn btn--primary btn--lg btn--block" type="button" onclick="location.reload()">重新连接</button>
+  </div>
+</div>
+<script>
+  window.addEventListener('online', function () { location.reload(); });
+</script>
+</body>
+</html>

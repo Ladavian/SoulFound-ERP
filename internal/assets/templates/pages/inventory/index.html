@@ -1,0 +1,205 @@
+{{define "content"}}
+<div class="page-head">
+  <div class="page-head__main">
+    <div class="page-head__title">库存查询</div>
+    <div class="page-head__meta">
+      {{if .Perms.Has "report.view"}}<span>库存与平均成本按采购入库自动加权平均</span>
+      {{else}}<span>库存按销售、试饮、赠送与损耗实时扣减</span>{{end}}
+      <span>共 {{.Count}} 个产品</span>
+    </div>
+  </div>
+  <div class="page-head__actions">
+    {{if .CanAdjust}}<a class="btn btn--primary" href="/inventory/adjust">{{template "icon" "adjust"}}<span>出入库登记</span></a>{{end}}
+    {{if .CanAdjust}}<a class="btn" href="/export/inventory.xlsx">{{template "icon" "download"}}<span>导出库存报表</span></a>{{end}}
+  </div>
+</div>
+
+<div class="stat-grid">
+  {{if .Perms.Has "report.view"}}
+  <div class="stat stat--gold">
+    <div class="stat__label">{{template "icon" "coins"}}库存总值</div>
+    <div class="stat__value">{{money .TotalValue}}</div>
+    <div class="stat__meta">按移动加权平均成本</div>
+  </div>
+  {{end}}
+  <div class="stat stat--ice">
+    <div class="stat__label">{{template "icon" "box"}}库存数量</div>
+    <div class="stat__value">{{.TotalQty}}</div>
+    <div class="stat__meta">全部产品合计</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">{{template "icon" "tag"}}SKU 数</div>
+    <div class="stat__value">{{.Count}}</div>
+    <div class="stat__meta">当前筛选结果</div>
+  </div>
+  <div class="stat{{if gt .LowCount 0}} stat--warn{{end}}">
+    <div class="stat__label">{{template "icon" "alert"}}低库存</div>
+    <div class="stat__value">{{.LowCount}}</div>
+    <div class="stat__meta">低于预警线或已无库存</div>
+  </div>
+</div>
+
+<div class="grid grid--sidebar">
+  <div>
+    <div class="card">
+      <form class="filters" method="get" action="/inventory">
+        <div class="field field--wide">
+          <label class="field__label" for="q">搜索</label>
+          <input class="input" id="q" name="q" type="search" value="{{.Keyword}}" placeholder="产品名称、SKU、供应商">
+        </div>
+        <div class="field">
+          <label class="field__label" for="category">品类</label>
+          <select class="select" id="category" name="category">
+            {{$cur := .Category}}
+            <option value=""{{if eq $cur ""}} selected{{end}}>全部品类</option>
+            {{range .Categories}}<option value="{{.}}"{{if eq . $cur}} selected{{end}}>{{.}}</option>{{end}}
+          </select>
+        </div>
+        <div class="field">
+          <label class="field__label" for="sort">排序</label>
+          <select class="select" id="sort" name="sort">
+            {{$s := .Sort}}
+            <option value=""{{if eq $s ""}} selected{{end}}>默认（档案顺序）</option>
+            <option value="stock"{{if eq $s "stock"}} selected{{end}}>库存多在前</option>
+            <option value="stock_asc"{{if eq $s "stock_asc"}} selected{{end}}>库存少在前</option>
+            <option value="value"{{if eq $s "value"}} selected{{end}}>库存价值高在前</option>
+          </select>
+        </div>
+        <div class="field">
+          <span class="field__label">库存筛选</span>
+          <label class="checkbox"><input type="checkbox" name="low" value="1"{{if .LowStockOnly}} checked{{end}}><span>只看低库存</span></label>
+        </div>
+        <div class="field">
+          <span class="field__label">档案状态</span>
+          <label class="checkbox"><input type="checkbox" name="all" value="1"{{if .IncludeInactive}} checked{{end}}><span>含停用产品</span></label>
+        </div>
+        <div class="field field--actions">
+          <button class="btn btn--primary" type="submit">{{template "icon" "search"}}<span>查询</span></button>
+          <a class="btn" href="/inventory">重置</a>
+        </div>
+      </form>
+
+      <div class="card__head">
+        <div class="card__title">库存明细<span class="card__sub">共 {{.Count}} 个产品 · 数量 {{.TotalQty}}</span></div>
+      </div>
+
+      {{if .Products}}
+      <div class="table-wrap">
+        <table class="data">
+          <thead>
+            <tr>
+              <th>产品</th>
+              <th>品类</th>
+              <th class="num">库存</th>
+              {{if $.Perms.Has "report.view"}}
+              <th class="num">平均成本</th>
+              <th class="num">库存成本</th>
+              {{end}}
+              <th class="num">建议售价</th>
+              {{if $.Perms.Has "report.view"}}<th class="num">毛利率</th>{{end}}
+              <th>供应商</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {{range .Products}}
+            <tr>
+              <td>
+                <a class="strong" href="/products/{{.ID}}">{{.Name}}</a>
+                <div class="tiny muted">
+                  <span class="mono">{{.SKU}}</span>
+                  {{if .Vintage}} · {{.Vintage}} 年{{end}}
+                  {{if .Spec}} · {{.Spec}}{{end}}
+                  {{if not .IsActive}} <span class="badge badge--muted">停用</span>{{end}}
+                </div>
+              </td>
+              <td class="small">{{default "—" .Category}}</td>
+              <td class="num">
+                <span class="strong">{{.StockQty}}</span> <span class="tiny muted">{{default "瓶" .Unit}}</span>
+                {{if .IsLowStock}}{{if not .IsOutOfStock}} <span class="badge badge--danger">低于预警线</span>{{end}}{{end}}
+                {{if .IsOutOfStock}} <span class="badge badge--warn">无库存</span>{{end}}
+              </td>
+              {{if $.Perms.Has "report.view"}}
+              <td class="num muted">{{money4 .AvgCost}}</td>
+              <td class="num">{{money .StockValue}}</td>
+              {{end}}
+              <td class="num">{{money .SalePrice}}</td>
+              {{if $.Perms.Has "report.view"}}
+              <td class="num small {{if lt .Margin 0.0}}neg{{end}}">{{pct .Margin}}</td>
+              {{end}}
+              <td class="small">{{default "—" .SupplierName}}</td>
+              <td class="right">
+                <div class="row-actions">
+                  <a class="btn btn--sm" href="/products/{{.ID}}">详情</a>
+                  {{if $.CanAdjust}}<a class="btn btn--sm btn--ghost" href="/inventory/adjust?product={{.ID}}">登记</a>{{end}}
+                </div>
+              </td>
+            </tr>
+            {{end}}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td>合计</td>
+              <td>{{.Count}} 个产品</td>
+              <td class="num">{{.TotalQty}}</td>
+              {{if .Perms.Has "report.view"}}
+              <td></td>
+              <td class="num">{{money .TotalValue}}</td>
+              {{end}}
+              <td></td>
+              {{if .Perms.Has "report.view"}}<td></td>{{end}}
+              <td></td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      {{else}}
+      {{template "empty" (dict "Icon" "box" "Title" "没有符合条件的产品" "Hint" "换个关键词或品类试试，勾选「含停用产品」可以看到已停用的档案。")}}
+      {{end}}
+    </div>
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="card__head">
+        <div class="card__title">按品类汇总<span class="card__sub">仅统计在用产品</span></div>
+      </div>
+      {{if .CategoryStock}}
+      <div class="table-wrap">
+        <table class="data data--compact">
+          <thead>
+            <tr>
+              <th>品类</th>
+              <th class="num">SKU</th>
+              <th class="num">数量</th>
+              {{if .Perms.Has "report.view"}}<th class="num">成本金额</th>{{end}}
+            </tr>
+          </thead>
+          <tbody>
+            {{range .CategoryStock}}
+            <tr>
+              <td>{{default "未分类" .Category}}</td>
+              <td class="num">{{.SKUCount}}</td>
+              <td class="num">{{.Qty}}</td>
+              {{if $.Perms.Has "report.view"}}<td class="num">{{money .Value}}</td>{{end}}
+            </tr>
+            {{end}}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td>合计</td>
+              <td class="num">{{.Count}}</td>
+              <td class="num">{{.TotalQty}}</td>
+              {{if .Perms.Has "report.view"}}<td class="num">{{money .TotalValue}}</td>{{end}}
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      {{else}}
+      {{template "empty" (dict "Icon" "layers" "Title" "还没有品类数据" "Hint" "在产品档案里填写品类后，这里会自动汇总。")}}
+      {{end}}
+    </div>
+  </div>
+</div>
+{{end}}

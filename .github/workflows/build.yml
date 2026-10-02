@@ -1,0 +1,167 @@
+name: build
+
+# 触发条件：
+#   - 推送到 main / master：跑测试 + 构建双架构镜像（打 latest 与 sha 标签）
+#   - 打 v* 标签：额外打上版本号标签（例如 v1.2.0 -> 1.2.0 / 1.2 / latest）
+#   - Pull Request：只跑测试，不推送镜像
+#   - 也可以在 Actions 页面手动触发
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+# 同一分支的重复触发只保留最新一次，避免浪费额度
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  # 镜像名必须全小写，而仓库名可能含大写（例如 SoulFound-ERP），
+  # 所以下面用 IMAGE_NAME_LOWER 统一转换后再使用。
+  IMAGE_NAME_RAW: ${{ github.repository }}
+
+jobs:
+  # ---------------------------------------------------------------- 测试
+  test:
+    name: 测试
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+          cache: true
+
+      - name: 检查代码格式
+        run: |
+          unformatted="$(gofmt -l cmd internal)"
+          if [ -n "$unformatted" ]; then
+            echo "以下文件未格式化，请运行 gofmt -w cmd internal ："
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: 静态检查
+        run: go vet ./...
+
+      - name: 运行测试（含库存与市集利润核算、页面渲染、权限隔离）
+        run: go test -timeout 300s ./...
+
+  # ---------------------------------------------------------------- 多架构镜像
+  image:
+    name: 构建镜像 (amd64 + arm64)
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 计算小写镜像名
+        id: repo
+        run: echo "name=${IMAGE_NAME_RAW,,}" >> "$GITHUB_OUTPUT"
+
+      - name: 准备 QEMU（用于交叉构建 arm64）
+        uses: docker/setup-qemu-action@v3
+
+      - name: 准备 Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 登录 GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 生成镜像标签
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ steps.repo.outputs.name }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=sha-,format=short
+
+      - name: 构建并推送
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          # 两种架构都构建，同一个标签下以 manifest list 形式发布，
+          # 服务器拉取时会自动选择匹配的架构
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 输出镜像信息
+        run: |
+          {
+            echo "### 镜像已构建"
+            echo ""
+            echo "架构：\`linux/amd64\`、\`linux/arm64\`"
+            echo ""
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ------------------------------------------------- 单文件二进制（可选下载）
+  # 不想用 Docker 时，可以直接下载对应架构的二进制在服务器上跑。
+  binary:
+    name: 构建二进制 (${{ matrix.arch }})
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - { arch: x86_64, goarch: amd64 }
+          - { arch: aarch64, goarch: arm64 }
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+          cache: true
+
+      - name: 编译静态二进制
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          go build -trimpath \
+            -ldflags "-s -w -X main.buildVersion=${{ github.ref_name }}" \
+            -o "erp-linux-${{ matrix.arch }}" ./cmd/erp
+          ./erp-linux-${{ matrix.arch }} version
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: erp-linux-${{ matrix.arch }}
+          path: erp-linux-${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 30

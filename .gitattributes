@@ -1,0 +1,24 @@
+# 统一换行与二进制处理，避免在 Windows 上克隆后 shell 脚本变成 CRLF
+# 导致 Docker 里 /bin/sh 报 "not found"。
+* text=auto eol=lf
+
+*.sh            text eol=lf
+Dockerfile      text eol=lf
+Makefile        text eol=lf
+*.go            text eol=lf
+*.html          text eol=lf
+*.css           text eol=lf
+*.js            text eol=lf
+*.sql           text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+*.md            text eol=lf
+
+# 图片与第三方压缩库按二进制处理，不做任何转换
+*.png           binary
+*.ico           binary
+*.min.js        binary
+chart.umd.js    binary
+
+# 让 GitHub 语言统计正确识别（这些是打包进二进制的资源）
+internal/assets/static/vendor/**  linguist-vendored

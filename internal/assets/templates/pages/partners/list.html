@@ -1,0 +1,103 @@
+{{define "content"}}
+{{$base := .BasePath}}
+{{$label := .KindLabel}}
+
+<div class="hero">
+  <div>
+    <div class="hero__title">{{$label}}管理</div>
+    <div class="hero__sub">{{if .IsSupplier}}酒庄、进口商与货源信息{{else}}市集现场与门店的常客记录{{end}}</div>
+  </div>
+  <div class="hero__stats">
+    <div>
+      <div class="hero__stat-label">共</div>
+      <div class="hero__stat-value">{{.Count}}</div>
+    </div>
+    <div>
+      <div class="hero__stat-label">单位</div>
+      <div class="hero__stat-value">{{$label}}</div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <form class="filters" method="get" action="{{$base}}">
+    <div class="field field--wide">
+      <label class="field__label" for="q">搜索</label>
+      <input class="input" id="q" name="q" type="search" value="{{.Keyword}}"
+             placeholder="{{if .IsSupplier}}名称、联系人或电话{{else}}名称、电话或地址{{end}}">
+    </div>
+    <div class="field" style="flex:0 1 auto">
+      <span class="field__label">更多筛选项</span>
+      <div style="display:flex;gap:16px;align-items:center;min-height:38px">
+        <label class="checkbox" style="min-height:auto">
+          <input type="checkbox" name="all" value="1"{{if .IncludeInactive}} checked{{end}}><span>包含已停用</span>
+        </label>
+      </div>
+    </div>
+    <div class="field field--actions">
+      <button class="btn btn--primary" type="submit">{{template "icon" "search"}}<span>筛选</span></button>
+      <a class="btn" href="{{$base}}">重置</a>
+    </div>
+  </form>
+
+  <div class="card__head">
+    <div class="card__title">共 {{.Count}} 个{{$label}}<span class="card__sub">点电话可直接拨打，现场联系更方便</span></div>
+    <div class="card__actions">
+      {{if .CanManage}}<a class="btn btn--sm btn--primary" href="{{$base}}/new">{{template "icon" "plus"}}<span>新建{{$label}}</span></a>{{end}}
+    </div>
+  </div>
+
+  {{if .Rows}}
+  <div class="table-wrap">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>名称</th>
+          {{if .IsSupplier}}<th>联系人</th><th>国家</th>{{end}}
+          <th>电话</th>
+          <th>邮箱</th>
+          <th>地址</th>
+          <th>状态</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range $r := .Rows}}
+        <tr>
+          <td>
+            <span class="strong">{{$r.Name}}</span>
+            {{if $r.Notes}}<div class="tiny muted">{{truncate 28 $r.Notes}}</div>{{end}}
+          </td>
+          {{if $.IsSupplier}}
+          <td class="small">{{if $r.ContactName}}{{$r.ContactName}}{{else}}<span class="muted">—</span>{{end}}</td>
+          <td class="small">{{if $r.Country}}{{$r.Country}}{{else}}<span class="muted">—</span>{{end}}</td>
+          {{end}}
+          <td class="small nowrap">{{if $r.Phone}}<a href="tel:{{$r.Phone}}">{{$r.Phone}}</a>{{else}}<span class="muted">—</span>{{end}}</td>
+          <td class="small">{{if $r.Email}}<a href="mailto:{{$r.Email}}">{{$r.Email}}</a>{{else}}<span class="muted">—</span>{{end}}</td>
+          <td class="small">{{if $r.Address}}{{$r.Address}}{{else}}<span class="muted">—</span>{{end}}</td>
+          <td>{{if $r.IsActive}}<span class="badge badge--ok">启用</span>{{else}}<span class="badge badge--muted">停用</span>{{end}}</td>
+          <td class="right">
+            <div class="row-actions">
+              {{if $.CanManage}}
+              <a class="btn btn--sm btn--ghost" href="{{$base}}/{{$r.ID}}/edit" title="编辑">{{template "icon" "edit"}}<span>编辑</span></a>
+              <form method="post" action="{{$base}}/{{$r.ID}}/delete" class="inline"
+                    onsubmit="return confirm('{{if $.IsSupplier}}删除后不可恢复，已关联采购单的供应商不能删除；建议改用停用。确定删除「{{$r.Name}}」？{{else}}删除后不可恢复，确定删除客户「{{$r.Name}}」？{{end}}')">
+                <button class="btn btn--sm btn--ghost" type="submit" title="删除">{{template "icon" "trash"}}</button>
+              </form>
+              {{end}}
+            </div>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{else}}
+    {{if .CanManage}}
+    {{template "empty" (dict "Icon" "users" "Title" (printf "还没有%s" $label) "Hint" (printf "新建第一个%s，采购单与销售记录就能关联到它。" $label) "ActionHref" (printf "%s/new" $base) "ActionLabel" (printf "新建%s" $label))}}
+    {{else}}
+    {{template "empty" (dict "Icon" "users" "Title" (printf "还没有%s" $label) "Hint" "换个筛选条件试试。")}}
+    {{end}}
+  {{end}}
+</div>
+{{end}}
