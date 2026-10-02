@@ -13,10 +13,12 @@ root.crt
 .gopath/
 
 # 编译产物
-bin/
-erp
-dist/
-tmp/
+# 注意：必须写成 /erp（锚定仓库根），写成裸 erp 会连 cmd/erp/ 目录
+# 一起忽略掉，导致主程序源码进不了仓库。
+/bin/
+/erp
+/dist/
+/tmp/
 
 # 编辑器与系统
 .DS_Store

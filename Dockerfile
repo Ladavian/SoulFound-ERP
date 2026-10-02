@@ -1,6 +1,12 @@
 # ---------- 构建阶段 ----------
+#
+# 用 --platform=$BUILDPLATFORM 让构建阶段始终跑在「构建机原生架构」上
+# （GitHub 上就是 amd64），再靠 Go 的交叉编译产出 arm64 二进制。
+# 本项目是纯 Go（SQLite 驱动不依赖 cgo），所以交叉编译毫无障碍，
+# 这样能避免在 QEMU 模拟环境里编译 modernc.org/sqlite 那种超大包
+# （模拟编译要十几分钟，原生交叉编译只要几十秒）。
 ARG GO_VERSION=1.26
-FROM golang:${GO_VERSION}-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS builder
 
 WORKDIR /src
 
@@ -10,16 +16,20 @@ RUN go mod download
 
 COPY . .
 
-# 不使用 cgo：modernc.org/sqlite 是纯 Go 实现，因此可以编译出完全静态的二进制
 ARG VERSION=1.0.0
+# BuildKit 会为每个目标平台注入 TARGETARCH（amd64 / arm64）
 ARG TARGETARCH
 RUN set -eux; \
-    if [ -n "${TARGETARCH:-}" ]; then export GOARCH="${TARGETARCH}"; fi; \
-    CGO_ENABLED=0 GOOS=linux go build \
+    target_arch="${TARGETARCH:-$(go env GOARCH)}"; \
+    CGO_ENABLED=0 GOOS=linux GOARCH="${target_arch}" go build \
         -trimpath \
         -ldflags="-s -w -X main.buildVersion=${VERSION}" \
         -o /out/erp ./cmd/erp; \
-    /out/erp version
+    if [ "${target_arch}" = "$(go env GOHOSTARCH)" ]; then \
+        /out/erp version; \
+    else \
+        echo "已交叉编译 linux/${target_arch}（不在构建机上执行）"; \
+    fi
 
 # ---------- 运行阶段 ----------
 FROM alpine:3.22
