@@ -104,12 +104,21 @@
         {{range $p := .Products}}
         <tr>
           <td>
-            <a class="strong" href="/products/{{$p.ID}}">{{$p.Name}}</a>
-            {{if not $p.IsActive}}<span class="badge badge--muted">已停用</span>{{end}}
-            <div class="tiny muted">
-              <span class="mono">{{$p.SKU}}</span>
-              {{if $p.Vintage}} · {{$p.Vintage}} 年{{end}}
-              {{if $p.Spec}} · {{$p.Spec}}{{end}}
+            <div class="prod-cell">
+              {{if $p.ImageURL}}
+              <img class="prod-thumb" src="{{$p.ImageURL}}" alt="{{$p.Name}}" loading="lazy">
+              {{else}}
+              <span class="prod-thumb prod-thumb--empty">{{template "icon" "glass"}}</span>
+              {{end}}
+              <div class="prod-cell__main">
+                <a class="strong" href="/products/{{$p.ID}}">{{$p.Name}}</a>
+                {{if not $p.IsActive}}<span class="badge badge--muted">已停用</span>{{end}}
+                <div class="tiny muted">
+                  <span class="mono">{{$p.SKU}}</span>
+                  {{if $p.Vintage}} · {{$p.Vintage}} 年{{end}}
+                  {{if $p.Spec}} · {{$p.Spec}}{{end}}
+                </div>
+              </div>
             </div>
           </td>
           <td class="small">{{if $p.Category}}{{$p.Category}}{{else}}<span class="muted">—</span>{{end}}</td>

@@ -1,6 +1,7 @@
 package web
 
 import (
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -350,4 +351,57 @@ func (s *Server) handleProductDetail(w http.ResponseWriter, r *http.Request) {
 func (s *Server) notFound(w http.ResponseWriter, r *http.Request, detail string) {
 	data := s.newPage(r, "未找到", "")
 	s.rnd.RenderError(w, http.StatusNotFound, "未找到", detail, data)
+}
+
+// ---------------------------------------------------------------- 产品图片
+
+// handleProductImageUpload 接收产品图片上传。
+//
+// 手机拍的原图直接传上来即可，服务端会等比压缩后再存盘，
+// 市集现场加载产品图才不至于卡。
+func (s *Server) handleProductImageUpload(w http.ResponseWriter, r *http.Request) {
+	productID := pathID(r, "id")
+	back := "/products/" + itoa(productID) + "/edit"
+
+	// 限制请求体，避免超大文件把内存吃满
+	r.Body = http.MaxBytesReader(w, r.Body, service.MaxImageBytes+(1<<20))
+	if err := r.ParseMultipartForm(service.MaxImageBytes + (1 << 20)); err != nil {
+		s.setFlash(w, "error", "图片上传失败：文件过大或格式不正确")
+		s.redirect(w, r, back)
+		return
+	}
+	file, header, err := r.FormFile("image")
+	if err != nil {
+		s.setFlash(w, "error", "请选择要上传的图片")
+		s.redirect(w, r, back)
+		return
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(io.LimitReader(file, service.MaxImageBytes+1))
+	if err != nil {
+		s.setFlash(w, "error", "读取图片失败，请重试")
+		s.redirect(w, r, back)
+		return
+	}
+
+	if _, err := s.svc.SaveProductImage(r.Context(), productID, header.Filename, data, userFrom(r)); err != nil {
+		s.setFlash(w, "error", userMessage(err))
+		s.redirect(w, r, back)
+		return
+	}
+	s.setFlash(w, "success", "图片已保存（已压缩到长边 1280，原图 "+service.ImageSizeText(len(data))+"）")
+	s.redirect(w, r, back)
+}
+
+// handleProductImageDelete 删除产品图片。
+func (s *Server) handleProductImageDelete(w http.ResponseWriter, r *http.Request) {
+	productID := pathID(r, "id")
+	if err := s.svc.ClearProductImage(r.Context(), productID, userFrom(r)); err != nil {
+		s.setFlash(w, "error", userMessage(err))
+		s.redirect(w, r, "/products/"+itoa(productID)+"/edit")
+		return
+	}
+	s.setFlash(w, "success", "图片已删除")
+	s.redirect(w, r, "/products/"+itoa(productID)+"/edit")
 }

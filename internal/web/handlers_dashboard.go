@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"html/template"
 	"net/http"
+
+	"icewine-erp/internal/model"
 )
 
 // handleMore 渲染「全部功能」页。
@@ -35,6 +37,13 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	page["Monthly"] = data.Monthly
 	page["TopProducts"] = data.TopProducts
 	page["RecentMarkets"] = data.RecentMarkets
+	// 正在进行的市集提到最上面，手机上不用翻找
+	for i := range data.RecentMarkets {
+		if data.RecentMarkets[i].Status == model.MarketOngoing {
+			page["Ongoing"] = &data.RecentMarkets[i]
+			break
+		}
+	}
 	page["RecentMovements"] = data.RecentMovements
 	page["LowStock"] = data.LowStock
 	page["CategoryStock"] = data.CategoryStock

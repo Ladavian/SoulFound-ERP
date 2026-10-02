@@ -944,3 +944,239 @@ body.scan-open { overflow: hidden; }
   .label-sheet { gap: 3mm; }
   .label { border-color: transparent; break-inside: avoid; page-break-inside: avoid; }
 }
+
+/* ==========================================================================
+   正在进行的市集：手机上一眼看到、一下点进收银台
+   ========================================================================== */
+[x-cloak] { display: none !important; }
+
+.ongoing-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  background: linear-gradient(140deg, var(--brand-800), var(--brand-600));
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+  margin-bottom: 14px;
+  color: #fff;
+  box-shadow: var(--shadow);
+}
+.ongoing-card__main { flex: 1 1 220px; min-width: 0; }
+.ongoing-card__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: .4px;
+  color: #9FE3C4;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.ongoing-card__name { font-size: 18px; font-weight: 700; overflow-wrap: anywhere; }
+.ongoing-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, .82);
+  overflow-wrap: anywhere;
+}
+.ongoing-card__meta span { display: inline-flex; align-items: center; gap: 4px; }
+.ongoing-card__go { flex: 0 0 auto; background: #fff; border-color: #fff; color: var(--brand-800); }
+.ongoing-card__go:active { background: var(--brand-50); }
+
+/* ==========================================================================
+   手机上把数据表格变成卡片（不再需要往右滑）
+   ========================================================================== */
+@media (max-width: 900px) {
+  .data--stack thead, .data--stack tfoot { display: none; }
+  .data--stack, .data--stack tbody, .data--stack tr, .data--stack td { display: block; width: 100%; }
+  .data--stack tr {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    margin-bottom: 10px;
+    padding: 11px 13px;
+    background: var(--surface);
+    box-shadow: var(--shadow-sm);
+  }
+  .data--stack td {
+    border: 0;
+    padding: 4px 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    text-align: right;
+  }
+  .data--stack td::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    font-size: 12px;
+    font-weight: 550;
+    color: var(--text-3);
+    text-align: left;
+  }
+  .data--stack td.row-cell--main {
+    display: block;
+    text-align: left;
+    padding-bottom: 9px;
+    margin-bottom: 6px;
+    border-bottom: 1px dashed var(--line);
+  }
+  .data--stack td.row-cell--main::before { display: none; }
+  .data--stack td.right {
+    display: block;
+    padding-top: 9px;
+    margin-top: 6px;
+    border-top: 1px dashed var(--line);
+  }
+  .data--stack td.right::before { display: none; }
+  .data--stack .row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .data--stack .row-actions .btn { flex: 1 1 auto; justify-content: center; }
+  .data--stack .actions-col { display: block; }
+}
+
+/* ==========================================================================
+   产品图片：列表缩略图、选择时预览、上传区
+   ========================================================================== */
+.prod-cell { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.prod-cell__main { min-width: 0; }
+.prod-thumb {
+  flex: 0 0 42px;
+  width: 42px;
+  height: 42px;
+  border-radius: 9px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+}
+.prod-thumb--empty {
+  display: grid;
+  place-items: center;
+  color: var(--text-3);
+  font-size: 18px;
+}
+
+/* 表单里选产品时的图片预览 */
+.pick-row { display: flex; align-items: center; gap: 10px; }
+.pick-row .select { flex: 1 1 auto; min-width: 0; }
+.pick-thumb {
+  flex: 0 0 58px;
+  width: 58px;
+  height: 58px;
+  border-radius: 10px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+/* 入库 / 出库方向选择 */
+.choice-group { display: flex; gap: 8px; }
+.choice { flex: 1 1 0; min-width: 0; position: relative; }
+.choice input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.choice span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 46px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-size: 14px;
+  font-weight: 550;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background .12s ease, border-color .12s ease, color .12s ease;
+}
+.choice input:checked + span { background: var(--brand-600); border-color: var(--brand-600); color: #fff; }
+.choice--out input:checked + span { background: var(--warn); border-color: var(--warn); }
+.choice input:focus-visible + span { outline: 2px solid var(--brand-500); outline-offset: 2px; }
+
+/* 图片上传与预览 */
+.image-edit { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-start; }
+.image-edit__preview {
+  flex: 0 0 132px;
+  width: 132px;
+  height: 132px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+.image-edit__preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.image-edit__empty {
+  display: grid;
+  place-items: center;
+  gap: 4px;
+  color: var(--text-3);
+  font-size: 12px;
+  text-align: center;
+}
+.image-edit__empty svg { font-size: 26px; }
+.image-edit__side { flex: 1 1 240px; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.image-edit__form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.image-edit__form .input[type="file"] { flex: 1 1 200px; min-width: 0; padding: 7px 10px; }
+
+/* 扫码未识别时的产品选择网格（带图片） */
+.pick-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 10px;
+}
+.pick-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  text-align: center;
+  transition: border-color .12s ease, transform .06s ease;
+}
+.pick-card:active { transform: scale(.97); }
+.pick-card:hover { border-color: var(--brand-500); }
+.pick-card__img {
+  width: 100%;
+  height: 84px;
+  border-radius: 9px;
+  object-fit: cover;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+.pick-card__img--empty { display: grid; place-items: center; color: var(--text-3); font-size: 24px; }
+.pick-card__name { font-size: 12.5px; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
+.pick-card__sku { font-size: 11px; color: var(--text-3); }
+
+/* 收银台产品块：左边图片
+   ========================================================================== */
+.pos-tile__head { align-items: center; }
+.pos-tile__img {
+  flex: 0 0 54px;
+  width: 54px;
+  height: 54px;
+  border-radius: 10px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+}
+.pos-tile__img--empty { display: grid; place-items: center; color: var(--text-3); font-size: 22px; }
+.pos-tile__info { flex: 1 1 auto; min-width: 0; }
+.pos-tile__price { flex: 0 0 auto; }
+
+@media (max-width: 560px) {
+  .ongoing-card { padding: 14px; gap: 10px; }
+  .ongoing-card__go { width: 100%; }
+  .image-edit__preview { flex: 0 0 96px; width: 96px; height: 96px; }
+  .pos-tile__img { flex: 0 0 46px; width: 46px; height: 46px; }
+}

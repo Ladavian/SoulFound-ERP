@@ -119,11 +119,44 @@
             <a href="/products/labels">条码标签</a>页用 SKU 打印一张贴上。
           </div>
         </div>
-        <div class="field">
-          <label class="field__label" for="image_url">图片地址</label>
+        <div class="field span-2">
+          <label class="field__label" for="image_file">产品图片</label>
+          <div class="image-edit">
+            <div class="image-edit__preview">
+              {{if $p.ImageURL}}
+              <img id="image-preview" src="{{$p.ImageURL}}" alt="{{$p.Name}}">
+              <span class="image-edit__empty" id="image-preview-empty" style="display:none">{{template "icon" "image"}}<span>还没有图片</span></span>
+              {{else}}
+              <img id="image-preview" src="" alt="" style="display:none">
+              <span class="image-edit__empty" id="image-preview-empty">{{template "icon" "image"}}<span>还没有图片</span></span>
+              {{end}}
+            </div>
+            <div class="image-edit__side">
+              {{if .IsNew}}
+              <div class="field__hint">先保存产品，然后再回来上传图片。</div>
+              {{else}}
+              <form method="post" action="/products/{{$p.ID}}/image" enctype="multipart/form-data" class="image-edit__form">
+                <input class="input" type="file" name="image" id="image_file"
+                       accept="image/jpeg,image/png,image/webp,image/gif" required>
+                <button class="btn btn--primary" type="submit">{{template "icon" "upload"}}<span>上传图片</span></button>
+              </form>
+              <div class="field__hint">手机拍的原图直接上传即可，系统会压到长边 1280，市集现场加载更快。</div>
+              {{if $p.ImageURL}}
+              <form method="post" action="/products/{{$p.ID}}/image/delete" class="inline"
+                    onsubmit="return confirm('确定删除这张图片？')">
+                <button class="btn btn--sm btn--danger" type="submit">{{template "icon" "trash"}}<span>删除图片</span></button>
+              </form>
+              {{end}}
+              {{end}}
+            </div>
+          </div>
+        </div>
+
+        <div class="field span-2">
+          <label class="field__label" for="image_url">或填写图片地址</label>
           <input class="input" id="image_url" name="image_url" type="text" value="{{$p.ImageURL}}"
                  placeholder="https://...">
-          <div class="field__hint">可填图片 URL，方便现场比对酒标。</div>
+          <div class="field__hint">也可以直接贴外部图片链接；上传成功后这里会自动填上地址。</div>
         </div>
       </div>
     </div>
@@ -160,4 +193,20 @@
     </div>
   </div>
 </form>
+
+<script>
+(function () {
+  var input = document.getElementById('image_file');
+  var preview = document.getElementById('image-preview');
+  var empty = document.getElementById('image-preview-empty');
+  if (!input || !preview) return;
+  input.addEventListener('change', function () {
+    var file = input.files && input.files[0];
+    if (!file) return;
+    preview.src = URL.createObjectURL(file);
+    preview.style.display = '';
+    if (empty) empty.style.display = 'none';
+  });
+})();
+</script>
 {{end}}

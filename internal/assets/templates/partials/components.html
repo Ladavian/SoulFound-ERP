@@ -1,3 +1,22 @@
+{{define "ongoing_market"}}
+{{/* 现场正在使用的市集：放在页面最上方，手机上一眼看到、一下点进收银台 */}}
+<div class="ongoing-card">
+  <div class="ongoing-card__main">
+    <div class="ongoing-card__eyebrow">{{template "icon" "cart"}} 正在进行</div>
+    <div class="ongoing-card__name">{{.Name}}</div>
+    <div class="ongoing-card__meta">
+      <span>{{template "icon" "calendar"}} {{.DateRange}}</span>
+      {{if .Venue}}<span>{{template "icon" "pin"}} {{.Venue}}</span>{{end}}
+      {{if .SaleCount}}<span>已记 {{.SaleCount}} 单</span>{{end}}
+      <span>销售额 {{money .Revenue}}</span>
+    </div>
+  </div>
+  <a class="btn btn--primary btn--lg ongoing-card__go" href="/markets/{{.ID}}/pos">
+    {{template "icon" "cart"}}<span>打开收银台</span>
+  </a>
+</div>
+{{end}}
+
 {{define "flash"}}{{- if .Flash}}<div class="flash-stack">{{- range .Flash}}<div class="alert alert--{{if eq .Level "error"}}error{{else if eq .Level "success"}}success{{else}}info{{end}}" role="status">{{- if eq .Level "error"}}{{template "icon" "alert"}}{{- else if eq .Level "success"}}{{template "icon" "check"}}{{- else}}{{template "icon" "info"}}{{end}}<div class="alert__body">{{.Text}}</div></div>{{- end}}</div>{{- end}}{{end}}
 
 {{define "alert"}}<div class="alert alert--{{.Level}}">{{template "icon" .Icon}}<div class="alert__body">{{if .Title}}<div class="alert__title">{{.Title}}</div>{{end}}{{.Text}}</div></div>{{end}}

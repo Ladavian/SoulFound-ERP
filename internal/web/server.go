@@ -9,6 +9,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"os"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -281,6 +282,13 @@ func (s *Server) routes() {
 		w.WriteHeader(http.StatusNoContent)
 	})
 	m.HandleFunc("GET /sw.js", s.handleServiceWorker)
+
+	// 上传的产品图片。文件名带时间戳，可以长缓存。
+	uploadRoot := s.svc.UploadDir()
+	if err := os.MkdirAll(uploadRoot, 0o755); err != nil {
+		log.Printf("创建图片目录失败（上传功能将不可用）: %v", err)
+	}
+	m.Handle("GET /uploads/", http.StripPrefix("/uploads/", immutable(http.FileServer(http.Dir(uploadRoot)))))
 	m.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = w.Write([]byte("ok " + s.cfg.Version))
@@ -307,6 +315,8 @@ func (s *Server) routes() {
 	m.Handle("POST /products/{id}/toggle", s.guard(PermProductManage, s.handleProductToggle))
 	m.Handle("POST /products/{id}/delete", s.guard(PermProductManage, s.handleProductDelete))
 	m.Handle("POST /products/{id}/barcode", s.guard(PermProductManage, s.handleBindBarcode))
+	m.Handle("POST /products/{id}/image", s.guard(PermProductManage, s.handleProductImageUpload))
+	m.Handle("POST /products/{id}/image/delete", s.guard(PermProductManage, s.handleProductImageDelete))
 	m.Handle("GET /products/labels", s.guard(PermProductView, s.handleProductLabels))
 	m.Handle("GET /scan", s.guard(PermProductView, s.handleBarcodeLookup))
 
@@ -424,6 +434,14 @@ func cacheControl(next http.Handler) http.Handler {
 		default:
 			w.Header().Set("Cache-Control", "no-cache")
 		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// immutable 给文件名带时间戳的上传文件加长缓存头。
+func immutable(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		next.ServeHTTP(w, r)
 	})
 }

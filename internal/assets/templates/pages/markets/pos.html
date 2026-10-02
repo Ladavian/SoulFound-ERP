@@ -98,14 +98,21 @@
     <p class="muted">条码 <span class="mono">{{.UnknownCode}}</span> 还没有绑定产品。选择它属于哪个产品，确认后会自动记住，下次扫码直接出库。</p>
     <form hx-post="/markets/{{$m.ID}}/scan/bind" hx-target="#pos-panel" hx-swap="outerHTML">
       <input type="hidden" name="code" value="{{.UnknownCode}}">
-      <div class="field">
-        <label class="field__label" for="bind-product">这是哪个产品</label>
-        <select class="select" id="bind-product" name="product_id" required>
-          <option value="">请选择产品…</option>
-          {{range .BindProducts}}<option value="{{.ID}}">{{.Label}}</option>{{end}}
-        </select>
+      <div class="field__label" style="margin-bottom:6px">这是哪个产品？点一下图片即可绑定并出库</div>
+      <div class="pick-grid">
+        {{range .BindProducts}}
+        <button class="pick-card" type="submit" name="product_id" value="{{.ID}}">
+          {{if .Image}}
+          <img class="pick-card__img" src="{{.Image}}" alt="{{.Name}}" loading="lazy">
+          {{else}}
+          <span class="pick-card__img pick-card__img--empty">{{template "icon" "image"}}</span>
+          {{end}}
+          <span class="pick-card__name">{{.Name}}</span>
+          <span class="pick-card__sku mono">{{.SKU}}</span>
+        </button>
+        {{end}}
       </div>
-      <button class="btn btn--primary" type="submit">{{template "icon" "check"}}<span>绑定并出库</span></button>
+      <a class="btn btn--sm" href="/markets/{{$m.ID}}/pos" style="margin-top:10px">{{template "icon" "back"}}<span>先不绑定</span></a>
     </form>
   </div>
 </div>
@@ -120,15 +127,22 @@
   {{$it := .Item}}
   <div class="pos-tile{{if .Warning}} pos-tile--warn{{end}}">
     <div class="pos-tile__head">
-      <div class="pos-tile__name">{{.Product.Name}}</div>
+      {{if .Product.ImageURL}}
+      <img class="pos-tile__img" src="{{.Product.ImageURL}}" alt="{{.Product.Name}}" loading="lazy">
+      {{else}}
+      <span class="pos-tile__img pos-tile__img--empty">{{template "icon" "glass"}}</span>
+      {{end}}
+      <div class="pos-tile__info">
+        <div class="pos-tile__name">{{.Product.Name}}</div>
+        <div class="pos-tile__meta">
+          <span class="mono">{{.Product.SKU}}</span>
+          {{if .Product.VolumeML}}<span>{{.Product.VolumeML}}ml</span>{{end}}
+          <span>带去 {{$it.CarriedQty}}</span>
+          <span>已出 {{.Out}}</span>
+          {{if $showCost}}<span>库存 {{.Product.StockQty}}</span>{{end}}
+        </div>
+      </div>
       <div class="pos-tile__price">{{money $it.UnitPrice}}</div>
-    </div>
-    <div class="pos-tile__meta">
-      <span class="mono">{{.Product.SKU}}</span>
-      {{if .Product.VolumeML}}<span>{{.Product.VolumeML}}ml</span>{{end}}
-      <span>带去 {{$it.CarriedQty}}</span>
-      <span>已出 {{.Out}}</span>
-      {{if $showCost}}<span>库存 {{.Product.StockQty}}</span>{{end}}
     </div>
     {{if .Warning}}<div class="pos-tile__warn">{{template "icon" "alert"}} {{.Warning}}</div>{{end}}
     <div class="pos-actions">
@@ -188,7 +202,7 @@
   {{if .Records}}
   <div class="card__body card__body--flush">
     <div class="table-wrap">
-      <table class="data">
+      <table class="data data--stack">
         <thead>
           <tr>
             <th>时间</th>
@@ -203,18 +217,18 @@
         <tbody>
           {{range .Records}}
           <tr>
-            <td class="muted">{{.Clock}}</td>
-            <td>{{.ProductName}}</td>
-            <td>
+            <td class="muted" data-label="时间">{{.Clock}}</td>
+            <td class="row-cell--main">{{.ProductName}}</td>
+            <td data-label="类型">
               {{if .IsSale}}<span class="badge badge--ok">{{.KindLabel}}</span>
               {{else if eq .Kind "tasting"}}<span class="badge">{{.KindLabel}}</span>
               {{else if eq .Kind "gift"}}<span class="badge badge--info">{{.KindLabel}}</span>
               {{else}}<span class="badge badge--warn">{{.KindLabel}}</span>{{end}}
               {{if .FromScan}}<span class="badge badge--muted">{{template "icon" "scan"}}</span>{{end}}
             </td>
-            <td class="num">{{.Qty}}</td>
-            {{if $showCost}}<td class="num">{{money .UnitPrice}}</td><td class="num">{{money .Amount}}</td>{{end}}
-            <td class="muted">{{.Note}}</td>
+            <td class="num" data-label="数量">{{.Qty}}</td>
+            {{if $showCost}}<td class="num" data-label="单价">{{money .UnitPrice}}</td><td class="num" data-label="金额">{{money .Amount}}</td>{{end}}
+            <td class="muted" data-label="备注">{{.Note}}</td>
             <td class="actions-col">
               {{if and $canManage (not $settled)}}
               <button class="btn btn--sm btn--danger" type="button"

@@ -54,9 +54,27 @@ func (s *Server) handleMarketList(w http.ResponseWriter, r *http.Request) {
 		conversion = float64(totalSold) / float64(totalTasting) * 100
 	}
 
+	// 正在进行的那场放到最上面，方便现场一键进收银台
+	var (
+		ongoing        *model.Market
+		ongoingRevenue model.Money
+		ongoingOrders  int
+	)
+	for i := range rows {
+		if rows[i].Market.Status == model.MarketOngoing {
+			ongoing = &rows[i].Market
+			ongoingRevenue = rows[i].Totals.Revenue
+			ongoingOrders = rows[i].Market.SaleCount()
+			break
+		}
+	}
+
 	noCache(w)
 	page := s.newPage(r, "市集活动", "markets")
 	page["Rows"] = rows
+	page["Ongoing"] = ongoing
+	page["OngoingRevenue"] = ongoingRevenue
+	page["OngoingSaleCount"] = ongoingOrders
 	page["Summary"] = summary
 	page["Count"] = len(rows)
 	page["TotalSold"] = totalSold

@@ -26,6 +26,9 @@
   </div>
 </div>
 
+
+{{if .Ongoing}}{{template "ongoing_market" .Ongoing}}{{end}}
+
 <div class="card">
   <form class="filters" method="get" action="/markets">
     <div class="field field--wide">
@@ -73,7 +76,7 @@
 
   {{if .Rows}}
   <div class="table-wrap">
-    <table class="data">
+    <table class="data data--stack">
       <thead>
         <tr>
           <th>市集</th>
@@ -97,7 +100,7 @@
         {{range $r := .Rows}}
         {{$m := $r.Market}}{{$t := $r.Totals}}
         <tr>
-          <td>
+          <td class="row-cell--main">
             <a class="strong" href="/markets/{{$m.ID}}">{{$m.Name}}</a>
             <div class="tiny muted">
               <span class="mono">{{$m.Code}}</span>
@@ -105,18 +108,18 @@
               {{if $m.Organizer}} · {{$m.Organizer}}{{end}}
             </div>
           </td>
-          <td class="nowrap small">{{$m.DateRange}}<div class="tiny muted">{{$m.Days}} 天</div></td>
-          <td>{{template "market_status" $m.Status}}</td>
-          <td class="num">{{$m.TastingQty}}</td>
-          <td class="num">{{$m.SoldQty}}</td>
-          <td class="num">{{if $m.TastingQty}}{{fixed 1 $m.SalesMultiplier}}×{{else}}<span class="muted">—</span>{{end}}</td>
-          <td class="num strong">{{money $t.Revenue}}</td>
+          <td class="nowrap small" data-label="日期">{{$m.DateRange}}<div class="tiny muted">{{$m.Days}} 天</div></td>
+          <td data-label="状态">{{template "market_status" $m.Status}}</td>
+          <td class="num" data-label="试饮">{{$m.TastingQty}}</td>
+          <td class="num" data-label="销售">{{$m.SoldQty}}</td>
+          <td class="num" data-label="转化">{{if $m.TastingQty}}{{fixed 1 $m.SalesMultiplier}}×{{else}}<span class="muted">—</span>{{end}}</td>
+          <td class="num strong" data-label="销售额">{{money $t.Revenue}}</td>
           {{if $.ShowCost}}
-          <td class="num muted">{{money $t.CogsSold}}</td>
-          <td class="num muted">{{money $t.TastingCost}}</td>
-          <td class="num muted">{{money $t.ExpenseCost}}</td>
-          <td class="num strong {{if $t.NetProfit.IsNeg}}neg{{else}}pos{{end}}">{{money $t.NetProfit}}</td>
-          <td class="num small {{if $t.NetProfit.IsNeg}}neg{{end}}">{{pct $t.NetMargin}}</td>
+          <td class="num muted" data-label="售出成本">{{money $t.CogsSold}}</td>
+          <td class="num muted" data-label="试饮成本">{{money $t.TastingCost}}</td>
+          <td class="num muted" data-label="费用">{{money $t.ExpenseCost}}</td>
+          <td class="num strong {{if $t.NetProfit.IsNeg}}neg{{else}}pos{{end}}" data-label="净利润">{{money $t.NetProfit}}</td>
+          <td class="num small {{if $t.NetProfit.IsNeg}}neg{{end}}" data-label="净利率">{{pct $t.NetMargin}}</td>
           {{end}}
           <td class="right">
             <div class="row-actions">

@@ -169,46 +169,84 @@ func (s *Server) handleAdjustForm(w http.ResponseWriter, r *http.Request) {
 	noCache(w)
 	page := s.newPage(r, "出入库登记", "adjust")
 	page["Products"] = options
-	page["Reasons"] = manualReasonOptions()
+	page["ReasonGroups"] = []ReasonGroup{
+		{Label: "入库", Options: model.DirectionInReasons},
+		{Label: "出库", Options: model.DirectionOutReasons},
+	}
 	page["RecentMovements"] = movements
 	page["Today"] = store.Today()
 	page["Preselect"] = preselect
+	// 选择产品时左侧弹出图片，方便核对拿到的是不是同一款酒
+	imgs := map[string]string{}
+	for _, o := range options {
+		if o.Image != "" {
+			imgs[itoa(o.ID)] = o.Image
+		}
+	}
+	page["ImageMap"] = imgs
 	if err := s.rnd.Render(w, "inventory/adjust", page); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
-// manualReasonOptions 手工登记可选的原因。
+// manualReasonOptions 手工登记可选的原因（按入库/出库分组）。
 func manualReasonOptions() []model.Option {
-	return []model.Option{
-		{Value: model.ReasonOpening, Label: "期初建账（开始用系统时的现有库存）"},
-		{Value: model.ReasonAdjustIn, Label: "盘点调增（实物比账面多，填正数）"},
-		{Value: model.ReasonAdjustOut, Label: "盘点调减（实物比账面少，填负数）"},
-		{Value: model.ReasonReturnIn, Label: "退货入库（客户退回）"},
-		{Value: model.ReasonMarketLoss, Label: "破损 / 损耗"},
-		{Value: model.ReasonMarketGift, Label: "赠送 / 公关用酒"},
-	}
+	out := make([]model.Option, 0, len(model.DirectionInReasons)+len(model.DirectionOutReasons))
+	out = append(out, model.DirectionInReasons...)
+	out = append(out, model.DirectionOutReasons...)
+	return out
 }
 
 func (s *Server) handleAdjustSave(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	f := newFormReader(r)
 
+	// 界面只让用户选「入库 / 出库」并填正数，方向在这里转成正负号。
+	direction := f.Str("direction")
 	qty := f.Qty("qty", "数量")
+
+	// signedQty 最终写库的数量（出库为负）。
+	// 兼容老链接：没有 direction 时按数量自带的符号判断，
+	// 此时负数直接沿用，不再二次取反。
+	explicit := direction == model.DirectionIn || direction == model.DirectionOut
+	signedQty := qty
+	if !explicit {
+		if qty < 0 {
+			direction = model.DirectionOut
+			signedQty = qty
+		} else {
+			direction = model.DirectionIn
+		}
+	} else if direction == model.DirectionOut {
+		signedQty = -qty
+	}
+
 	in := service.AdjustInput{
 		ProductID:  f.ID("product_id", "产品"),
-		Qty:        qty,
 		UnitCost:   f.Money("unit_cost", "单位成本"),
 		OccurredOn: f.Str("occurred_on"),
 		Reason:     f.Str("reason"),
 		Note:       f.Str("note"),
 	}
+
 	if in.ProductID <= 0 {
 		f.AddError("请选择产品")
 	}
 	if qty == 0 {
-		f.AddError("请填写数量（入库为正数、出库为负数）")
+		f.AddError("请填写数量")
+	} else if explicit && qty < 0 {
+		f.AddError("数量请填正数，用上面的「入库 / 出库」选择方向")
 	}
+	if direction != model.DirectionIn && direction != model.DirectionOut {
+		f.AddError("请选择入库还是出库")
+	}
+
+	// 原因要与方向匹配，避免「期初建账」却做成出库
+	if want := model.ReasonDirection(in.Reason); want != "" && want != direction {
+		f.AddError("所选类型与方向不一致，请重新选择")
+	}
+	in.Qty = signedQty
+
 	if err := f.Err(); err != nil {
 		s.fail(w, r, "/inventory/adjust", err)
 		return
@@ -225,6 +263,21 @@ func (s *Server) handleAdjustSave(w http.ResponseWriter, r *http.Request) {
 		name = product.Name
 		unit = product.Unit
 	}
+	verb := "入库"
+	if direction == model.DirectionOut {
+		verb = "出库"
+	}
+	// 出库时数量已转成负数，提示里还原成正数更好读
+	shown := signedQty
+	if shown < 0 {
+		shown = -shown
+	}
 	s.ok(w, r, "/inventory/adjust",
-		model.ReasonLabel(in.Reason)+"："+name+" "+qty.String()+unit+"，当前库存已更新")
+		verb+"（"+model.ReasonLabel(in.Reason)+"）："+name+" "+shown.String()+unit+"，当前库存已更新")
+}
+
+// ReasonGroup 出入库类型的一组选项。
+type ReasonGroup struct {
+	Label   string
+	Options []model.Option
 }

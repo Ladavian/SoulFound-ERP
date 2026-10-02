@@ -5,10 +5,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/xml"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -1157,4 +1162,186 @@ func mustUser(t *testing.T, svc *service.Service, username string) *model.User {
 		t.Fatalf("用户 %s 不存在", username)
 	}
 	return u
+}
+
+// TestAdjustDirection 出入库用「方向 + 正数」而不是正负号。
+func TestAdjustDirection(t *testing.T) {
+	h, svc, cfg := testApp(t)
+	ctx := context.Background()
+	cookie := doLogin(t, h, cfg, "admin", "admin123")
+
+	post(t, h, "/products/new", url.Values{
+		"sku": {"DIR-001"}, "name": {"方向测试冰酒"}, "unit": {"瓶"},
+		"sale_price": {"100"}, "is_active": {"1"},
+	}, cookie)
+	product, _ := svc.Store.ProductBySKU(ctx, "DIR-001")
+	pid := strconv.FormatInt(product.ID, 10)
+
+	// 入库 10：填正数 + 方向 in
+	code, _ := post(t, h, "/inventory/adjust", url.Values{
+		"product_id": {pid}, "direction": {"in"}, "qty": {"10"},
+		"reason": {"opening"}, "unit_cost": {"30"},
+	}, cookie)
+	if code != http.StatusSeeOther {
+		t.Fatalf("入库应 303，实际 %d", code)
+	}
+	got, _ := svc.Store.ProductByID(ctx, product.ID)
+	if got.StockQty != model.MustQty("10") {
+		t.Errorf("入库后库存应为 10，实际 %s", got.StockQty)
+	}
+
+	// 出库 3：仍然填正数，方向 out
+	code, _ = post(t, h, "/inventory/adjust", url.Values{
+		"product_id": {pid}, "direction": {"out"}, "qty": {"3"},
+		"reason": {"adjust_out"},
+	}, cookie)
+	if code != http.StatusSeeOther {
+		t.Fatalf("出库应 303，实际 %d", code)
+	}
+	got, _ = svc.Store.ProductByID(ctx, product.ID)
+	if got.StockQty != model.MustQty("7") {
+		t.Errorf("出库后库存应为 7，实际 %s", got.StockQty)
+	}
+
+	// 选了方向还填负数：应被拦下（库存不变）
+	post(t, h, "/inventory/adjust", url.Values{
+		"product_id": {pid}, "direction": {"in"}, "qty": {"-5"}, "reason": {"opening"},
+	}, cookie)
+	if got, _ = svc.Store.ProductByID(ctx, product.ID); got.StockQty != model.MustQty("7") {
+		t.Errorf("方向为入库却填负数，库存不应变化，实际 %s", got.StockQty)
+	}
+
+	// 方向与类型不匹配：应被拦下（库存不变）
+	post(t, h, "/inventory/adjust", url.Values{
+		"product_id": {pid}, "direction": {"out"}, "qty": {"2"}, "reason": {"opening"},
+	}, cookie)
+	if got, _ = svc.Store.ProductByID(ctx, product.ID); got.StockQty != model.MustQty("7") {
+		t.Errorf("出库却选「期初建账」，库存不应变化，实际 %s", got.StockQty)
+	}
+
+	// 兼容旧写法：只给负数、不给方向
+	code, _ = post(t, h, "/inventory/adjust", url.Values{
+		"product_id": {pid}, "qty": {"-2"}, "reason": {"adjust_out"},
+	}, cookie)
+	if code != http.StatusSeeOther {
+		t.Fatalf("兼容负数写法应 303，实际 %d", code)
+	}
+	got, _ = svc.Store.ProductByID(ctx, product.ID)
+	if got.StockQty != model.MustQty("5") {
+		t.Errorf("兼容写法出库后库存应为 5，实际 %s", got.StockQty)
+	}
+}
+
+// TestProductImageUpload 产品图片上传：自动压缩、可访问、可删除。
+func TestProductImageUpload(t *testing.T) {
+	h, svc, cfg := testApp(t)
+	ctx := context.Background()
+	cookie := doLogin(t, h, cfg, "admin", "admin123")
+
+	post(t, h, "/products/new", url.Values{
+		"sku": {"IMG-001"}, "name": {"图片测试冰酒"}, "unit": {"瓶"},
+		"sale_price": {"200"}, "is_active": {"1"},
+	}, cookie)
+	product, _ := svc.Store.ProductBySKU(ctx, "IMG-001")
+	if product == nil {
+		t.Fatal("产品未创建")
+	}
+	pid := strconv.FormatInt(product.ID, 10)
+
+	// 造一张 2400×1600 的 PNG，用来验证服务端会缩到长边 1280
+	src := image.NewRGBA(image.Rect(0, 0, 2400, 1600))
+	for y := 0; y < 1600; y++ {
+		for x := 0; x < 2400; x++ {
+			src.Set(x, y, color.RGBA{R: uint8(x % 256), G: uint8(y % 256), B: 120, A: 255})
+		}
+	}
+	var raw bytes.Buffer
+	if err := png.Encode(&raw, src); err != nil {
+		t.Fatal(err)
+	}
+
+	upload := func(name string, content []byte) *httptest.ResponseRecorder {
+		body := &bytes.Buffer{}
+		mw := multipart.NewWriter(body)
+		fw, err := mw.CreateFormFile("image", name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := fw.Write(content); err != nil {
+			t.Fatal(err)
+		}
+		mw.Close()
+		req := httptest.NewRequest(http.MethodPost, "/products/"+pid+"/image", body)
+		req.Header.Set("Content-Type", mw.FormDataContentType())
+		req.AddCookie(cookie)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+
+	if rec := upload("bottle.png", raw.Bytes()); rec.Code != http.StatusSeeOther {
+		t.Fatalf("上传应 303，实际 %d（%s）", rec.Code, rec.Body.String())
+	}
+	updated, _ := svc.Store.ProductByID(ctx, product.ID)
+	if !strings.HasPrefix(updated.ImageURL, "/uploads/products/") {
+		t.Fatalf("图片地址应指向上传目录，实际 %q", updated.ImageURL)
+	}
+
+	// 上传的文件确实存在，且已经被压缩
+	disk := filepath.Join(svc.UploadDir(), strings.TrimPrefix(updated.ImageURL, "/uploads/"))
+	f, err := os.Open(disk)
+	if err != nil {
+		t.Fatalf("上传的图片文件不存在: %v", err)
+	}
+	conf, _, err := image.DecodeConfig(f)
+	f.Close()
+	if err != nil {
+		t.Fatalf("读取图片失败: %v", err)
+	}
+	if conf.Width > 1280 || conf.Height > 1280 {
+		t.Errorf("图片应被压到长边 1280，实际 %dx%d", conf.Width, conf.Height)
+	}
+	if conf.Width != 1280 {
+		t.Errorf("2400×1600 等比缩放后宽应为 1280，实际 %d", conf.Width)
+	}
+
+	// 可以通过 HTTP 访问，且带长缓存头
+	req := httptest.NewRequest(http.MethodGet, updated.ImageURL, nil)
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("图片应可访问，实际 %d", rec.Code)
+	}
+	if cc := rec.Header().Get("Cache-Control"); !strings.Contains(cc, "immutable") {
+		t.Errorf("上传的图片应可长缓存，实际 %q", cc)
+	}
+
+	// 非图片文件应被拒绝：原有图片不能被替换掉
+	upload("notes.txt", []byte("这不是图片"))
+	if still, _ := svc.Store.ProductByID(ctx, product.ID); still.ImageURL != updated.ImageURL {
+		t.Errorf("非图片文件不应替换已有图片，实际 %q", still.ImageURL)
+	}
+
+	// 选择产品时能看到图片：产品选项里带有图片地址
+	options, err := svc.Store.ListProducts(ctx, store.ProductFilter{Keyword: "IMG-001"})
+	if err != nil || len(options) == 0 {
+		t.Fatal("查询产品失败")
+	}
+	if options[0].ImageURL == "" {
+		t.Error("产品应带上图片地址")
+	}
+
+	// 删除图片
+	code, _ := post(t, h, "/products/"+pid+"/image/delete", url.Values{}, cookie)
+	if code != http.StatusSeeOther {
+		t.Fatalf("删除图片应 303，实际 %d", code)
+	}
+	cleared, _ := svc.Store.ProductByID(ctx, product.ID)
+	if cleared.ImageURL != "" {
+		t.Errorf("删除后图片地址应为空，实际 %q", cleared.ImageURL)
+	}
+	if _, err := os.Stat(disk); !os.IsNotExist(err) {
+		t.Error("删除后磁盘上的图片文件也应被清掉")
+	}
 }

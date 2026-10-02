@@ -17,6 +17,9 @@ import (
 type ProductOption struct {
 	ID    int64   `json:"id"`
 	Label string  `json:"label"`
+	Name  string  `json:"name"`
+	SKU   string  `json:"sku"`
+	Image string  `json:"image"`
 	Price float64 `json:"price"`
 	Cost  float64 `json:"cost"`
 	Stock float64 `json:"stock"`
@@ -36,6 +39,9 @@ func (s *Server) productOptions(r *http.Request) ([]ProductOption, error) {
 		out = append(out, ProductOption{
 			ID:    p.ID,
 			Label: p.SKU + " · " + p.Name + spec,
+			Name:  p.Name,
+			SKU:   p.SKU,
+			Image: p.ImageURL,
 			Price: p.SalePrice.Float(),
 			Cost:  p.AvgCost.Float(),
 			Stock: p.StockQty.Float(),

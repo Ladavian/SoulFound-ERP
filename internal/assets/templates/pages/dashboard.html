@@ -55,6 +55,7 @@
 
 <div class="grid grid--sidebar">
   <div>
+    {{if .Ongoing}}{{template "ongoing_market" .Ongoing}}{{end}}
     <div class="card">
       <div class="card__head">
         <div class="card__title">{{if .ShowCost}}近 12 个月销售与利润{{else}}近 12 个月市集销售额{{end}}</div>
@@ -72,18 +73,18 @@
       </div>
       {{if .RecentMarkets}}
       <div class="table-wrap">
-        <table class="data">
+        <table class="data data--stack">
           <thead><tr><th>市集</th><th>日期</th><th>状态</th><th class="num">试饮</th><th class="num">销售</th><th class="num">销售额</th>{{if .ShowCost}}<th class="num">净利润</th>{{end}}</tr></thead>
           <tbody>
           {{range .RecentMarkets}}
             <tr>
-              <td><a href="/markets/{{.ID}}" class="strong">{{.Name}}</a><div class="tiny muted">{{.Venue}}{{if .City}} · {{.City}}{{end}}</div></td>
-              <td class="nowrap small">{{.DateRange}}</td>
-              <td>{{template "market_status" .Status}}</td>
-              <td class="num">{{.TastingQty}}</td>
-              <td class="num">{{.SoldQty}}</td>
-              <td class="num">{{money .Revenue}}</td>
-              {{if $.ShowCost}}<td class="num {{if .NetProfit.IsNeg}}neg{{else}}pos{{end}}">{{money .NetProfit}}</td>{{end}}
+              <td class="row-cell--main"><a href="/markets/{{.ID}}" class="strong">{{.Name}}</a><div class="tiny muted">{{.Venue}}{{if .City}} · {{.City}}{{end}}</div></td>
+              <td class="nowrap small" data-label="日期">{{.DateRange}}</td>
+              <td data-label="状态">{{template "market_status" .Status}}</td>
+              <td class="num" data-label="试饮">{{.TastingQty}}</td>
+              <td class="num" data-label="销售">{{.SoldQty}}</td>
+              <td class="num" data-label="销售额">{{money .Revenue}}</td>
+              {{if $.ShowCost}}<td class="num {{if .NetProfit.IsNeg}}neg{{else}}pos{{end}}" data-label="净利润">{{money .NetProfit}}</td>{{end}}
             </tr>
           {{end}}
           </tbody>

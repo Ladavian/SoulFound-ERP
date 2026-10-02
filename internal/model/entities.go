@@ -219,6 +219,41 @@ func ReasonLabel(reason string) string {
 	return reason
 }
 
+// 出入库方向。界面用「入库 / 出库」两个按钮代替让用户填正负号。
+const (
+	DirectionIn  = "in"
+	DirectionOut = "out"
+)
+
+// DirectionInReasons / DirectionOutReasons 手工登记时各方向可选的原因。
+var (
+	DirectionInReasons = []Option{
+		{ReasonOpening, "期初建账（开始用系统时的现有库存）"},
+		{ReasonAdjustIn, "盘点调增（实物比账面多）"},
+		{ReasonReturnIn, "退货入库（客户退回）"},
+	}
+	DirectionOutReasons = []Option{
+		{ReasonAdjustOut, "盘点调减（实物比账面少）"},
+		{ReasonMarketLoss, "破损 / 损耗"},
+		{ReasonMarketGift, "赠送 / 公关用酒"},
+	}
+)
+
+// ReasonDirection 该原因属于哪个方向；不确定时返回空。
+func ReasonDirection(reason string) string {
+	for _, o := range DirectionInReasons {
+		if o.Value == reason {
+			return DirectionIn
+		}
+	}
+	for _, o := range DirectionOutReasons {
+		if o.Value == reason {
+			return DirectionOut
+		}
+	}
+	return ""
+}
+
 // ReasonOptions 出库原因选项（手工出库单用）。
 var ReasonOptions = []Option{
 	{ReasonMarketSale, "市集销售"},

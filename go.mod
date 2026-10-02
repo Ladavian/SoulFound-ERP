@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	github.com/xuri/excelize/v2 v2.11.0
+	golang.org/x/image v0.38.0
 	modernc.org/sqlite v1.60.1
 )
 

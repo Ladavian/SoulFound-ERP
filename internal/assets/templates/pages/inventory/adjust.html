@@ -15,10 +15,11 @@
   <div class="alert__body">
     <div class="alert__title">什么时候用这张单？</div>
     <ul style="margin:6px 0 0;padding-left:20px">
-      <li><strong>期初建账</strong>：刚开始用系统时，把仓库里实际现有的库存一次性录进来，数量填正数，并填写单位成本。</li>
-      <li><strong>盘点调增 / 调减</strong>：实物比账面多就填正数，实物比账面少就填负数。</li>
-      <li><strong>破损 / 损耗</strong>：直接填负数（例如 −2），库存会相应减少，不用填成本。</li>
-      <li><strong>退货入库</strong>：客户退回的酒，填正数并填写单位成本。</li>
+      <li><strong>操作方式</strong>：先选「入库 / 出库」，再填数量——数量一律填正数，不用管正负号。</li>
+      <li><strong>期初建账</strong>：刚开始用系统时，选「入库」，把仓库里实际现有的库存一次性录进来，并填单位成本。</li>
+      <li><strong>盘点</strong>：实物比账面多 → 选「入库」+ 盘点调增；实物比账面少 → 选「出库」+ 盘点调减。</li>
+      <li><strong>破损 / 损耗、赠送</strong>：选「出库」，库存会相应减少，不用填成本。</li>
+      <li><strong>退货入库</strong>：客户退回的酒，选「入库」并填写单位成本。</li>
     </ul>
   </div>
 </div>
@@ -26,7 +27,9 @@
 <div class="grid grid--sidebar">
   <div>
     <div class="card">
-      <form method="post" action="/inventory/adjust">
+      <form method="post" action="/inventory/adjust"
+            x-data="{ dir: 'in', pid: '{{.Preselect}}', reason: 'opening',
+                      imgs: {{json .ImageMap}} }">
         <div class="card__head">
           <div class="card__title">登记一笔出入库<span class="card__sub">带 * 为必填</span></div>
         </div>
@@ -34,26 +37,52 @@
           <div class="form-grid">
             <div class="field span-2">
               <label class="field__label" for="product_id">产品<span class="req">*</span></label>
-              <select class="select" id="product_id" name="product_id" required>
-                <option value="">— 选择产品 —</option>
-                {{range .Products}}
-                <option value="{{.ID}}"{{if eq .ID $.Preselect}} selected{{end}}>{{.Label}}（库存 {{.Stock}}）</option>
-                {{end}}
-              </select>
-              <div class="field__hint">按 SKU 或名称查找，括号内是当前库存。</div>
+              <div class="pick-row">
+                <select class="select" id="product_id" name="product_id" x-model="pid" required>
+                  <option value="">— 选择产品 —</option>
+                  {{range .Products}}
+                  <option value="{{.ID}}">{{.Label}}（库存 {{.Stock}}）</option>
+                  {{end}}
+                </select>
+                <img class="pick-thumb" x-show="imgs[pid]" :src="imgs[pid] || ''"
+                     alt="产品图片" x-cloak>
+              </div>
+              <div class="field__hint">按 SKU 或名称查找，括号内是当前库存。选好后左边会显示产品图片，方便核对。</div>
             </div>
 
             <div class="field">
-              <label class="field__label" for="reason">登记类型<span class="req">*</span></label>
-              <select class="select" id="reason" name="reason">
-                {{range .Reasons}}<option value="{{.Value}}">{{.Label}}</option>{{end}}
-              </select>
+              <label class="field__label">方向<span class="req">*</span></label>
+              <div class="choice-group">
+                <label class="choice" :class="dir === 'in' ? 'is-on' : ''">
+                  <input type="radio" name="direction" value="in" x-model="dir"
+                         @change="reason = 'opening'">
+                  <span>{{template "icon" "download"}} 入库</span>
+                </label>
+                <label class="choice choice--out" :class="dir === 'out' ? 'is-out' : ''">
+                  <input type="radio" name="direction" value="out" x-model="dir"
+                         @change="reason = 'adjust_out'">
+                  <span>{{template "icon" "upload"}} 出库</span>
+                </label>
+              </div>
+              <div class="field__hint">选方向就行，数量一律填正数。</div>
             </div>
 
             <div class="field">
               <label class="field__label" for="qty">数量<span class="req">*</span></label>
-              <input class="input input--num" id="qty" name="qty" type="text" inputmode="decimal" value="" placeholder="例如 12 或 -2" required>
-              <div class="field__hint">入库填正数，出库填负数，例如 -2。</div>
+              <input class="input input--num" id="qty" name="qty" type="text" inputmode="decimal" value="" placeholder="例如 12" required>
+              <div class="field__hint" x-text="dir === 'out' ? '填正数即可，系统按出库扣减库存' : '填正数即可，系统按入库增加库存'">填正数即可，系统按入库增加库存</div>
+            </div>
+
+            <div class="field">
+              <label class="field__label" for="reason">类型<span class="req">*</span></label>
+              <select class="select" id="reason" name="reason" x-model="reason">
+                {{range .ReasonGroups}}
+                <optgroup label="{{.Label}}">
+                  {{range .Options}}<option value="{{.Value}}">{{.Label}}</option>{{end}}
+                </optgroup>
+                {{end}}
+              </select>
+              <div class="field__hint">切换方向会自动跳到对应的默认类型。</div>
             </div>
 
             <div class="field">
