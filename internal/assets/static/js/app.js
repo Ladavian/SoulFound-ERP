@@ -64,6 +64,19 @@
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {
+      // 清理历史遗留：早期版本把 Service Worker 注册在 /static/sw.js，
+      // 那种注册的作用域最多覆盖 /static/，会长期把旧的 css/js 喂给页面
+      // （表现为改了样式但手机上没变化、按钮点不动）。这里主动注销它。
+      navigator.serviceWorker.getRegistrations().then(function (regs) {
+        regs.forEach(function (reg) {
+          var worker = reg.active || reg.installing || reg.waiting;
+          var script = worker && worker.scriptURL ? worker.scriptURL : '';
+          if (script.indexOf('/static/sw.js') !== -1) {
+            reg.unregister().catch(function () {});
+          }
+        });
+      }).catch(function () {});
+
       navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(function () {});
     });
   }
