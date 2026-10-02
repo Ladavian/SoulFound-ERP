@@ -120,7 +120,7 @@ func settingsFrom(r *http.Request) *model.Settings {
 	if v, ok := r.Context().Value(ctxSettingsKey).(*model.Settings); ok {
 		return v
 	}
-	return &model.Settings{CurrencySymbol: "$"}
+	return &model.Settings{CurrencySymbol: "¥"}
 }
 
 func flashFrom(r *http.Request) []Flash {

@@ -125,7 +125,7 @@ func Load() *Config {
 	}
 
 	cfg := &Config{
-		AppName:        getenv("ERP_APP_NAME", "冰酒 ERP"),
+		AppName:        getenv("ERP_APP_NAME", "SoulFound ERP"),
 		Version:        getenv("ERP_VERSION", "1.0.0"),
 		Addr:           getenv("ERP_ADDR", ":8123"),
 		Dev:            envBool("ERP_DEV", false),
@@ -137,8 +137,8 @@ func Load() *Config {
 		SessionCookie:  getenv("ERP_SESSION_COOKIE", "erp_session"),
 		SessionTTL:     time.Duration(envInt("ERP_SESSION_HOURS", 72)) * time.Hour,
 		CookieSecure:   envBool("ERP_COOKIE_SECURE", false),
-		Currency:       getenv("ERP_CURRENCY", "CAD"),
-		CurrencySymbol: getenv("ERP_CURRENCY_SYMBOL", "C$"),
+		Currency:       getenv("ERP_CURRENCY", "CNY"),
+		CurrencySymbol: getenv("ERP_CURRENCY_SYMBOL", "¥"),
 		DefaultLowQty:  lowQty,
 		AdminUsername:  getenv("ERP_ADMIN_USERNAME", "admin"),
 		AdminPassword:  getenv("ERP_ADMIN_PASSWORD", "admin123"),

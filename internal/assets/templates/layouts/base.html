@@ -6,7 +6,7 @@
 <title>{{.Title}} · {{.Cfg.AppName}}</title>
 <meta name="theme-color" content="#0F2A24">
 <meta name="color-scheme" content="light dark">
-<meta name="description" content="加拿大冰酒进销存与市集利润管理">
+<meta name="description" content="进销存与市集利润管理">
 <link rel="manifest" href="/static/manifest.webmanifest">
 <link rel="icon" href="/static/icons/icon-192.png" sizes="192x192">
 <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
@@ -26,11 +26,9 @@
 
   <aside class="sidebar" :class="menu ? 'is-open' : ''" @click.outside="menu = false">
     <div class="sidebar__brand">
-      <div class="sidebar__logo">{{template "icon" "glass"}}</div>
-      <div>
-        <div class="sidebar__name">{{.Settings.CompanyName}}</div>
-        <div class="sidebar__sub">进销存 · 市集利润</div>
-      </div>
+      <img class="sidebar__brand-logo" src="/static/icons/logo-light.png"
+           alt="{{.Settings.CompanyName}}" width="118" height="14">
+      <div class="sidebar__sub">进销存 · 市集利润</div>
     </div>
 
     <nav class="sidebar__nav" @click="menu = false">
@@ -88,9 +86,8 @@
   <div class="main">
     <header class="topbar">
       <button class="btn btn--ghost btn--icon topbar__burger" type="button" @click="menu = !menu" aria-label="菜单">{{template "icon" "menu"}}</button>
-      <div>
+      <div class="topbar__main">
         <div class="topbar__title">{{.Title}}</div>
-        <div class="topbar__crumb">{{.Settings.CompanyName}} · 冰酒进销存</div>
       </div>
       <div class="topbar__actions">
         {{block "topbar_actions" .}}{{end}}

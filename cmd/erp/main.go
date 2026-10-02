@@ -1,4 +1,4 @@
-// Command erp 启动加拿大冰酒 ERP 服务，并提供少量运维命令。
+// Command erp 启动 SoulFound ERP 服务，并提供少量运维命令。
 //
 // 用法：
 //
@@ -123,7 +123,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Print(`加拿大冰酒 ERP
+	fmt.Print(`SoulFound ERP
 
 用法：
   erp                            启动 Web 服务（默认监听 :8123）
@@ -138,8 +138,8 @@ func usage() {
   ERP_SECRET_KEY        会话签名密钥；不设置会自动生成到 <数据目录>/secret.key
   ERP_ADMIN_USERNAME    初始管理员账号，默认 admin
   ERP_ADMIN_PASSWORD    初始管理员密码，默认 admin123
-  ERP_CURRENCY          币种代码，默认 CAD
-  ERP_CURRENCY_SYMBOL   币种符号，默认 C$
+  ERP_CURRENCY          币种代码，默认 CNY
+  ERP_CURRENCY_SYMBOL   币种符号，默认 ¥
   ERP_LOW_STOCK         默认库存预警线，默认 6
   ERP_SEED_DEMO         设为 1 时首次启动写入演示数据
   ERP_COOKIE_SECURE     走 HTTPS 时设为 1

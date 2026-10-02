@@ -32,8 +32,8 @@ func newTestService(t *testing.T) *Service {
 		SecretKey:      []byte("test-secret-key"),
 		SessionCookie:  "test_session",
 		SessionTTL:     time.Hour,
-		Currency:       "CAD",
-		CurrencySymbol: "C$",
+		Currency:       "CNY",
+		CurrencySymbol: "¥",
 		DefaultLowQty:  model.QtyFromInt(6),
 		AdminUsername:  "admin",
 		AdminPassword:  "admin123",
@@ -63,11 +63,11 @@ func TestMoneyParsingAndRounding(t *testing.T) {
 	}{
 		{"35", "35.00"},
 		{"35.5", "35.50"},
-		{"C$1,234.56", "1,234.56"},
+		{"¥1,234.56", "1,234.56"},
 		{"0.125", "0.13"},
 		{"-8.005", "-8.01"},
 		{"", "0.00"},
-		{"¥ 99.999", "100.00"},
+		{"¥99.999", "100.00"},
 	}
 	for _, c := range cases {
 		got, err := model.ParseMoney(c.in)

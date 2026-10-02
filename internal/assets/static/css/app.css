@@ -1,5 +1,5 @@
 /* ==========================================================================
-   加拿大冰酒 ERP · 设计系统
+   SoulFound ERP · 设计系统
    移动优先：市集现场主要用手机操作，桌面端为后台管理视图。
    ========================================================================== */
 
@@ -100,22 +100,20 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
 
 .sidebar__brand {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 18px 18px 14px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 20px 18px 16px;
   border-bottom: 1px solid rgba(255, 255, 255, .08);
 }
-.sidebar__logo {
-  width: 34px; height: 34px; flex: 0 0 34px;
-  border-radius: 10px;
-  background: linear-gradient(140deg, var(--ice-200), var(--ice-400));
-  display: grid; place-items: center;
-  color: var(--brand-900);
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.4);
+/* 品牌字标（白色版，用于深色侧边栏） */
+.sidebar__brand-logo {
+  display: block;
+  width: 118px;
+  height: auto;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .3));
 }
-.sidebar__logo svg { width: 20px; height: 20px; }
-.sidebar__name { font-size: 14px; font-weight: 700; color: #fff; letter-spacing: .2px; }
-.sidebar__sub { font-size: 11px; color: rgba(220, 234, 229, .6); }
+.sidebar__sub { font-size: 11px; color: rgba(220, 234, 229, .62); letter-spacing: .3px; }
 
 .sidebar__nav { flex: 1; overflow-y: auto; padding: 12px 10px 18px; }
 .nav-group { margin-bottom: 6px; }
@@ -415,8 +413,8 @@ table.data--compact th, table.data--compact td { padding: 7px 10px; }
     linear-gradient(160deg, var(--brand-900), var(--brand-700) 58%, var(--brand-600));
 }
 .auth__card { width: 100%; max-width: 396px; background: rgba(255,255,255,.97); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); padding: 30px 26px; }
-.auth__logo { width: 52px; height: 52px; border-radius: 15px; background: linear-gradient(140deg, var(--brand-600), var(--brand-500)); color: #fff; display: grid; place-items: center; margin: 0 auto 14px; }
-.auth__logo svg { width: 28px; height: 28px; }
+/* 品牌字标（深色版，用于浅色登录卡片） */
+.auth__brand { display: block; width: 168px; height: auto; margin: 0 auto 16px; }
 .auth__title { text-align: center; font-size: 19px; margin-bottom: 4px; }
 .auth__sub { text-align: center; font-size: 12.5px; color: var(--text-3); margin-bottom: 22px; }
 .auth__hint { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 12px; color: var(--text-3); text-align: center; line-height: 1.7; }
@@ -615,4 +613,66 @@ table.data--compact th, table.data--compact td { padding: 7px 10px; }
   .main { margin: 0; }
   .content { padding: 0; }
   .card { box-shadow: none; border-color: #ccc; break-inside: avoid; }
+}
+
+/* ==========================================================================
+   防溢出
+   窄屏与长内容最容易出问题的几处：
+   1. 内联 SVG 没写宽高时，浏览器按 300×150 渲染，会把整页撑破——兜底跟随字号
+   2. flex 子元素默认 min-width:auto 会拒绝收缩，长文本因此溢出父容器
+   3. 长路径 / 长 URL / 大金额需要允许在任意位置断行
+   ========================================================================== */
+
+/* 1) 图标兜底尺寸（具体位置各自覆盖，见上面的 .btn svg / .stat__label svg 等） */
+svg { width: 1em; height: 1em; flex-shrink: 0; }
+
+/* 2) 允许收缩 */
+.topbar__main { flex: 1; min-width: 0; }
+.topbar__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.card__head > * { min-width: 0; }
+.page-head__main { min-width: 0; }
+.pl__label, .pl__val, .bar-item__name { min-width: 0; }
+.kv dt { min-width: 0; }
+.kv dd { min-width: 0; }
+
+/* 3) 长内容断行 */
+.alert__body,
+.install-bar__text,
+.sticky-bar__info,
+.empty__hint,
+.field__hint,
+.field__error,
+.page-head__meta,
+.page-head__title,
+.card__sub,
+.stat__value,
+.mono,
+.bar-item__name,
+table.data td:not(.num),
+.kv dd {
+  overflow-wrap: anywhere;
+}
+
+/* 工具条在窄屏换行，而不是横向溢出 */
+.install-bar { flex-wrap: wrap; }
+.sticky-bar { flex-wrap: wrap; }
+.segmented { flex-wrap: wrap; max-width: 100%; }
+.tabs { max-width: 100%; }
+
+/* 图片与画布不超出容器 */
+img { max-width: 100%; height: auto; }
+canvas { max-width: 100%; }
+
+@media (max-width: 560px) {
+  .topbar { padding-left: 12px; padding-right: 12px; }
+  .topbar__title { font-size: 15.5px; }
+  .stat__value { font-size: 17px; letter-spacing: -.2px; }
+  .hero__stat-value { font-size: 17px; }
+  .card__head { padding: 11px 12px; }
+  .page-head__title { font-size: 17px; }
 }

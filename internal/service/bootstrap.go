@@ -235,10 +235,10 @@ func (s *Service) seedDemo(ctx context.Context, admin *model.User) error {
 		price, lowStock   string
 	}
 	seeds := []productSeed{
-		{"ICE-VID-375", "威代尔冰酒", "Vidal Icewine", 2019, 375, "89.00", "6"},
-		{"ICE-RIE-375", "雷司令冰酒", "Riesling Icewine", 2020, 375, "99.00", "6"},
-		{"ICE-CAB-200", "品丽珠冰酒", "Cabernet Franc Icewine", 2018, 200, "69.00", "6"},
-		{"ICE-VID-200", "威代尔冰酒 200ml", "Vidal Icewine Half", 2021, 200, "59.00", "12"},
+		{"ICE-VID-375", "威代尔冰酒", "Vidal Icewine", 2019, 375, "398", "6"},
+		{"ICE-RIE-375", "雷司令冰酒", "Riesling Icewine", 2020, 375, "458", "6"},
+		{"ICE-CAB-200", "品丽珠冰酒", "Cabernet Franc Icewine", 2018, 200, "328", "6"},
+		{"ICE-VID-200", "威代尔冰酒 200ml", "Vidal Icewine Half", 2021, 200, "268", "12"},
 	}
 	productIDs := make([]int64, 0, len(seeds))
 	for _, sd := range seeds {
@@ -261,14 +261,14 @@ func (s *Service) seedDemo(ctx context.Context, admin *model.User) error {
 		SupplierID:   &supplier1,
 		PurchaseDate: purchaseDate,
 		AllocMethod:  model.AllocByQty,
-		ShippingCost: model.MustMoney("480"),
-		TariffCost:   model.MustMoney("325"),
+		ShippingCost: model.MustMoney("1800"),
+		TariffCost:   model.MustMoney("1200"),
 		Notes:        "2025 秋季首批到货，海运 + 清关",
 		Items: []PurchaseItemInput{
-			{ProductID: productIDs[0], Qty: model.MustQty("72"), UnitPrice: model.MustMoney("42.50")},
-			{ProductID: productIDs[1], Qty: model.MustQty("48"), UnitPrice: model.MustMoney("48.00")},
-			{ProductID: productIDs[2], Qty: model.MustQty("36"), UnitPrice: model.MustMoney("31.00")},
-			{ProductID: productIDs[3], Qty: model.MustQty("84"), UnitPrice: model.MustMoney("26.00")},
+			{ProductID: productIDs[0], Qty: model.MustQty("72"), UnitPrice: model.MustMoney("168")},
+			{ProductID: productIDs[1], Qty: model.MustQty("48"), UnitPrice: model.MustMoney("198")},
+			{ProductID: productIDs[2], Qty: model.MustQty("36"), UnitPrice: model.MustMoney("128")},
+			{ProductID: productIDs[3], Qty: model.MustQty("84"), UnitPrice: model.MustMoney("108")},
 		},
 	}, admin)
 	if err != nil {
@@ -307,14 +307,14 @@ func (s *Service) seedDemo(ctx context.Context, admin *model.User) error {
 			name: "圣劳伦斯市场周末市集", venue: "St. Lawrence Market", city: "多伦多",
 			organizer: "Toronto Food Events", daysAgo: 45, days: 2,
 			lines: []demoLine{
-				{0, "24", "4", "12", "1", "0", "89.00", "0"},
-				{1, "16", "3", "8", "0", "0", "99.00", "20.00"},
-				{3, "32", "5", "16", "1", "1", "59.00", "0"},
+				{0, "24", "4", "12", "1", "0", "398", "0"},
+				{1, "16", "3", "8", "0", "0", "458", "80"},
+				{3, "32", "5", "16", "1", "1", "268", "0"},
 			},
 			expenses: []demoExpense{
-				{model.ExpenseBooth, "180", "两天摊位费"},
-				{model.ExpenseTravel, "65", "油费与停车"},
-				{model.ExpensePackaging, "42.50", "纸袋与冰袋"},
+				{model.ExpenseBooth, "800", "两天摊位费"},
+				{model.ExpenseTravel, "260", "油费与停车"},
+				{model.ExpensePackaging, "170", "纸袋与冰袋"},
 			},
 			settle: true,
 		},
@@ -322,16 +322,16 @@ func (s *Service) seedDemo(ctx context.Context, admin *model.User) error {
 			name: "尼亚加拉冰酒节", venue: "Niagara Icewine Village", city: "尼亚加拉湖滨小镇",
 			organizer: "Niagara Wine Festival", daysAgo: 25, days: 3,
 			lines: []demoLine{
-				{0, "32", "5", "16", "1", "0", "89.00", "50.00"},
-				{1, "24", "4", "12", "0", "0", "99.00", "0"},
-				{2, "18", "3", "9", "0", "0", "69.00", "0"},
-				{3, "40", "6", "20", "1", "0", "59.00", "30.00"},
+				{0, "32", "5", "16", "1", "0", "398", "200"},
+				{1, "24", "4", "12", "0", "0", "458", "0"},
+				{2, "18", "3", "9", "0", "0", "328", "0"},
+				{3, "40", "6", "20", "1", "0", "268", "120"},
 			},
 			expenses: []demoExpense{
-				{model.ExpenseBooth, "450", "三天展位"},
-				{model.ExpenseTravel, "180", "住宿与交通"},
-				{model.ExpenseMeal, "120", "团队餐费"},
-				{model.ExpensePackaging, "68", "礼盒与包装"},
+				{model.ExpenseBooth, "1800", "三天展位"},
+				{model.ExpenseTravel, "720", "住宿与交通"},
+				{model.ExpenseMeal, "480", "团队餐费"},
+				{model.ExpensePackaging, "270", "礼盒与包装"},
 			},
 			settle: true,
 		},
@@ -339,12 +339,12 @@ func (s *Service) seedDemo(ctx context.Context, admin *model.User) error {
 			name: "万锦亚洲美食节", venue: "Markham Fairgrounds", city: "万锦",
 			organizer: "Markham Asian Food Fest", daysAgo: 8, days: 1,
 			lines: []demoLine{
-				{0, "16", "3", "9", "0", "0", "89.00", "0"},
-				{3, "24", "4", "13", "1", "0", "59.00", "18.00"},
+				{0, "16", "3", "9", "0", "0", "398", "0"},
+				{3, "24", "4", "13", "1", "0", "268", "70"},
 			},
 			expenses: []demoExpense{
-				{model.ExpenseBooth, "150", "单日摊位"},
-				{model.ExpenseTravel, "40", "交通"},
+				{model.ExpenseBooth, "600", "单日摊位"},
+				{model.ExpenseTravel, "160", "交通"},
 			},
 			settle: true,
 		},
@@ -352,11 +352,11 @@ func (s *Service) seedDemo(ctx context.Context, admin *model.User) error {
 			name: "圣诞市集（筹备中）", venue: "Distillery District", city: "多伦多",
 			organizer: "Toronto Christmas Market", daysAgo: -12, days: 4,
 			lines: []demoLine{
-				{0, "0", "0", "0", "0", "0", "89.00", "0"},
-				{2, "0", "0", "0", "0", "0", "69.00", "0"},
+				{0, "0", "0", "0", "0", "0", "398", "0"},
+				{2, "0", "0", "0", "0", "0", "328", "0"},
 			},
 			expenses: []demoExpense{
-				{model.ExpenseBooth, "600", "四天展位预付"},
+				{model.ExpenseBooth, "2400", "四天展位预付"},
 			},
 			settle: false,
 		},
@@ -423,7 +423,7 @@ func (s *Service) seedDemo(ctx context.Context, admin *model.User) error {
 	if err := s.AdjustStock(ctx, AdjustInput{
 		ProductID:  productIDs[2],
 		Qty:        model.MustQty("6"),
-		UnitCost:   model.MustMoney("33.00"),
+		UnitCost:   model.MustMoney("135"),
 		OccurredOn: fmtDate(todayDate().AddDate(0, 0, -50)),
 		Reason:     model.ReasonOpening,
 		Note:       "开业前自留样品转库存",

@@ -7,9 +7,9 @@
 -- ---------------------------------------------------------------- 全局设置
 CREATE TABLE IF NOT EXISTS settings (
     id                      INTEGER PRIMARY KEY CHECK (id = 1),
-    company_name            TEXT    NOT NULL DEFAULT '加拿大冰酒',
-    currency                TEXT    NOT NULL DEFAULT 'CAD',
-    currency_symbol         TEXT    NOT NULL DEFAULT 'C$',
+    company_name            TEXT    NOT NULL DEFAULT 'SoulFound',
+    currency                TEXT    NOT NULL DEFAULT 'CNY',
+    currency_symbol         TEXT    NOT NULL DEFAULT '¥',
     default_low_qty         INTEGER NOT NULL DEFAULT 6000,
     default_booth_fee       INTEGER NOT NULL DEFAULT 0,
     allow_negative_stock    INTEGER NOT NULL DEFAULT 0,

@@ -315,9 +315,9 @@ func (s *Store) Settings(ctx context.Context) (*model.Settings, error) {
 			&boothFee, &allowNeg, &out.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		out = model.Settings{
-			CompanyName:    "加拿大冰酒",
-			Currency:       "CAD",
-			CurrencySymbol: "C$",
+			CompanyName:    "SoulFound",
+			Currency:       "CNY",
+			CurrencySymbol: "¥",
 			DefaultLowQty:  model.QtyFromInt(6),
 		}
 		return &out, nil

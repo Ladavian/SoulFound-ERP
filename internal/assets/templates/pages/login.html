@@ -20,9 +20,9 @@
 <body>
 <div class="auth">
   <div class="auth__card">
-    <div class="auth__logo">{{template "icon" "glass"}}</div>
-    <h1 class="auth__title">{{.Settings.CompanyName}}</h1>
-    <div class="auth__sub">加拿大冰酒 · 进销存与市集利润管理</div>
+    <img class="auth__brand" src="/static/icons/logo-dark.png"
+         alt="{{.Settings.CompanyName}}" width="168" height="20">
+    <div class="auth__sub">进销存 · 库存 · 市集利润</div>
 
     {{if .Error}}<div class="alert alert--error">{{template "icon" "alert"}}<div class="alert__body">{{.Error}}</div></div>{{end}}
 
@@ -37,12 +37,12 @@
         <label class="field__label" for="password">密码</label>
         <input class="input" id="password" name="password" type="password" autocomplete="current-password" required>
       </div>
-      <button class="btn btn--primary btn--lg btn--block" type="submit">{{template "icon" "logout"}}<span>登录</span></button>
+      <button class="btn btn--primary btn--lg btn--block" type="submit">{{template "icon" "right"}}<span>登录</span></button>
     </form>
 
     <div class="auth__hint">
-      首次使用请用管理员账号登录（见部署说明或服务器环境变量）。<br>
-      忘记密码可在服务器上执行 <span class="mono">erp reset-password</span> 重置。
+      用管理员账号登录。忘记密码时，在服务器上执行：<br>
+      <span class="mono">docker compose exec erp /app/erp reset-password admin</span>
     </div>
   </div>
 </div>

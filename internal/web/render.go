@@ -36,7 +36,7 @@ func NewRenderer(dir string, dev bool, symbol string) *Renderer {
 // SetSymbol 更新货币符号（保存设置后调用）。
 func (r *Renderer) SetSymbol(symbol string) {
 	if strings.TrimSpace(symbol) == "" {
-		symbol = "$"
+		symbol = "¥"
 	}
 	r.sym.Store(symbol)
 }
@@ -45,7 +45,15 @@ func (r *Renderer) symbol() string {
 	if v, ok := r.sym.Load().(string); ok {
 		return v
 	}
-	return "$"
+	return "¥"
+}
+
+// withSymbol 拼接货币符号，负数把负号放到符号前面。
+func withSymbol(sym, amount string, negative bool) string {
+	if negative {
+		return "-" + sym + strings.TrimPrefix(amount, "-")
+	}
+	return sym + amount
 }
 
 // StaticFS 返回静态资源文件系统。
@@ -56,21 +64,16 @@ func StaticFS() (fs.FS, error) {
 func (r *Renderer) funcs() template.FuncMap {
 	sym := r.symbol()
 	return template.FuncMap{
-		// 金额与数量
-		"money":  func(v model.Money) string { return sym + v.String() },
-		"money0": func(v model.Money) string { return sym + v.Round2().String() },
-		"money4": func(v model.Money) string { return sym + v.String4() },
-		"moneyS": func(v model.Money) string {
-			if v.IsNeg() {
-				return "-" + sym + v.Neg().String()
-			}
-			return sym + v.String()
-		},
-		"pct":   func(v float64) string { return fmt.Sprintf("%.1f%%", v) },
-		"pct0":  func(v float64) string { return fmt.Sprintf("%.0f%%", v) },
-		"num":   func(v float64) string { return fmt.Sprintf("%.2f", v) },
-		"neg":   func(v model.Money) bool { return v.IsNeg() },
-		"ratio": func(a, b model.Money) float64 { return model.Ratio(a, b) },
+		// 金额与数量。负数把负号放在货币符号前：-¥123.45，而不是 ¥-123.45
+		"money":  func(v model.Money) string { return withSymbol(sym, v.String(), v.IsNeg()) },
+		"money0": func(v model.Money) string { return withSymbol(sym, v.Round2().String(), v.IsNeg()) },
+		"money4": func(v model.Money) string { return withSymbol(sym, v.String4(), v.IsNeg()) },
+		"moneyS": func(v model.Money) string { return withSymbol(sym, v.String(), v.IsNeg()) },
+		"pct":    func(v float64) string { return fmt.Sprintf("%.1f%%", v) },
+		"pct0":   func(v float64) string { return fmt.Sprintf("%.0f%%", v) },
+		"num":    func(v float64) string { return fmt.Sprintf("%.2f", v) },
+		"neg":    func(v model.Money) bool { return v.IsNeg() },
+		"ratio":  func(a, b model.Money) float64 { return model.Ratio(a, b) },
 
 		// 数量输入框的值
 		"qtyInput": func(v model.Qty) string {

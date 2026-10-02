@@ -38,7 +38,7 @@ func testApp(t *testing.T) (http.Handler, *service.Service, *config.Config) {
 	}
 
 	cfg := &config.Config{
-		AppName:        "冰酒 ERP 测试",
+		AppName:        "SoulFound ERP 测试",
 		Version:        "test",
 		Addr:           ":0",
 		Dev:            false, // 使用 embed 的模板
@@ -50,8 +50,8 @@ func testApp(t *testing.T) (http.Handler, *service.Service, *config.Config) {
 		SessionCookie:  "erp_test_session",
 		SessionTTL:     time.Hour,
 		CookieSecure:   false,
-		Currency:       "CAD",
-		CurrencySymbol: "C$",
+		Currency:       "CNY",
+		CurrencySymbol: "¥",
 		DefaultLowQty:  model.QtyFromInt(6),
 		AdminUsername:  "admin",
 		AdminPassword:  "admin123",

@@ -42,7 +42,10 @@ func normalizeCell(v any) any {
 }
 
 // WriteXLSX 生成带表头样式、列宽、冻结首行与自动筛选的 Excel 文件。
-func WriteXLSX(tables []Table) ([]byte, string, error) {
+//
+// currencySymbol 用于金额列的数字格式（例如 ¥ 会显示成 ¥1,234.56），
+// 单元格里仍然是纯数字，可以继续参与 Excel 计算。
+func WriteXLSX(tables []Table, currencySymbol string) ([]byte, string, error) {
 	f := excelize.NewFile()
 	defer f.Close()
 
@@ -55,6 +58,9 @@ func WriteXLSX(tables []Table) ([]byte, string, error) {
 		return nil, "", err
 	}
 	moneyFmt := "#,##0.00"
+	if sym := strings.TrimSpace(currencySymbol); sym != "" {
+		moneyFmt = `"` + sym + `"#,##0.00`
+	}
 	moneyStyle, err := f.NewStyle(&excelize.Style{CustomNumFmt: &moneyFmt})
 	if err != nil {
 		return nil, "", err
@@ -274,7 +280,7 @@ func (s *Service) ExportMarketSummary(ctx context.Context, from, to, status, key
 		{Name: "市集汇总", Columns: marketSummaryColumns, Rows: body},
 		{Name: "市集明细", Columns: detailCols, Rows: detail},
 		{Name: "活动费用", Columns: expenseCols, Rows: expenseRows},
-	})
+	}, s.currencySymbol(ctx))
 }
 
 // ExportMarketDetail 单场市集完整报表。
@@ -341,7 +347,7 @@ func (s *Service) ExportMarketDetail(ctx context.Context, marketID int64) ([]byt
 		{Name: "市集概览", Columns: overviewCols, Rows: overview},
 		{Name: "产品销售明细", Columns: itemCols, Rows: itemRows},
 		{Name: "活动费用", Columns: expenseCols, Rows: expenseRows},
-	})
+	}, s.currencySymbol(ctx))
 }
 
 // ExportProductSales 产品销售报表。
@@ -384,7 +390,7 @@ func (s *Service) ExportProductSales(ctx context.Context, from, to string) ([]by
 		"合计", fmt.Sprintf("%d 个产品", len(rows)), totalTasting, totalSold, "",
 		totalRevenue, totalCogs, totalRevenue - totalCogs, round2(totalMargin),
 	})
-	return WriteXLSX([]Table{{Name: "产品销售", Columns: cols, Rows: body}})
+	return WriteXLSX([]Table{{Name: "产品销售", Columns: cols, Rows: body}}, s.currencySymbol(ctx))
 }
 
 // ExportInventory 库存报表（含流水）。
@@ -449,7 +455,15 @@ func (s *Service) ExportInventory(ctx context.Context, includeMovements bool) ([
 		}
 		tables = append(tables, Table{Name: "库存流水", Columns: moveCols, Rows: moveRows})
 	}
-	return WriteXLSX(tables)
+	return WriteXLSX(tables, s.currencySymbol(ctx))
+}
+
+// currencySymbol 报表里使用的货币符号，优先取系统设置。
+func (s *Service) currencySymbol(ctx context.Context) string {
+	if st, err := s.Store.Settings(ctx); err == nil && strings.TrimSpace(st.CurrencySymbol) != "" {
+		return st.CurrencySymbol
+	}
+	return s.Cfg.CurrencySymbol
 }
 
 // ExportMovementsCSV 库存流水 CSV。

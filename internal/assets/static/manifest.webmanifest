@@ -1,7 +1,7 @@
 {
-  "name": "冰酒 ERP · 进销存与市集利润",
-  "short_name": "冰酒 ERP",
-  "description": "加拿大冰酒的采购入库、库存管理、市集试饮与销售利润核算。",
+  "name": "SoulFound ERP · 进销存与市集利润",
+  "short_name": "SoulFound",
+  "description": "采购入库、库存管理与市集试饮销售利润核算。",
   "lang": "zh-CN",
   "dir": "ltr",
   "start_url": "/?source=pwa",

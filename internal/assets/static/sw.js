@@ -1,4 +1,4 @@
-/* 加拿大冰酒 ERP · Service Worker
+/* SoulFound ERP · Service Worker
    策略：
    - /static/ 静态资源：缓存优先（带版本号，升级时整体替换）
    - 页面导航：始终走网络（数据必须实时），离线时回退到离线提示页
