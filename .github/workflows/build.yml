@@ -122,6 +122,23 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # 临时诊断步骤：确认包是否与仓库关联，以及 GITHUB_TOKEN 能否修改包可见性
+      - name: 诊断包可见性
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "--- 1) 仓库关联的包列表 ---"
+          gh api "/repos/${{ github.repository }}/packages?package_type=container" 2>&1 | head -20 || true
+          echo "--- 2) 用 GITHUB_TOKEN 尝试改个人作用域包可见性 ---"
+          gh api --method PATCH "/user/packages/container/soulfound-erp" \
+            -H "Accept: application/vnd.github+json" -f visibility=public 2>&1 | head -20 || true
+          echo "--- 3) 尝试仓库作用域接口 ---"
+          gh api --method PATCH "/repos/${{ github.repository }}/packages/container/soulfound-erp" \
+            -H "Accept: application/vnd.github+json" -f visibility=public 2>&1 | head -20 || true
+          echo "--- 4) 当前可见性 ---"
+          gh api "/user/packages/container/soulfound-erp" 2>&1 | head -10 || true
+
       - name: 汇总
         run: |
           {
