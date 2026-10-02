@@ -52,7 +52,10 @@ docker compose up -d --build
 docker compose logs -f erp
 ```
 
-打开 `http://服务器IP:8000`，用默认账号登录：
+> 容器内固定监听 **8123**，`.env` 里的 `ERP_PORT` 改的是宿主机对外端口。
+> 反向代理直接指向 `http://127.0.0.1:8123` 即可。
+
+打开 `http://服务器IP:8123`，用默认账号登录：
 
 - 用户名：`admin`
 - 密码：`admin123`
@@ -194,48 +197,19 @@ docker compose up -d --build   # 数据结构会自动迁移，不会丢数据
 市集现场点一下图标就进去了，不用每次输网址。
 
 > **重要：PWA 安装与离线缓存需要 HTTPS。**
-> 用 `http://192.168.x.x:8000` 这种局域网地址访问时，浏览器不允许注册
-> Service Worker，「添加到主屏幕」只能生成一个普通书签（功能完全可用，
-> 但没有全屏运行和离线兜底）。想完整体验请按下面配 HTTPS。
-
-### 方式 A：有域名（推荐，全自动）
-
-把域名解析到服务器，然后在 `.env` 里：
-
-```env
-ERP_DOMAIN=erp.你的域名.com
-ERP_CADDYFILE=Caddyfile.domain
-ERP_COOKIE_SECURE=1
-```
-
-```bash
-docker compose --profile https up -d
-```
-
-Caddy 会自动申请并续期 Let's Encrypt 证书。用手机打开 `https://erp.你的域名.com`。
-
-### 方式 B：只有局域网 IP（自签证书）
-
-```env
-ERP_DOMAIN=192.168.1.10     # 换成你服务器的局域网 IP
-ERP_CADDYFILE=Caddyfile.internal
-ERP_COOKIE_SECURE=1
-```
-
-```bash
-docker compose --profile https up -d
-
-# 导出 Caddy 的根证书
-docker compose exec caddy cat /data/caddy/pki/authorities/local/root.crt > root.crt
-```
-
-把 `root.crt` 传到手机并安装、信任：
-
-- **iPhone**：把 `root.crt` 用 AirDrop 或邮件发到手机 → 设置 → 通用 → VPN与设备管理 → 安装描述文件
-  → 再进「设置 → 通用 → 关于本机 → 证书信任设置」打开完全信任。
-- **Android**：设置 → 安全 → 加密与凭据 → 安装证书 → CA 证书。
-
-之后用手机打开 `https://192.168.1.10`（注意是 https）。
+> 用 `http://192.168.x.x:8123` 这种局域网地址访问时，浏览器不允许注册
+> Service Worker，「添加到主屏幕」只能生成一个普通书签（网页功能完全可用，
+> 但没有全屏运行和离线兜底）。
+>
+> 反向代理与证书由你自己的软件负责（Nginx / Caddy / Traefik / 群晖反代都行），
+> 指向 `http://127.0.0.1:8123` 即可。挂好 HTTPS 后有两件事要注意：
+>
+> 1. 把 `.env` 里的 `ERP_COOKIE_SECURE=1` 打开，Cookie 只走加密连接。
+> 2. 反代里别让 `/static/sw.js` 被长缓存，否则更新 Service Worker 不生效
+>    （加一条 `Cache-Control: no-cache` 就够了）。
+>
+> 只有局域网 IP、没有域名时，也可以用自签证书，只是手机需要安装并信任
+> 一次根证书，否则浏览器同样不认。
 
 ### 安装步骤
 
@@ -294,9 +268,8 @@ data/
 ├── erp.sqlite3          主数据库（WAL 模式）
 ├── erp.sqlite3-wal      预写日志（正常运行时存在）
 ├── secret.key           自动生成的会话签名密钥（删掉会导致所有人需要重新登录）
-├── backups/             备份目录
-│   └── erp-backup-20251002-153000.sqlite3
-└── caddy/               HTTPS 证书（启用 Caddy 时）
+└── backups/             备份目录
+    └── erp-backup-20251002-153000.sqlite3
 ```
 
 ### 备份
@@ -353,39 +326,17 @@ docker compose exec erp /app/erp reset-password 用户名
 
 ## 反向代理与 HTTPS
 
-除了内置的 Caddy 方案，你也可以放在已有的 Nginx 后面：
+反向代理不在本项目的职责范围内——按你自己的习惯用 Nginx / Caddy / Traefik /
+群晖反向代理 / Cloudflare Tunnel 等来处理都可以，注意这几点：
 
-```nginx
-server {
-    listen 443 ssl http2;
-    server_name erp.example.com;
-
-    ssl_certificate     /etc/letsencrypt/live/erp.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/erp.example.com/privkey.pem;
-
-    client_max_body_size 16m;
-
-    location / {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host              $host;
-        proxy_set_header X-Real-IP         $remote_addr;
-        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_read_timeout 120s;
-    }
-
-    # Service Worker 不能长缓存，否则更新不生效
-    location = /static/sw.js {
-        proxy_pass http://127.0.0.1:8000;
-        add_header Cache-Control "no-cache, no-store, must-revalidate";
-    }
-}
-```
-
-走 HTTPS 后记得把 `.env` 里的 `ERP_COOKIE_SECURE=1` 打开（Cookie 只在加密连接上传输）。
-
-如果不想暴露端口到公网，可以把 `ERP_BIND` 改成 `127.0.0.1`，
-再用 Tailscale / Cloudflare Tunnel / frp 之类的方式让手机连进来。
+- **后端地址**：`http://127.0.0.1:8123`（容器内固定 8123）。
+  若想不让它直接暴露到局域网，把 `.env` 里的 `ERP_BIND=127.0.0.1`。
+- **挂 HTTPS 后**：把 `.env` 里的 `ERP_COOKIE_SECURE=1` 打开。
+- **不要长缓存 `/static/sw.js`**：它是 Service Worker，被缓存住会导致前端更新不生效。
+  `/static/` 下其他资源带版本号，可以放心长缓存。
+- **上传体积**：本系统的表单都很小，反代默认限制够用；如果你把限制压得很低
+  （比如 1M），记得别低于 16M。
+- **超时**：导出 Excel 与结算操作偶尔会跑几秒，反代读超时建议 ≥ 60 秒。
 
 ---
 
@@ -521,7 +472,6 @@ make help         # 查看全部命令
 │   ├── store/                  SQLite 访问层（schema.sql + 各实体查询）
 │   ├── service/                业务逻辑：库存过账、采购到岸成本、市集损益、报表、导出
 │   └── web/                    HTTP 路由、中间件、权限、表单解析、各页面处理
-├── deploy/                     Caddy 配置（HTTPS）
 ├── scripts/backup.sh           定时备份脚本
 ├── Dockerfile / docker-compose.yml
 └── data/                       运行时数据（不提交到版本库）

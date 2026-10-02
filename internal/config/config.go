@@ -127,7 +127,7 @@ func Load() *Config {
 	cfg := &Config{
 		AppName:        getenv("ERP_APP_NAME", "冰酒 ERP"),
 		Version:        getenv("ERP_VERSION", "1.0.0"),
-		Addr:           getenv("ERP_ADDR", ":8000"),
+		Addr:           getenv("ERP_ADDR", ":8123"),
 		Dev:            envBool("ERP_DEV", false),
 		DataDir:        dataDir,
 		DBPath:         getenv("ERP_DB_PATH", filepath.Join(dataDir, "erp.sqlite3")),

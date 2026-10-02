@@ -7,7 +7,6 @@ secret.key
 .env
 .env.local
 backups/
-root.crt
 
 # Go 本地缓存（为适配沙箱环境放在工作区内）
 .gopath/

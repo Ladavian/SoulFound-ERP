@@ -126,13 +126,13 @@ func usage() {
 	fmt.Print(`加拿大冰酒 ERP
 
 用法：
-  erp                            启动 Web 服务（默认监听 :8000）
+  erp                            启动 Web 服务（默认监听 :8123）
   erp version                    查看版本
   erp reset-password <用户名>     重置账号密码（忘记密码时使用）
   erp backup [目录]               生成一次数据库一致性备份
 
 常用环境变量：
-  ERP_ADDR              监听地址，默认 :8000
+  ERP_ADDR              监听地址，默认 :8123
   ERP_DATA_DIR          数据目录，默认 ./data
   ERP_DB_PATH           SQLite 文件路径，默认 <数据目录>/erp.sqlite3
   ERP_SECRET_KEY        会话签名密钥；不设置会自动生成到 <数据目录>/secret.key
@@ -209,7 +209,7 @@ func runCommand(cfg *config.Config, name string, args []string) error {
 
 func displayAddr(addr string) string {
 	if addr == "" {
-		return "127.0.0.1:8000"
+		return "127.0.0.1:8123"
 	}
 	if addr[0] == ':' {
 		return "127.0.0.1" + addr

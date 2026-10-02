@@ -47,15 +47,15 @@ COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod 0755 /app/docker-entrypoint.sh
 
 ENV ERP_DATA_DIR=/data \
-    ERP_ADDR=:8000 \
+    ERP_ADDR=:8123 \
     ERP_VERSION=1.0.0 \
     TZ=Asia/Shanghai
 
-EXPOSE 8000
+EXPOSE 8123
 VOLUME ["/data"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD wget -qO /dev/null http://127.0.0.1:8000/healthz || exit 1
+    CMD wget -qO /dev/null http://127.0.0.1:8123/healthz || exit 1
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["/app/erp"]

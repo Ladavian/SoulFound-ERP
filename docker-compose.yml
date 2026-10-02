@@ -1,20 +1,23 @@
 name: icewine-erp
 
+# 只需要这一个容器：应用 + SQLite 数据库都在一起。
+# 反向代理（Nginx / Caddy / Traefik / 群晖反代 …）由你自己在外层做，
+# 容器内监听 8123，直接反代到它即可。
+#
 # 两种用法（同一份文件，靠 .env 里的 ERP_IMAGE 切换）：
 #
-#   A. 在服务器上直接构建（默认，最简单，不需要登录任何镜像仓库）
-#      docker compose up -d --build
+#   A. 在服务器上直接构建（默认，不需要登录任何镜像仓库）
+#        docker compose up -d --build
 #
 #   B. 使用 GitHub Actions 构建好的双架构镜像
-#      在 .env 里设置：
-#        ERP_IMAGE=ghcr.io/ladavian/soulfound-erp:latest
-#        ERP_PULL=1
-#      然后：
+#        .env 里设置：
+#          ERP_IMAGE=ghcr.io/ladavian/soulfound-erp:latest
+#          ERP_PULL_POLICY=always
 #        docker login ghcr.io -u Ladavian      # 私有包需要 PAT（read:packages）
 #        docker compose pull && docker compose up -d
 #
-#   提示：只在 A 模式下使用本地镜像名时，`docker compose pull` 会报找不到镜像，
-#   这是正常的，改用 --build 即可。
+#    提示：A 模式下本地镜像名在仓库里不存在，`docker compose pull` 会报找不到，
+#    这是正常的，改用 --build 即可。
 
 services:
   erp:
@@ -29,12 +32,12 @@ services:
     restart: unless-stopped
     pull_policy: "${ERP_PULL_POLICY:-missing}"
     ports:
-      # 只想本机访问就把 ERP_BIND 改成 127.0.0.1
-      - "${ERP_BIND:-0.0.0.0}:${ERP_PORT:-8000}:8000"
+      # 宿主机端口默认 8123；只想本机访问就把 ERP_BIND 改成 127.0.0.1
+      - "${ERP_BIND:-0.0.0.0}:${ERP_PORT:-8123}:8123"
     environment:
       TZ: "${TZ:-Asia/Shanghai}"
       ERP_APP_NAME: "${ERP_APP_NAME:-加拿大冰酒 ERP}"
-      ERP_ADDR: ":8000"
+      ERP_ADDR: ":8123"
       ERP_DATA_DIR: /data
       ERP_ADMIN_USERNAME: "${ERP_ADMIN_USERNAME:-admin}"
       ERP_ADMIN_PASSWORD: "${ERP_ADMIN_PASSWORD:-admin123}"
@@ -42,41 +45,13 @@ services:
       ERP_CURRENCY_SYMBOL: "${ERP_CURRENCY_SYMBOL:-C$}"
       ERP_LOW_STOCK: "${ERP_LOW_STOCK:-6}"
       ERP_SESSION_HOURS: "${ERP_SESSION_HOURS:-72}"
-      # 走 HTTPS（含下面的 caddy 服务）后请改成 1，Cookie 只通过加密连接传输
+      # 外层挂了 HTTPS 之后请改成 1，Cookie 就只通过加密连接传输
       ERP_COOKIE_SECURE: "${ERP_COOKIE_SECURE:-0}"
       # 首次启动写入演示数据（正式使用保持 0）
       ERP_SEED_DEMO: "${ERP_SEED_DEMO:-0}"
     volumes:
       # 数据库、备份、会话密钥都在这里，备份就是拷这个目录
       - ./data:/data
-    security_opt:
-      - no-new-privileges:true
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  # ---------------------------------------------------------------- 可选：HTTPS
-  # 手机要「添加到主屏幕 + 离线缓存」（PWA）必须走 HTTPS，用下面的方式启动：
-  #   docker compose --profile https up -d
-  caddy:
-    image: caddy:2-alpine
-    container_name: icewine-erp-caddy
-    profiles: ["https"]
-    restart: unless-stopped
-    depends_on:
-      erp:
-        condition: service_healthy
-    ports:
-      - "${ERP_HTTPS_PORT:-443}:443"
-      - "${ERP_HTTP_PORT:-80}:80"
-    environment:
-      ERP_DOMAIN: "${ERP_DOMAIN:-localhost}"
-    volumes:
-      - ./deploy/${ERP_CADDYFILE:-Caddyfile.domain}:/etc/caddy/Caddyfile:ro
-      - ./data/caddy:/data
-      - ./data/caddy-config:/config
     security_opt:
       - no-new-privileges:true
     logging:
