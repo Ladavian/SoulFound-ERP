@@ -1,0 +1,136 @@
+{{define "content"}}
+<div class="hero">
+  <div>
+    <div class="hero__title">线下团单</div>
+    <div class="hero__sub">
+      大团单走大仓发货，<strong>不占用本系统库存</strong>，这里只做销售订单记录留存
+    </div>
+  </div>
+  <div class="hero__stats">
+    <div>
+      <div class="hero__stat-label">单数</div>
+      <div class="hero__stat-value">{{.Summary.Count}}</div>
+    </div>
+    <div>
+      <div class="hero__stat-label">数量</div>
+      <div class="hero__stat-value">{{.Summary.Qty}}</div>
+    </div>
+    <div>
+      <div class="hero__stat-label">金额</div>
+      <div class="hero__stat-value">{{money .Summary.Amount}}</div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <form class="filters" method="get" action="/group-orders" x-data="{ more: false }">
+    <div class="field field--wide">
+      <input class="input" id="q" name="q" type="search" value="{{.Keyword}}"
+             placeholder="搜索团单号、客户、联系人、电话或产品" aria-label="搜索团单">
+    </div>
+    <button class="btn filters__toggle" type="button" @click="more = !more" :aria-expanded="more">
+      {{template "icon" "filter"}}<span x-text="more ? '收起条件' : '筛选条件'">筛选条件</span>
+    </button>
+    <button class="btn btn--primary filters__submit" type="submit">{{template "icon" "search"}}<span>筛选</span></button>
+
+    <div class="filters__more" :class="more ? 'is-open' : ''">
+      <div class="field">
+        <label class="field__label" for="status">状态</label>
+        <select class="select" id="status" name="status">
+          <option value="">全部状态</option>
+          {{$cur := .Status}}
+          {{range .StatusOptions}}<option value="{{.Value}}"{{if eq .Value $cur}} selected{{end}}>{{.Label}}</option>{{end}}
+        </select>
+      </div>
+      <div class="field">
+        <label class="field__label" for="from">下单起</label>
+        <input class="input" id="from" name="from" type="date" value="{{.From}}">
+      </div>
+      <div class="field">
+        <label class="field__label" for="to">下单止</label>
+        <input class="input" id="to" name="to" type="date" value="{{.To}}">
+      </div>
+      <div class="field">
+        <label class="field__label" for="sort">排序</label>
+        <select class="select" id="sort" name="sort">
+          {{$s := .Sort}}
+          <option value=""{{if eq $s ""}} selected{{end}}>最近在前</option>
+          <option value="oldest"{{if eq $s "oldest"}} selected{{end}}>最早在前</option>
+          <option value="amount"{{if eq $s "amount"}} selected{{end}}>金额最高</option>
+        </select>
+      </div>
+      <div class="filters__more-actions">
+        <a class="btn" href="/group-orders">重置条件</a>
+      </div>
+    </div>
+  </form>
+
+  <div class="card__head">
+    <div class="card__title">团单记录<span class="card__sub">共 {{.Total}} 张</span></div>
+    <div class="card__actions">
+      {{if .Perms.Has "report.export"}}
+      <a class="btn btn--sm" href="/export/group-orders.xlsx?q={{.Keyword}}&amp;status={{.Status}}&amp;from={{.From}}&amp;to={{.To}}&amp;sort={{.Sort}}">
+        {{template "icon" "download"}}<span>导出 Excel</span>
+      </a>
+      {{end}}
+      {{if .CanManage}}
+      <a class="btn btn--sm btn--primary" href="/group-orders/new">{{template "icon" "plus"}}<span>新建团单</span></a>
+      {{end}}
+    </div>
+  </div>
+
+  {{if .Orders}}
+  <div class="card__body card__body--flush">
+    <div class="table-wrap">
+      <table class="data data--stack">
+        <thead>
+          <tr>
+            <th>客户 / 团单号</th>
+            <th>下单日期</th>
+            <th>出货日期</th>
+            <th>状态</th>
+            <th class="num">数量</th>
+            <th class="num">金额</th>
+            <th>发货仓</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range $o := .Orders}}
+          <tr>
+            <td class="row-cell--main">
+              <a class="strong" href="/group-orders/{{$o.ID}}">{{$o.Title}}</a>
+              <div class="tiny muted">
+                <span class="mono">{{$o.Code}}</span>
+                {{if $o.Contact}} · {{$o.Contact}}{{end}}
+                {{if $o.Phone}} · {{$o.Phone}}{{end}}
+              </div>
+            </td>
+            <td class="nowrap small" data-label="下单">{{date $o.OrderDate}}</td>
+            <td class="nowrap small" data-label="出货">{{if $o.ShipDate}}{{date $o.ShipDate}}{{else}}<span class="muted">—</span>{{end}}</td>
+            <td data-label="状态">{{template "group_status" $o.Status}}</td>
+            <td class="num" data-label="数量">{{$o.TotalQty}}</td>
+            <td class="num strong" data-label="金额">{{money $o.Total}}</td>
+            <td class="small" data-label="发货仓">{{if $o.Warehouse}}{{$o.Warehouse}}{{else}}<span class="muted">—</span>{{end}}</td>
+            <td class="right">
+              <div class="row-actions">
+                <a class="btn btn--sm" href="/group-orders/{{$o.ID}}">详情</a>
+                {{if $.CanManage}}<a class="btn btn--sm btn--ghost" href="/group-orders/{{$o.ID}}/edit" title="编辑">{{template "icon" "edit"}}</a>{{end}}
+              </div>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {{template "pager" dict "Page" .Page "TotalPages" .TotalPages "HasPrev" .HasPrev "HasNext" .HasNext "PrevURL" .PrevURL "NextURL" .NextURL "Total" .Total}}
+  {{else}}
+  <div class="card__body">
+    {{template "empty" (dict "Icon" "clipboard" "Title" "还没有团单记录"
+      "Hint" "线下大团单从大仓发货，不进本系统库存。在这里记下客户、产品、数量与金额，方便对账与留档。"
+      "ActionHref" "/group-orders/new" "ActionLabel" "新建团单")}}
+  </div>
+  {{end}}
+</div>
+{{end}}

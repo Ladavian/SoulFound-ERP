@@ -40,6 +40,7 @@
         <div class="nav-group__title">日常操作</div>
         {{template "nav_item" (dict "Href" "/" "Icon" "dashboard" "Label" "经营看板" "Page" .Nav "Key" "dashboard")}}
         {{if .Perms.Has "market.view"}}{{template "nav_item" (dict "Href" "/markets" "Icon" "market" "Label" "市集活动" "Page" .Nav "Key" "markets")}}{{end}}
+        {{if .Perms.Has "grouporder.view"}}{{template "nav_item" (dict "Href" "/group-orders" "Icon" "clipboard" "Label" "线下团单" "Page" .Nav "Key" "group-orders")}}{{end}}
         {{if .Perms.Has "purchase.view"}}{{template "nav_item" (dict "Href" "/purchases" "Icon" "truck" "Label" "采购入库" "Page" .Nav "Key" "purchases")}}{{end}}
         {{if .Perms.Has "inventory.view"}}{{template "nav_item" (dict "Href" "/inventory" "Icon" "box" "Label" "库存查询" "Page" .Nav "Key" "inventory")}}{{end}}
         {{if .Perms.Has "inventory.view"}}{{template "nav_item" (dict "Href" "/inventory/movements" "Icon" "layers" "Label" "库存流水" "Page" .Nav "Key" "movements")}}{{end}}

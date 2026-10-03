@@ -64,6 +64,11 @@ func (s *Server) handleInventory(w http.ResponseWriter, r *http.Request) {
 	if summary, err := s.svc.Store.DirectSaleSummaryBetween(ctx, firstOfMonth, store.Today()); err == nil {
 		page["DirectSales"] = summary
 	}
+	// 出库构成：市集之外的出库也要看得见
+	if outbound, err := s.svc.Store.OutboundByReasonBetween(ctx, firstOfMonth, store.Today()); err == nil {
+		page["Outbound"] = outbound
+	}
+	page["MonthStart"] = firstOfMonth
 	if err := s.rnd.Render(w, "inventory/index", page); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}

@@ -69,6 +69,7 @@ func TestNavPagesExist(t *testing.T) {
 		"markets/list", "markets/form", "markets/detail", "markets/pos",
 		"reports/markets", "reports/products", "reports/inventory",
 		"users/list", "users/form", "users/password",
+		"grouporders/list", "grouporders/form", "grouporders/detail",
 	}
 	found := map[string]bool{}
 	for _, p := range pageFiles(t) {

@@ -294,3 +294,52 @@ func (s *Store) DirectSaleSummaryBetween(ctx context.Context, from, to string) (
 		Scan(&out.Count, &out.Qty, &out.Amount)
 	return out, err
 }
+
+// OutboundRow 某一种出库原因的汇总。
+type OutboundRow struct {
+	Reason  string
+	Count   int
+	Qty     model.Qty
+	Amount  model.Money // 只有销售出库有金额
+	Percent int         // 占全部出库的比例（数量口径）
+}
+
+// OutboundByReasonBetween 统计一段时间内各原因的出库构成。
+//
+// 出库不止市集：还有直销、赠送、损耗、盘点调减等，
+// 这里按原因汇总，页面据此展示"货都从哪些渠道出去"。
+func (s *Store) OutboundByReasonBetween(ctx context.Context, from, to string) ([]OutboundRow, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT reason,
+		       COUNT(*),
+		       COALESCE(SUM(-qty), 0),
+		       COALESCE(SUM(CASE WHEN reason = ? THEN -qty * sale_price / 1000 ELSE 0 END), 0)
+		  FROM stock_movements
+		 WHERE qty < 0 AND occurred_on >= ? AND occurred_on <= ?
+		 GROUP BY reason
+		 ORDER BY 3 DESC`, model.ReasonDirectSale, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []OutboundRow
+	var total model.Qty
+	for rows.Next() {
+		var r OutboundRow
+		if err := rows.Scan(&r.Reason, &r.Count, &r.Qty, &r.Amount); err != nil {
+			return nil, err
+		}
+		total += r.Qty
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for i := range out {
+		if total > 0 {
+			out[i].Percent = int(float64(out[i].Qty)/float64(total)*100 + 0.5)
+		}
+	}
+	return out, nil
+}

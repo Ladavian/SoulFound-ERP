@@ -25,6 +25,8 @@ const (
 	PermMarketView      = "market.view"
 	PermMarketManage    = "market.manage"
 	PermMarketSettle    = "market.settle"
+	PermGroupView       = "grouporder.view"
+	PermGroupManage     = "grouporder.manage"
 	PermInventoryView   = "inventory.view"
 	PermInventoryAdjust = "inventory.adjust"
 	PermReportView      = "report.view"
@@ -42,6 +44,7 @@ var rolePerms = map[string][]string{
 		PermPartnerView, PermPartnerManage,
 		PermPurchaseView, PermPurchaseManage, PermPurchaseConfirm,
 		PermMarketView, PermMarketManage, PermMarketSettle,
+		PermGroupView, PermGroupManage,
 		PermInventoryView, PermInventoryAdjust,
 		PermReportView, PermReportExport,
 		PermSettingManage,
@@ -52,6 +55,7 @@ var rolePerms = map[string][]string{
 		PermPartnerView, PermPartnerManage,
 		PermPurchaseView, PermPurchaseManage,
 		PermMarketView, PermMarketManage,
+		PermGroupView, PermGroupManage,
 		PermInventoryView,
 	},
 	model.RoleViewer: {
@@ -60,6 +64,7 @@ var rolePerms = map[string][]string{
 		PermPartnerView,
 		PermPurchaseView,
 		PermMarketView,
+		PermGroupView,
 		PermInventoryView,
 	},
 }
@@ -104,6 +109,10 @@ var PermissionGroups = []PermissionGroup{
 		{PermMarketView, "查看市集", "市集列表、明细与收银台"},
 		{PermMarketManage, "市集记账", "收银台逐笔记账、扫码出库、改明细与费用"},
 		{PermMarketSettle, "结算市集", "结算会扣减库存并锁定成本"},
+	}},
+	{Label: "线下团单", Items: []PermissionItem{
+		{PermGroupView, "查看团单", "线下大团单的订单记录（不影响库存）"},
+		{PermGroupManage, "维护团单", "新建、修改、变更状态、删除团单"},
 	}},
 	{Label: "库存", Items: []PermissionItem{
 		{PermInventoryView, "查看库存", "库存数量与出入库流水"},

@@ -356,6 +356,17 @@ func (s *Server) routes() {
 	m.Handle("POST /inventory/adjust", s.guard(PermInventoryAdjust, s.handleAdjustSave))
 
 	// 市集
+	// 线下大团单：只做销售订单记录，不动库存（货从大仓发）
+	m.Handle("GET /group-orders", s.guard(PermGroupView, s.handleGroupOrderList))
+	m.Handle("GET /group-orders/new", s.guard(PermGroupManage, s.handleGroupOrderForm))
+	m.Handle("POST /group-orders/new", s.guard(PermGroupManage, s.handleGroupOrderSave))
+	m.Handle("GET /group-orders/{id}", s.guard(PermGroupView, s.handleGroupOrderDetail))
+	m.Handle("GET /group-orders/{id}/edit", s.guard(PermGroupManage, s.handleGroupOrderForm))
+	m.Handle("POST /group-orders/{id}/edit", s.guard(PermGroupManage, s.handleGroupOrderSave))
+	m.Handle("POST /group-orders/{id}/status", s.guard(PermGroupManage, s.handleGroupOrderStatus))
+	m.Handle("POST /group-orders/{id}/delete", s.guard(PermGroupManage, s.handleGroupOrderDelete))
+	m.Handle("GET /export/group-orders.xlsx", s.guard(PermReportExport, s.handleExportGroupOrders))
+
 	m.Handle("GET /markets", s.guard(PermMarketView, s.handleMarketList))
 	m.Handle("GET /markets/new", s.guard(PermMarketManage, s.handleMarketForm))
 	m.Handle("POST /markets/new", s.guard(PermMarketManage, s.handleMarketSave))

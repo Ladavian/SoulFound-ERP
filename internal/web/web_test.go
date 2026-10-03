@@ -1945,6 +1945,7 @@ func TestAllInteractiveElementsResolve(t *testing.T) {
 		"/suppliers", "/suppliers/new", "/customers", "/customers/new",
 		"/purchases", "/purchases/new",
 		"/inventory", "/inventory/movements", "/inventory/adjust",
+		"/group-orders", "/group-orders/new",
 		"/markets", "/markets/new", "/markets/" + mid, "/markets/" + mid + "/edit",
 		"/markets/" + mid + "/pos",
 		"/reports/markets", "/reports/products", "/reports/inventory",
@@ -2195,5 +2196,195 @@ func TestDirectSaleOutbound(t *testing.T) {
 	}
 	if summary.Count != 1 || summary.Amount != model.MustMoney("796") {
 		t.Errorf("直销汇总应为 1 笔 796，实际 %d 笔 %s", summary.Count, summary.Amount)
+	}
+}
+
+// TestGroupOrderRecordsWithoutTouchingStock 线下团单只做记录，不动库存。
+//
+// 这类订单由大仓发货，不在本系统管理的仓库里，
+// 所以无论怎么增删改状态，库存数量与流水都必须纹丝不动。
+func TestGroupOrderRecordsWithoutTouchingStock(t *testing.T) {
+	h, svc, cfg := testApp(t)
+	ctx := context.Background()
+	cookie := doLogin(t, h, cfg, "admin", "admin123")
+
+	// 建两个产品并入库，用于确认库存不受影响
+	post(t, h, "/products/new", url.Values{
+		"sku": {"GO-001"}, "name": {"团单产品甲"}, "unit": {"瓶"},
+		"sale_price": {"398"}, "is_active": {"1"},
+	}, cookie)
+	post(t, h, "/products/new", url.Values{
+		"sku": {"GO-002"}, "name": {"团单产品乙"}, "unit": {"瓶"},
+		"sale_price": {"268"}, "is_active": {"1"},
+	}, cookie)
+	a, _ := svc.Store.ProductBySKU(ctx, "GO-001")
+	b, _ := svc.Store.ProductBySKU(ctx, "GO-002")
+	admin := mustUser(t, svc, "admin")
+	if err := svc.AdjustStock(ctx, service.AdjustInput{
+		ProductID: a.ID, Qty: model.MustQty("50"), UnitCost: model.MustMoney("150"),
+		Reason: model.ReasonOpening, OccurredOn: "2025-06-01",
+	}, admin); err != nil {
+		t.Fatal(err)
+	}
+
+	before, _ := svc.Store.ProductByID(ctx, a.ID)
+	movementsBefore, _ := svc.Store.ListMovements(ctx, store.MovementFilter{ProductID: a.ID})
+	logsBefore, _ := svc.Store.CountMovements(ctx, store.MovementFilter{})
+
+	// 新建团单：两行产品，优惠 100，其它费用 50
+	code, _ := post(t, h, "/group-orders/new", url.Values{
+		"customer_name": {"某某公司"},
+		"contact":       {"李经理"},
+		"phone":         {"13800000000"},
+		"order_date":    {"2025-07-01"},
+		"ship_date":     {"2025-07-05"},
+		"warehouse":     {"大仓"},
+		"discount":      {"100"},
+		"extra_fee":     {"50"},
+		"note":          {"走大仓发货"},
+		"product_id":    {strconv.FormatInt(a.ID, 10), strconv.FormatInt(b.ID, 10)},
+		"product_name":  {"团单产品甲", "团单产品乙"},
+		"item_sku":      {"GO-001", "GO-002"},
+		"qty":           {"10", "20"},
+		"unit":          {"瓶", "瓶"},
+		"unit_price":    {"398", "268"},
+		"item_note":     {"", "礼盒装"},
+	}, cookie)
+	if code != http.StatusSeeOther {
+		t.Fatalf("新建团单应 303，实际 %d", code)
+	}
+
+	orders, err := svc.Store.ListGroupOrders(ctx, store.GroupOrderFilter{Keyword: "某某公司"})
+	if err != nil || len(orders) == 0 {
+		t.Fatalf("团单未创建: %v", err)
+	}
+	o := orders[0]
+	if o.Code == "" || !strings.HasPrefix(o.Code, "GT") {
+		t.Errorf("团单号应形如 GT…，实际 %q", o.Code)
+	}
+	if len(o.Items) != 2 {
+		t.Fatalf("应有 2 行明细，实际 %d", len(o.Items))
+	}
+	// 明细合计 10×398 + 20×268 = 3980 + 5360 = 9340；订单金额 9340 − 100 + 50 = 9290
+	if got := o.Subtotal(); got != model.MustMoney("9340") {
+		t.Errorf("明细合计应为 9340，实际 %s", got)
+	}
+	if got := o.Total(); got != model.MustMoney("9290") {
+		t.Errorf("订单金额应为 9290，实际 %s", got)
+	}
+	if o.TotalQty() != model.MustQty("30") {
+		t.Errorf("数量合计应为 30，实际 %s", o.TotalQty())
+	}
+	if o.Status != model.GroupDraft {
+		t.Errorf("新团单应为草稿，实际 %s", o.Status)
+	}
+
+	// 关键：库存与流水完全不受影响
+	after, _ := svc.Store.ProductByID(ctx, a.ID)
+	if after.StockQty != before.StockQty {
+		t.Errorf("团单不应改动库存：%s → %s", before.StockQty, after.StockQty)
+	}
+	movementsAfter, _ := svc.Store.ListMovements(ctx, store.MovementFilter{ProductID: a.ID})
+	if len(movementsAfter) != len(movementsBefore) {
+		t.Errorf("团单不应产生库存流水：%d → %d", len(movementsBefore), len(movementsAfter))
+	}
+	logsAfter, _ := svc.Store.CountMovements(ctx, store.MovementFilter{})
+	if logsAfter != logsBefore {
+		t.Errorf("团单不应产生任何库存流水：%d → %d", logsBefore, logsAfter)
+	}
+
+	// 改状态：草稿 → 已出货 → 已完成
+	for _, st := range []string{model.GroupShipped, model.GroupDone} {
+		code, _ = post(t, h, "/group-orders/"+strconv.FormatInt(o.ID, 10)+"/status",
+			url.Values{"status": {st}}, cookie)
+		if code != http.StatusSeeOther {
+			t.Fatalf("改状态应 303，实际 %d", code)
+		}
+	}
+	updated, _ := svc.Store.GroupOrderByID(ctx, o.ID)
+	if updated.Status != model.GroupDone {
+		t.Errorf("状态应为已完成，实际 %s", updated.Status)
+	}
+	after, _ = svc.Store.ProductByID(ctx, a.ID)
+	if after.StockQty != before.StockQty {
+		t.Error("改状态也不应改动库存")
+	}
+
+	// 列表页与详情页可访问，并能看到金额
+	code, listPage := get(t, h, "/group-orders", cookie)
+	if code != http.StatusOK {
+		t.Fatalf("团单列表应可访问，实际 %d", code)
+	}
+	if !strings.Contains(listPage, "某某公司") || !strings.Contains(listPage, "¥9,290.00") {
+		t.Error("列表应显示客户与订单金额")
+	}
+	code, detail := get(t, h, "/group-orders/"+strconv.FormatInt(o.ID, 10), cookie)
+	if code != http.StatusOK {
+		t.Fatalf("团单详情应可访问，实际 %d", code)
+	}
+	if !strings.Contains(detail, "不关联本系统的库存") {
+		t.Error("详情页应说明不影响库存")
+	}
+	if !strings.Contains(detail, "大仓") {
+		t.Error("详情页应显示发货仓")
+	}
+
+	// 汇总：只统计非取消的
+	summary, err := svc.GroupOrderSummaryBetween(ctx, "2025-01-01", "2025-12-31")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Count != 1 || summary.Amount != model.MustMoney("9290") {
+		t.Errorf("汇总应为 1 张 9290，实际 %d 张 %s", summary.Count, summary.Amount)
+	}
+
+	// 导出
+	code, _ = get(t, h, "/export/group-orders.xlsx", cookie)
+	if code != http.StatusOK {
+		t.Errorf("团单导出应 200，实际 %d", code)
+	}
+
+	// 删除后库存依然不变
+	code, _ = post(t, h, "/group-orders/"+strconv.FormatInt(o.ID, 10)+"/delete", url.Values{}, cookie)
+	if code != http.StatusSeeOther {
+		t.Fatalf("删除应 303，实际 %d", code)
+	}
+	if left, _ := svc.Store.ListGroupOrders(ctx, store.GroupOrderFilter{Keyword: "某某公司"}); len(left) != 0 {
+		t.Error("删除后不应再查到团单")
+	}
+	after, _ = svc.Store.ProductByID(ctx, a.ID)
+	if after.StockQty != before.StockQty {
+		t.Error("删除团单也不应改动库存")
+	}
+}
+
+// TestGroupOrderPermissionAndValidation 团单的权限与校验。
+func TestGroupOrderPermissionAndValidation(t *testing.T) {
+	h, svc, cfg := testApp(t)
+	ctx := context.Background()
+	cookie := doLogin(t, h, cfg, "admin", "admin123")
+
+	// 客户名称与明细缺失都要拦下
+	code, _ := post(t, h, "/group-orders/new", url.Values{
+		"order_date": {"2025-07-01"}, "qty": {"1"}, "unit_price": {"10"},
+	}, cookie)
+	if code != http.StatusSeeOther {
+		t.Fatalf("提交应 303（带错误提示），实际 %d", code)
+	}
+	if list, _ := svc.Store.ListGroupOrders(ctx, store.GroupOrderFilter{}); len(list) != 0 {
+		t.Errorf("校验不通过时不应写入，实际 %d 张", len(list))
+	}
+
+	// 有查看权限但没有维护权限的账号：能看列表，不能新建
+	if _, err := svc.CreateUser(ctx, "gviewer", "viewerpass1", "只看",
+		model.RoleStaff, []string{PermGroupView}, mustUser(t, svc, "admin")); err != nil {
+		t.Fatal(err)
+	}
+	viewer := doLogin(t, h, cfg, "gviewer", "viewerpass1")
+	if code, _ := get(t, h, "/group-orders", viewer); code != http.StatusOK {
+		t.Errorf("有查看权限应能打开列表，实际 %d", code)
+	}
+	if code, _ := get(t, h, "/group-orders/new", viewer); code != http.StatusForbidden {
+		t.Errorf("没有维护权限不应能新建，实际 %d", code)
 	}
 }

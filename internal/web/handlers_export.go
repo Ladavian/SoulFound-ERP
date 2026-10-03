@@ -119,3 +119,20 @@ func (s *Server) handleExportMovements(w http.ResponseWriter, r *http.Request) {
 }
 
 var _ = model.Money(0)
+
+// handleExportGroupOrders 导出行下团单记录。
+func (s *Server) handleExportGroupOrders(w http.ResponseWriter, r *http.Request) {
+	f := newFormReader(r)
+	data, contentType, err := s.svc.ExportGroupOrders(r.Context(), store.GroupOrderFilter{
+		Keyword: f.Str("q"),
+		Status:  f.Str("status"),
+		From:    f.Str("from"),
+		To:      f.Str("to"),
+		Sort:    f.Str("sort"),
+	})
+	if err != nil {
+		s.fail(w, r, "/group-orders", err)
+		return
+	}
+	sendFile(w, r, data, contentType, "线下团单-"+stamp()+".xlsx")
+}

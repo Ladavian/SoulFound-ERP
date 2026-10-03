@@ -47,6 +47,30 @@
   {{end}}
 </div>
 
+{{if .Outbound}}
+<div class="card">
+  <div class="card__head">
+    <div class="card__title">本月出库构成<span class="card__sub">出货不止市集，这里按渠道看全</span></div>
+    <div class="card__actions">
+      <a class="btn btn--sm" href="/inventory/movements?from={{.MonthStart}}">{{template "icon" "layers"}}<span>看明细流水</span></a>
+    </div>
+  </div>
+  <div class="card__body">
+    <div class="outbound-list">
+      {{range .Outbound}}
+      <div class="outbound-row">
+        <div class="outbound-row__head">
+          <span class="outbound-row__name">{{reasonLabel .Reason}}</span>
+          <span class="outbound-row__val">{{.Qty}} 件 · {{.Count}} 笔{{if .Amount}} · {{money .Amount}}{{end}}</span>
+        </div>
+        <div class="meter meter--ok" style="--meter: {{.Percent}}%"><span></span></div>
+      </div>
+      {{end}}
+    </div>
+  </div>
+</div>
+{{end}}
+
 <div class="grid grid--sidebar">
   <div>
     <div class="card">

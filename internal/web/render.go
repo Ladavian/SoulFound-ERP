@@ -132,7 +132,9 @@ func (r *Renderer) funcs() template.FuncMap {
 			}
 			return a / b
 		},
-		"fixed": func(n int, v float64) string { return fmt.Sprintf("%.*f", n, v) },
+		"fixed":       func(n int, v float64) string { return fmt.Sprintf("%.*f", n, v) },
+		"groupStatus": func(v string) string { return model.GroupStatusLabel(v) },
+		"reasonLabel": func(v string) string { return model.ReasonLabel(v) },
 		"deref": func(v *int64) int64 {
 			if v == nil {
 				return 0

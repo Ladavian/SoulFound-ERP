@@ -1,3 +1,5 @@
+{{define "group_status"}}<span class="badge{{if eq . "done"}} badge--ok{{else if eq . "shipped"}} badge--info{{else if eq . "cancelled"}} badge--muted{{else if eq . "confirmed"}} badge--live{{end}}">{{groupStatus .}}</span>{{end}}
+
 {{define "ongoing_market"}}
 {{/* 现场正在使用的市集：放在页面最上方，手机上一眼看到、一下点进收银台 */}}
 <div class="ongoing-card">

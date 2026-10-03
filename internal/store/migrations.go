@@ -139,6 +139,47 @@ ALTER TABLE stock_movements ADD COLUMN customer_id INTEGER;
 CREATE INDEX IF NOT EXISTS idx_mov_reason ON stock_movements(reason, occurred_on);
 `
 
+// migrationV8 线下大团单记录。
+//
+// 这类订单由大仓发货、不经过本系统的仓库，因此完全不碰库存：
+// 只留存销售订单信息（客户、明细、金额、状态），用于对账与留档。
+const migrationV8 = `
+CREATE TABLE IF NOT EXISTS group_orders (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    code          TEXT    NOT NULL UNIQUE,
+    customer_id   INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+    customer_name TEXT    NOT NULL DEFAULT '',
+    contact       TEXT    NOT NULL DEFAULT '',
+    phone         TEXT    NOT NULL DEFAULT '',
+    order_date    TEXT    NOT NULL DEFAULT '',
+    ship_date     TEXT    NOT NULL DEFAULT '',
+    warehouse     TEXT    NOT NULL DEFAULT '',
+    status        TEXT    NOT NULL DEFAULT 'draft',
+    discount      INTEGER NOT NULL DEFAULT 0,
+    extra_fee     INTEGER NOT NULL DEFAULT 0,
+    note          TEXT    NOT NULL DEFAULT '',
+    created_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at    TEXT    NOT NULL DEFAULT '',
+    updated_at    TEXT    NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_group_orders_date   ON group_orders(order_date DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_group_orders_status ON group_orders(status);
+
+CREATE TABLE IF NOT EXISTS group_order_items (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id     INTEGER NOT NULL REFERENCES group_orders(id) ON DELETE CASCADE,
+    product_id   INTEGER REFERENCES products(id) ON DELETE SET NULL,
+    product_name TEXT    NOT NULL DEFAULT '',
+    sku          TEXT    NOT NULL DEFAULT '',
+    qty          INTEGER NOT NULL DEFAULT 0,
+    unit         TEXT    NOT NULL DEFAULT '',
+    unit_price   INTEGER NOT NULL DEFAULT 0,
+    note         TEXT    NOT NULL DEFAULT '',
+    sort_order   INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_group_items_order ON group_order_items(order_id, sort_order);
+`
+
 // migrations 按顺序执行的迁移脚本。新增结构或数据变更时在末尾追加一段 SQL，
 // 已执行过的版本不会重复执行（版本号记录在 schema_meta 表）。
 var migrations = []string{
@@ -149,4 +190,5 @@ var migrations = []string{
 	migrationV5,
 	migrationV6,
 	migrationV7,
+	migrationV8,
 }

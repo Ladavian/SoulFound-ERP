@@ -1,0 +1,147 @@
+{{define "content"}}
+{{$o := .Order}}
+
+<div class="page-head">
+  <div class="page-head__main">
+    <div class="page-head__title">{{$o.Title}}</div>
+    <div class="page-head__meta">
+      <span class="mono">{{$o.Code}}</span>
+      {{template "group_status" $o.Status}}
+      <span>{{template "icon" "calendar"}} 下单 {{date $o.OrderDate}}</span>
+      {{if $o.ShipDate}}<span>出货 {{date $o.ShipDate}}</span>{{end}}
+      {{if $o.Warehouse}}<span>{{template "icon" "box"}} {{$o.Warehouse}}发货</span>{{end}}
+    </div>
+  </div>
+  <div class="page-head__actions">
+    <a class="btn" href="/group-orders">{{template "icon" "back"}}<span>团单列表</span></a>
+    {{if .CanManage}}{{if not $o.IsClosed}}
+    <a class="btn" href="/group-orders/{{$o.ID}}/edit">{{template "icon" "edit"}}<span>编辑</span></a>
+    {{end}}{{end}}
+  </div>
+</div>
+
+<div class="alert alert--info">
+  {{template "icon" "info"}}
+  <div class="alert__body">
+    这是<strong>记录留存</strong>用的销售订单：货由{{if $o.Warehouse}}{{$o.Warehouse}}{{else}}大仓{{end}}发出，
+    <strong>不关联本系统的库存</strong>，也不会出现在库存流水里。
+  </div>
+</div>
+
+<div class="grid grid--sidebar">
+  <div>
+    <div class="card">
+      <div class="card__head">
+        <div class="card__title">订单明细<span class="card__sub">共 {{$o.ItemCount}} 行 · {{$o.TotalQty}} 件</span></div>
+      </div>
+      <div class="card__body card__body--flush">
+        <div class="table-wrap">
+          <table class="data data--stack">
+            <thead>
+              <tr>
+                <th>产品</th>
+                <th class="num">数量</th>
+                <th>单位</th>
+                <th class="num">单价</th>
+                <th class="num">金额</th>
+                <th>备注</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{range $it := $o.Items}}
+              <tr>
+                <td class="row-cell--main">
+                  {{$it.ProductName}}
+                  {{if $it.SKU}}<div class="tiny muted mono">{{$it.SKU}}</div>{{end}}
+                </td>
+                <td class="num" data-label="数量">{{$it.Qty}}</td>
+                <td data-label="单位">{{if $it.Unit}}{{$it.Unit}}{{else}}<span class="muted">—</span>{{end}}</td>
+                <td class="num" data-label="单价">{{money $it.UnitPrice}}</td>
+                <td class="num strong" data-label="金额">{{money $it.Amount}}</td>
+                <td class="muted" data-label="备注">{{if $it.Note}}{{$it.Note}}{{else}}—{{end}}</td>
+              </tr>
+              {{end}}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="4" class="right muted">明细合计</td>
+                <td class="num strong">{{money $o.Subtotal}}</td>
+                <td></td>
+              </tr>
+              {{if $o.Discount}}
+              <tr>
+                <td colspan="4" class="right muted">整单优惠</td>
+                <td class="num neg">−{{money $o.Discount}}</td>
+                <td></td>
+              </tr>
+              {{end}}
+              {{if $o.ExtraFee}}
+              <tr>
+                <td colspan="4" class="right muted">其它费用</td>
+                <td class="num">{{money $o.ExtraFee}}</td>
+                <td></td>
+              </tr>
+              {{end}}
+              <tr>
+                <td colspan="4" class="right strong">订单金额</td>
+                <td class="num strong">{{money $o.Total}}</td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    {{if $o.Note}}
+    <div class="card">
+      <div class="card__head"><div class="card__title">备注</div></div>
+      <div class="card__body"><div style="white-space:pre-wrap">{{$o.Note}}</div></div>
+    </div>
+    {{end}}
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="card__head"><div class="card__title">客户信息</div></div>
+      <div class="card__body">
+        <dl class="kv">
+          <dt>客户</dt><dd>{{$o.Title}}</dd>
+          <dt>联系人</dt><dd>{{if $o.Contact}}{{$o.Contact}}{{else}}<span class="muted">—</span>{{end}}</dd>
+          <dt>电话</dt><dd>{{if $o.Phone}}<a href="tel:{{$o.Phone}}">{{$o.Phone}}</a>{{else}}<span class="muted">—</span>{{end}}</dd>
+          <dt>下单日期</dt><dd>{{date $o.OrderDate}}</dd>
+          <dt>出货日期</dt><dd>{{if $o.ShipDate}}{{date $o.ShipDate}}{{else}}<span class="muted">—</span>{{end}}</dd>
+          <dt>发货仓</dt><dd>{{if $o.Warehouse}}{{$o.Warehouse}}{{else}}<span class="muted">—</span>{{end}}</dd>
+          <dt>登记人</dt><dd>{{if $o.CreatedByName}}{{$o.CreatedByName}}{{else}}—{{end}}</dd>
+          <dt>创建时间</dt><dd class="small">{{datetime $o.CreatedAt}}</dd>
+          <dt>更新时间</dt><dd class="small">{{datetime $o.UpdatedAt}}</dd>
+        </dl>
+      </div>
+    </div>
+
+    {{if .CanManage}}
+    <div class="card">
+      <div class="card__head"><div class="card__title">状态</div></div>
+      <div class="card__body">
+        <form method="post" action="/group-orders/{{$o.ID}}/status">
+          <div class="field">
+            <label class="field__label" for="status">改为</label>
+            <select class="select" id="status" name="status">
+              {{$cur := $o.Status}}
+              {{range .StatusOptions}}<option value="{{.Value}}"{{if eq .Value $cur}} selected{{end}}>{{.Label}}</option>{{end}}
+            </select>
+          </div>
+          <button class="btn btn--primary btn--block" type="submit">{{template "icon" "check"}}<span>更新状态</span></button>
+        </form>
+      </div>
+      <div class="card__foot">
+        <form method="post" action="/group-orders/{{$o.ID}}/delete" class="inline"
+              onsubmit="return confirm('删除这张团单？删除后无法恢复。')">
+          <button class="btn btn--sm btn--danger" type="submit">{{template "icon" "trash"}}<span>删除团单</span></button>
+        </form>
+      </div>
+    </div>
+    {{end}}
+  </div>
+</div>
+{{end}}

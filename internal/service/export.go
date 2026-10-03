@@ -535,3 +535,42 @@ func specsOneLine(p model.Product) string {
 	}
 	return strings.Join(parts, "；")
 }
+
+// ExportGroupOrders 导出行下团单记录。
+func (s *Service) ExportGroupOrders(ctx context.Context, filter store.GroupOrderFilter) ([]byte, string, error) {
+	orders, err := s.Store.ListGroupOrders(ctx, filter)
+	if err != nil {
+		return nil, "", err
+	}
+	cols := []Column{
+		{"团单号", 14, false}, {"客户", 22, false}, {"联系人", 10, false}, {"电话", 14, false},
+		{"下单日期", 12, false}, {"出货日期", 12, false}, {"发货仓", 12, false}, {"状态", 10, false},
+		{"产品", 26, false}, {"产品编码", 14, false}, {"数量", 9, false}, {"单位", 7, false},
+		{"单价", 11, true}, {"行金额", 12, true}, {"整单优惠", 11, true},
+		{"其它费用", 11, true}, {"订单金额", 13, true}, {"备注", 24, false}, {"经手人", 12, false},
+	}
+	var rows [][]any
+	var total model.Money
+	for _, o := range orders {
+		total += o.Total()
+		if len(o.Items) == 0 {
+			rows = append(rows, []any{
+				o.Code, o.CustomerName, o.Contact, o.Phone, o.OrderDate, o.ShipDate,
+				o.Warehouse, o.StatusLabel(), "", "", "", "", "", "",
+				o.Discount, o.ExtraFee, o.Total(), o.Note, o.CreatedByName,
+			})
+			continue
+		}
+		for _, it := range o.Items {
+			rows = append(rows, []any{
+				o.Code, o.CustomerName, o.Contact, o.Phone, o.OrderDate, o.ShipDate,
+				o.Warehouse, o.StatusLabel(), it.ProductName, it.SKU, it.Qty, it.Unit,
+				it.UnitPrice, it.Amount(), o.Discount, o.ExtraFee, o.Total(),
+				o.Note, o.CreatedByName,
+			})
+		}
+	}
+	rows = append(rows, []any{"合计", "", "", "", "", "", "", "", "", "", "", "", "", "",
+		"", "", total, "", ""})
+	return WriteXLSX([]Table{{Name: "线下团单", Columns: cols, Rows: rows}}, s.currencySymbol(ctx))
+}

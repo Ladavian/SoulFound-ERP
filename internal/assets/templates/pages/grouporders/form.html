@@ -1,0 +1,238 @@
+{{define "content"}}
+{{$o := .Order}}
+
+<div class="page-head">
+  <div class="page-head__main">
+    <div class="page-head__title">{{if .IsNew}}新建团单{{else}}编辑「{{$o.Code}}」{{end}}</div>
+    <div class="page-head__meta">
+      <span>大仓发货，不占用本系统库存，只做记录留存</span>
+      {{if not .IsNew}}<span class="mono">{{$o.Code}}</span>{{template "group_status" $o.Status}}{{end}}
+    </div>
+  </div>
+  <div class="page-head__actions">
+    <a class="btn" href="{{if .IsNew}}/group-orders{{else}}/group-orders/{{$o.ID}}{{end}}">
+      {{template "icon" "back"}}<span>返回</span>
+    </a>
+  </div>
+</div>
+
+<form method="post" action="{{.FormAction}}" x-data="groupLines({{.ProductsJSON}}, {{if .IsNew}}[]{{else}}{{json .Order.Items}}{{end}})">
+  {{/* 明细用 JSON 驱动，提交时按列拆开；金额只在这里展示，服务端会重新计算 */}}
+  <template x-for="(row, index) in rows" :key="index">
+    <input type="hidden" name="product_id" :value="row.productId">
+    <input type="hidden" name="product_name" :value="row.productName">
+    <input type="hidden" name="item_sku" :value="row.sku">
+    <input type="hidden" name="qty" :value="row.qty">
+    <input type="hidden" name="unit" :value="row.unit">
+    <input type="hidden" name="unit_price" :value="row.unitPrice">
+    <input type="hidden" name="item_note" :value="row.note">
+  </template>
+
+  <div class="card">
+    <div class="card__head"><div class="card__title">客户与日期</div></div>
+    <div class="card__body">
+      <div class="form-grid">
+        <div class="field">
+          <label class="field__label" for="customer_id">客户档案</label>
+          {{$curCust := deref $o.CustomerID}}
+          <select class="select" id="customer_id" name="customer_id">
+            <option value="">— 不在档案里，手填名称 —</option>
+            {{range .Customers}}<option value="{{.ID}}"{{if eq .ID $curCust}} selected{{end}}>{{.Name}}</option>{{end}}
+          </select>
+          <div class="field__hint">从档案里选会自动带出名称与电话；也可以直接手填。</div>
+        </div>
+        <div class="field">
+          <label class="field__label" for="customer_name">客户名称</label>
+          <input class="input" id="customer_name" name="customer_name" type="text" value="{{$o.CustomerName}}"
+                 placeholder="例如：某某公司 / 张先生">
+        </div>
+        <div class="field">
+          <label class="field__label" for="contact">联系人</label>
+          <input class="input" id="contact" name="contact" type="text" value="{{$o.Contact}}" placeholder="例如：李经理">
+        </div>
+        <div class="field">
+          <label class="field__label" for="phone">电话</label>
+          <input class="input" id="phone" name="phone" type="text" value="{{$o.Phone}}" placeholder="例如：13800000000">
+        </div>
+        <div class="field">
+          <label class="field__label" for="order_date">下单日期</label>
+          <input class="input" id="order_date" name="order_date" type="date" value="{{$o.OrderDate}}">
+        </div>
+        <div class="field">
+          <label class="field__label" for="ship_date">预计出货日期</label>
+          <input class="input" id="ship_date" name="ship_date" type="date" value="{{$o.ShipDate}}">
+        </div>
+        <div class="field">
+          <label class="field__label" for="warehouse">发货仓</label>
+          <input class="input" id="warehouse" name="warehouse" type="text" value="{{$o.Warehouse}}"
+                 placeholder="例如：大仓">
+          <div class="field__hint">货从哪个仓发；本系统的库存不会因此变动。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card__head">
+      <div class="card__title">订单明细<span class="card__sub">系统里没有的产品可以手填名称</span></div>
+      <div class="card__actions">
+        <button class="btn btn--sm" type="button" @click="addRow()">{{template "icon" "plus"}}<span>添加一行</span></button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="data entry-table">
+        <thead>
+          <tr>
+            <th style="min-width:200px">产品</th>
+            <th class="num" style="width:88px">数量</th>
+            <th style="width:74px">单位</th>
+            <th class="num" style="width:104px">单价</th>
+            <th class="num" style="width:104px">金额</th>
+            <th style="min-width:120px">备注</th>
+            <th style="width:52px"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="(row, index) in rows" :key="index">
+            <tr>
+              <td class="entry-cell--name" data-label="产品">
+                <select class="select" x-model="row.productId" @change="onProduct(row)">
+                  <option value="0">— 手填产品 —</option>
+                  <template x-for="p in products" :key="p.id">
+                    <option :value="p.id" x-text="p.label"></option>
+                  </template>
+                </select>
+                <input class="input" type="text" x-model="row.productName" :readonly="row.productId !== 0 && row.productId !== '0'"
+                       placeholder="产品名称（手填时必填）" style="margin-top:6px">
+              </td>
+              <td class="num" data-label="数量">
+                <input class="input input--sm entry-input" type="text" inputmode="decimal" x-model="row.qty">
+              </td>
+              <td data-label="单位">
+                <input class="input input--sm" type="text" x-model="row.unit" style="width:64px">
+              </td>
+              <td class="num" data-label="单价">
+                <input class="input input--sm entry-input entry-input--price" type="text" inputmode="decimal" x-model="row.unitPrice">
+              </td>
+              <td class="num strong" data-label="金额" x-text="fmt(lineAmount(row))"></td>
+              <td data-label="备注">
+                <input class="input input--sm" type="text" x-model="row.note">
+              </td>
+              <td>
+                <button class="btn btn--ghost btn--icon" type="button" @click="removeRow(index)" title="删除该行">
+                  {{template "icon" "trash"}}
+                </button>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+    <div class="card__foot">
+      <div class="entry-summary">
+        <span>明细合计 <b x-text="fmt(subtotal())"></b></span>
+        <span class="muted">共 <b x-text="rows.length"></b> 行</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card__head"><div class="card__title">金额与备注</div></div>
+    <div class="card__body">
+      <div class="form-grid">
+        <div class="field">
+          <label class="field__label" for="discount">整单优惠</label>
+          <input class="input input--num" id="discount" name="discount" type="text" inputmode="decimal"
+                 value="{{moneyInput2 $o.Discount}}" placeholder="0.00" x-model="discount">
+        </div>
+        <div class="field">
+          <label class="field__label" for="extra_fee">其它费用</label>
+          <input class="input input--num" id="extra_fee" name="extra_fee" type="text" inputmode="decimal"
+                 value="{{moneyInput2 $o.ExtraFee}}" placeholder="0.00" x-model="extraFee">
+          <div class="field__hint">运费、装卸等，会计入订单金额。</div>
+        </div>
+        <div class="field span-2">
+          <label class="field__label" for="note">备注</label>
+          <textarea class="textarea" id="note" name="note" rows="3"
+                    placeholder="付款方式、送货要求、约定等">{{$o.Note}}</textarea>
+        </div>
+        <div class="field span-2">
+          <div class="order-total">
+            <span>订单金额</span>
+            <strong x-text="fmt(orderTotal())"></strong>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sticky-bar">
+    <div class="sticky-bar__info">
+      团单只记录订单信息，<strong>不会改动库存</strong>。
+    </div>
+    <div class="sticky-bar__actions">
+      <a class="btn" href="{{if .IsNew}}/group-orders{{else}}/group-orders/{{$o.ID}}{{end}}">取消</a>
+      <button class="btn btn--primary" type="submit">
+        {{template "icon" "save"}}<span>{{if .IsNew}}创建团单{{else}}保存修改{{end}}</span>
+      </button>
+    </div>
+  </div>
+</form>
+
+<script>
+window.groupLines = function (products, existing) {
+  function rowFrom(src) {
+    return {
+      productId: src.productId || 0,
+      productName: src.productName || src.ProductName || '',
+      sku: src.sku || src.SKU || '',
+      qty: src.qty !== undefined ? src.qty : (src.Qty !== undefined ? src.Qty : 1),
+      unit: src.unit || src.Unit || '瓶',
+      unitPrice: src.unitPrice !== undefined ? src.unitPrice : (src.UnitPrice !== undefined ? src.UnitPrice : 0),
+      note: src.note || src.Note || ''
+    };
+  }
+  return {
+    products: products,
+    rows: (existing && existing.length ? existing.map(rowFrom) : [rowFrom({})]),
+    discount: 0,
+    extraFee: 0,
+    init: function () {
+      var d = document.getElementById('discount'), e = document.getElementById('extra_fee');
+      if (d) this.discount = parseFloat(d.value) || 0;
+      if (e) this.extraFee = parseFloat(e.value) || 0;
+    },
+    addRow: function () {
+      this.rows.push(rowFrom({}));
+    },
+    removeRow: function (i) {
+      this.rows.splice(i, 1);
+      if (this.rows.length === 0) this.rows.push(rowFrom({}));
+    },
+    onProduct: function (row) {
+      var p = this.products.find(function (x) { return String(x.id) === String(row.productId); });
+      if (!p) return;
+      row.productName = p.name;
+      row.sku = p.sku;
+      if (!row.unit) row.unit = p.unit;
+      if (!parseFloat(row.unitPrice)) row.unitPrice = p.price;
+    },
+    lineAmount: function (row) {
+      return (parseFloat(row.qty) || 0) * (parseFloat(row.unitPrice) || 0);
+    },
+    subtotal: function () {
+      var t = 0, self = this;
+      this.rows.forEach(function (r) { t += self.lineAmount(r); });
+      return t;
+    },
+    orderTotal: function () {
+      return this.subtotal() - (parseFloat(this.discount) || 0) + (parseFloat(this.extraFee) || 0);
+    },
+    fmt: function (v) {
+      return (Math.round((v || 0) * 100) / 100).toLocaleString('zh-CN',
+        { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+  };
+};
+</script>
+{{end}}

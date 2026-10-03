@@ -35,6 +35,16 @@
         <span class="action-item__go">{{template "icon" "right"}}</span>
       </a>
       {{end}}
+      {{if .Perms.Has "grouporder.view"}}
+      <a class="action-item" href="/group-orders">
+        <span class="action-item__icon">{{template "icon" "clipboard"}}</span>
+        <span class="action-item__main">
+          <span class="action-item__title">线下团单</span>
+          <span class="action-item__sub">大仓发货的大单，只记录不动库存</span>
+        </span>
+        <span class="action-item__go">{{template "icon" "right"}}</span>
+      </a>
+      {{end}}
       {{if .Perms.Has "purchase.view"}}
       <a class="action-item" href="/purchases">
         <span class="action-item__icon">{{template "icon" "truck"}}</span>
