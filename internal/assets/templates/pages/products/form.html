@@ -21,7 +21,10 @@
   </div>
 </div>
 
-<form method="post" action="{{.FormAction}}">
+{{/* 图片要跟产品一起提交，所以整个表单是 multipart；
+    注意：表单不能嵌套（嵌套时浏览器会忽略内层 form），所以图片
+    的输入框与删除开关都放在本表单里，不再单独开 form。 */}}
+<form method="post" action="{{.FormAction}}" enctype="multipart/form-data">
   <div class="card">
     <div class="card__head">
       <div class="card__title">基本信息</div>
@@ -85,21 +88,17 @@
               {{end}}
             </div>
             <div class="image-edit__side">
-              {{if .IsNew}}
-              <div class="field__hint">先保存产品，然后再回来上传图片。</div>
-              {{else}}
-              <form method="post" action="/products/{{$p.ID}}/image" enctype="multipart/form-data" class="image-edit__form">
-                <input class="input" type="file" name="image" id="image_file"
-                       accept="image/jpeg,image/png,image/webp,image/gif" required>
-                <button class="btn btn--primary" type="submit">{{template "icon" "upload"}}<span>上传图片</span></button>
-              </form>
-              <div class="field__hint">手机拍的原图直接上传即可，系统会压到长边 1280，现场加载更快。</div>
+              <input class="input" type="file" name="image" id="image_file"
+                     accept="image/jpeg,image/png,image/webp,image/gif">
+              <div class="field__hint">
+                手机拍的原图直接选就行，保存时自动压到长边 1280，现场加载更快；
+                新产品的图片也能和产品一起保存，不用先存一次再回来传。
+              </div>
               {{if $p.ImageURL}}
-              <form method="post" action="/products/{{$p.ID}}/image/delete" class="inline"
-                    onsubmit="return confirm('确定删除这张图片？')">
-                <button class="btn btn--sm btn--danger" type="submit">{{template "icon" "trash"}}<span>删除图片</span></button>
-              </form>
-              {{end}}
+              <label class="checkbox">
+                <input type="checkbox" name="remove_image" value="1">
+                <span>删除当前图片（保存后生效）</span>
+              </label>
               {{end}}
             </div>
           </div>

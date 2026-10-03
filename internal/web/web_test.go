@@ -10,6 +10,7 @@ import (
 	"html"
 	"image"
 	"image/color"
+	"image/jpeg"
 	"image/png"
 	"io"
 	"mime/multipart"
@@ -2693,4 +2694,179 @@ func TestDeleteMarket(t *testing.T) {
 	if gone, _ := svc.Store.MarketByID(ctx, sid); gone != nil {
 		t.Error("撤销结算后应能删除市集")
 	}
+}
+
+// TestProductImageOnSave 图片随产品表单一起提交。
+//
+// 用户反馈"插入产品图片无法保存"：原因是图片上传表单被嵌套在产品表单里，
+// HTML 不允许表单嵌套，浏览器会忽略内层 form，文件根本没被提交。
+// 现在图片是主表单的一部分，这里验证真实路径：
+// 一次提交既保存产品也保存图片、替换会清掉旧文件、勾选删除会清空。
+func TestProductImageOnSave(t *testing.T) {
+	srv, svc, cfg := newTestServer(t)
+	h := srv.Handler()
+	ctx := context.Background()
+	cookie := doLogin(t, h, cfg, "admin", "admin123")
+
+	// 造一张 2400×1600 的 PNG，验证服务端会缩到长边 1280
+	src := image.NewRGBA(image.Rect(0, 0, 2400, 1600))
+	for y := 0; y < 1600; y += 3 {
+		for x := 0; x < 2400; x += 3 {
+			src.Set(x, y, color.RGBA{R: uint8(x % 256), G: uint8(y % 256), B: 120, A: 255})
+		}
+	}
+	var pngBytes bytes.Buffer
+	if err := png.Encode(&pngBytes, src); err != nil {
+		t.Fatal(err)
+	}
+	var jpgBytes bytes.Buffer
+	small := image.NewRGBA(image.Rect(0, 0, 400, 300))
+	if err := jpeg.Encode(&jpgBytes, small, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	// submit 提交产品表单，fields 为文本字段，file 为空表示不带图片
+	submit := func(target string, fields map[string]string, filename string, content []byte) *httptest.ResponseRecorder {
+		t.Helper()
+		body := &bytes.Buffer{}
+		mw := multipart.NewWriter(body)
+		for k, v := range fields {
+			if err := mw.WriteField(k, v); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if filename != "" {
+			fw, err := mw.CreateFormFile("image", filename)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := fw.Write(content); err != nil {
+				t.Fatal(err)
+			}
+		}
+		mw.Close()
+		req := httptest.NewRequest(http.MethodPost, target, body)
+		req.Header.Set("Content-Type", mw.FormDataContentType())
+		req.AddCookie(cookie)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+
+	base := map[string]string{
+		"sku": "IMGS-001", "name": "图片随保存", "unit": "瓶",
+		"sale_price": "200", "is_active": "1",
+	}
+	uploadDir := func() string { return filepath.Join(cfg.DataDir, "uploads", "products") }
+	countFiles := func() int {
+		items, err := os.ReadDir(uploadDir())
+		if err != nil {
+			return 0
+		}
+		return len(items)
+	}
+
+	// 1) 新建 + 图片一次提交（以前必须先保存产品再回来传）
+	if rec := submit("/products/new", base, "wine.png", pngBytes.Bytes()); rec.Code != http.StatusSeeOther {
+		t.Fatalf("新建应 303，实际 %d %s", rec.Code, rec.Body.String())
+	}
+	product, _ := svc.Store.ProductBySKU(ctx, "IMGS-001")
+	if product == nil {
+		t.Fatal("产品未创建")
+	}
+	if product.ImageURL == "" {
+		t.Fatal("图片应随产品一起保存")
+	}
+	if got := countFiles(); got != 1 {
+		t.Fatalf("上传目录应有 1 个文件，实际 %d", got)
+	}
+	firstPath := filepath.Join(cfg.DataDir, filepath.FromSlash(strings.TrimPrefix(product.ImageURL, "/")))
+	if _, err := os.Stat(firstPath); err != nil {
+		t.Fatalf("图片文件应存在: %v", err)
+	}
+	// 长边应被压到 1280
+	if f, err := os.Open(firstPath); err == nil {
+		if img, _, err := image.Decode(f); err == nil {
+			if b := img.Bounds(); b.Dx() > 1280 || b.Dy() > 1280 {
+				t.Errorf("图片应压缩到长边 1280，实际 %d×%d", b.Dx(), b.Dy())
+			}
+		}
+		f.Close()
+	}
+
+	pid := strconv.FormatInt(product.ID, 10)
+	editFields := func(extra map[string]string) map[string]string {
+		m := map[string]string{
+			"sku": "IMGS-001", "name": "图片随保存", "unit": "瓶",
+			"sale_price": "200", "is_active": "1",
+			"image_url": product.ImageURL,
+		}
+		for k, v := range extra {
+			m[k] = v
+		}
+		return m
+	}
+
+	// 2) 换一张图：旧文件要被清掉，不能越攒越多
+	if rec := submit("/products/"+pid+"/edit", editFields(nil), "wine2.jpg", jpgBytes.Bytes()); rec.Code != http.StatusSeeOther {
+		t.Fatalf("替换图片应 303，实际 %d", rec.Code)
+	}
+	updated, _ := svc.Store.ProductByID(ctx, product.ID)
+	if updated.ImageURL == product.ImageURL {
+		t.Error("替换后图片地址应变化")
+	}
+	if got := countFiles(); got != 1 {
+		t.Errorf("替换后上传目录应仍只有 1 个文件（旧图已删），实际 %d", got)
+	}
+	if _, err := os.Stat(firstPath); !os.IsNotExist(err) {
+		t.Error("被替换掉的旧图片文件应已删除")
+	}
+
+	// 3) 非图片文件：产品信息照常保存，但要给出错误提示
+	rec := submit("/products/"+pid+"/edit", editFields(map[string]string{
+		"brand": "测试品牌",
+	}), "fake.png", []byte("这不是图片"))
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("应 303 带错误提示，实际 %d", rec.Code)
+	}
+	after, _ := svc.Store.ProductByID(ctx, product.ID)
+	if after.ImageURL != updated.ImageURL {
+		t.Error("图片无效时不应改动已有图片")
+	}
+	if after.Brand != "测试品牌" {
+		t.Error("图片无效不应影响产品其它字段的保存")
+	}
+	if page := flashHTML(t, h, rec, "/products/"+pid+"/edit", cookie); !strings.Contains(page, "不是有效的图片") {
+		t.Error("应提示图片无效")
+	}
+
+	// 4) 勾选删除图片
+	keep := updated.ImageURL
+	if rec := submit("/products/"+pid+"/edit", editFields(map[string]string{"remove_image": "1"}), "", nil); rec.Code != http.StatusSeeOther {
+		t.Fatalf("删除图片应 303，实际 %d", rec.Code)
+	}
+	cleared, _ := svc.Store.ProductByID(ctx, product.ID)
+	if cleared.ImageURL != "" {
+		t.Errorf("勾选删除后图片地址应为空，实际 %q", cleared.ImageURL)
+	}
+	if got := countFiles(); got != 0 {
+		t.Errorf("删除后上传目录应为空，实际 %d 个文件", got)
+	}
+	_ = keep
+}
+
+// flashHTML 模拟浏览器跟随跳转：带上响应里的 Flash Cookie 再请求一次，
+// 返回渲染后的页面（提示文字就在里面）。Flash 值是签名过的，所以不解码，直接看页面。
+func flashHTML(t *testing.T, h http.Handler, rec *httptest.ResponseRecorder, path string, session *http.Cookie) string {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	req.AddCookie(session)
+	for _, c := range rec.Result().Cookies() {
+		if strings.Contains(c.Name, "flash") {
+			req.AddCookie(&http.Cookie{Name: c.Name, Value: c.Value})
+		}
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	return w.Body.String()
 }

@@ -1,6 +1,8 @@
 package web
 
 import (
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -168,6 +170,18 @@ func (s *Server) handleProductSave(w http.ResponseWriter, r *http.Request) {
 		fallback = "/products/" + strconv.FormatInt(id, 10)
 	}
 
+	// 表单里可能带图片，先限制请求体大小，避免超大文件把内存吃满
+	r.Body = http.MaxBytesReader(w, r.Body, service.MaxImageBytes+(2<<20))
+	if err := r.ParseMultipartForm(service.MaxImageBytes + (2 << 20)); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			s.fail(w, r, fallback, service.UserErrf("图片太大了（上限 %d MB），请先压缩再上传",
+				service.MaxImageBytes>>20))
+			return
+		}
+		// 普通表单（非 multipart）会返回 ErrNotMultipart，交给下面的表单读取处理
+	}
+
 	f := newFormReader(r)
 	product := &model.Product{
 		ID:             id,
@@ -229,11 +243,28 @@ func (s *Server) handleProductSave(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, r, fallback, err)
 			return
 		}
+		// 图片必须在保存产品之前处理：替换图片时服务要读数据库里的旧地址，
+		// 才能把上一张文件删掉，不然上传目录会越攒越多。
+		note, ok := s.applyProductImage(r, id)
+		if imageTouched(r) {
+			// 图片刚改过，用数据库里的最新地址，别被表单里的旧值覆盖
+			if fresh, err := s.svc.Store.ProductByID(ctx, id); err == nil && fresh != nil {
+				product.ImageURL = fresh.ImageURL
+			}
+		}
 		if err := s.svc.Store.UpdateProduct(ctx, product); err != nil {
 			s.fail(w, r, fallback, err)
 			return
 		}
-		s.ok(w, r, "/products/"+strconv.FormatInt(id, 10), "产品已更新")
+		if !ok {
+			s.fail(w, r, fallback, service.UserErrf("%s（产品其它信息已保存）", note))
+			return
+		}
+		msg := "产品已更新"
+		if note != "" {
+			msg += "，" + note
+		}
+		s.ok(w, r, "/products/"+strconv.FormatInt(id, 10), msg)
 		return
 	}
 
@@ -242,7 +273,66 @@ func (s *Server) handleProductSave(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, fallback, err)
 		return
 	}
-	s.ok(w, r, "/products/"+strconv.FormatInt(newID, 10), "产品已创建，可以开始录入采购入库了")
+	// 新建时是先有产品 ID 才能存图片，没有旧文件需要清理
+	note, ok := s.applyProductImage(r, newID)
+	if !ok {
+		s.fail(w, r, fallback, service.UserErrf("%s（产品已创建）", note))
+		return
+	}
+	msg := "产品已创建，可以开始录入采购入库了"
+	if note != "" {
+		msg += "，" + note
+	}
+	s.ok(w, r, "/products/"+strconv.FormatInt(newID, 10), msg)
+}
+
+// imageTouched 本次提交是否动过图片（选了新文件或勾了删除）。
+func imageTouched(r *http.Request) bool {
+	if strings.TrimSpace(r.FormValue("remove_image")) != "" {
+		return true
+	}
+	_, _, err := r.FormFile("image")
+	return err == nil
+}
+
+// applyProductImage 处理产品表单里的图片：上传新图或删除旧图。
+//
+// 图片是跟产品一起提交的，所以这里在产品保存成功后调用。
+// 返回一句可以拼进提示语的说明；本次没有图片操作时返回空串。
+func (s *Server) applyProductImage(r *http.Request, productID int64) (string, bool) {
+	if productID <= 0 {
+		return "", true
+	}
+	ctx := r.Context()
+
+	// 勾了「删除当前图片」就清掉。删除优先于上传，避免误覆盖。
+	if strings.TrimSpace(r.FormValue("remove_image")) != "" {
+		if err := s.svc.ClearProductImage(ctx, productID, userFrom(r)); err != nil {
+			return "删除图片失败：" + userMessage(err), false
+		}
+		return "图片已删除", true
+	}
+
+	file, header, err := r.FormFile("image")
+	if err != nil {
+		return "", true // 没选文件是正常情况
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(io.LimitReader(file, service.MaxImageBytes+1))
+	if err != nil {
+		return "读取图片失败，请重试", false
+	}
+	if len(data) == 0 {
+		return "", true
+	}
+	if len(data) > service.MaxImageBytes {
+		return fmt.Sprintf("图片太大了（上限 %d MB），请先压缩再上传", service.MaxImageBytes>>20), false
+	}
+	if _, err := s.svc.SaveProductImage(ctx, productID, header.Filename, data, userFrom(r)); err != nil {
+		return "图片保存失败：" + userMessage(err), false
+	}
+	return "图片已保存（压缩后 " + service.ImageSizeText(len(data)) + "）", true
 }
 
 func (s *Server) handleProductToggle(w http.ResponseWriter, r *http.Request) {

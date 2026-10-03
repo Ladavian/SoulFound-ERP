@@ -311,3 +311,102 @@ func TestAlpineClickHandlersInScope(t *testing.T) {
 	}
 	t.Logf("已检查 %d 个模板里的 %d 处 Alpine 事件处理", checkedFiles, checkedHandlers)
 }
+
+// TestNoNestedFormsAndMultipart 静态检查表单的两个致命写法。
+//
+// 用户反馈"插入产品图片无法保存"，根因是图片上传表单被嵌套在
+// 产品表单里面：HTML 不允许表单嵌套，浏览器会直接忽略内层 <form>，
+// 于是点"上传图片"实际提交的是外层表单（且外层没有 multipart，文件根本没发出去）。
+// 这类问题肉眼很难发现，所以固定成检查：
+//  1. 不允许 form 嵌套
+//  2. 带 <input type="file"> 的表单必须有 enctype="multipart/form-data"
+func TestNoNestedFormsAndMultipart(t *testing.T) {
+	root := "templates"
+	if _, err := os.Stat(root); err != nil {
+		root = "../assets/templates"
+	}
+
+	tagRe := regexp.MustCompile(`(?is)<(/?)([a-z][a-z0-9]*)((?:"[^"]*"|'[^']*'|[^>"'])*)>`)
+	voidTags := map[string]bool{
+		"area": true, "base": true, "br": true, "col": true, "embed": true, "hr": true,
+		"img": true, "input": true, "link": true, "meta": true, "param": true,
+		"source": true, "track": true, "wbr": true, "path": true, "circle": true,
+		"rect": true, "line": true, "polyline": true, "polygon": true, "ellipse": true,
+		"use": true, "stop": true,
+	}
+	fileRe := regexp.MustCompile(`(?i)type\s*=\s*"file"`)
+	enctypeRe := regexp.MustCompile(`(?i)enctype\s*=\s*"multipart/form-data"`)
+
+	checked := 0
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".html") {
+			return err
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		src := string(raw)
+		rel := strings.TrimPrefix(path, root+string(filepath.Separator))
+
+		type frame struct {
+			tag   string
+			line  int
+			attrs string
+		}
+		stack := []frame{}
+		lineOf := func(idx int) int { return strings.Count(src[:idx], "\n") + 1 }
+
+		for _, m := range tagRe.FindAllStringSubmatchIndex(src, -1) {
+			closing := src[m[2]:m[3]] == "/"
+			name := strings.ToLower(src[m[4]:m[5]])
+			attrs := src[m[6]:m[7]]
+			line := lineOf(m[0])
+
+			if closing {
+				for i := len(stack) - 1; i >= 0; i-- {
+					if stack[i].tag == name {
+						stack = stack[:i]
+						break
+					}
+				}
+				continue
+			}
+			if voidTags[name] || strings.HasSuffix(strings.TrimSpace(attrs), "/") {
+				continue
+			}
+
+			if name == "form" {
+				checked++
+				// 1) 不允许嵌套
+				for _, f := range stack {
+					if f.tag == "form" {
+						t.Errorf("%s:%d 出现嵌套 <form>（外层在第 %d 行）："+
+							"浏览器会忽略内层 form，里面按钮提交的是外层表单",
+							rel, line, f.line)
+						break
+					}
+				}
+				// 2) 表单内有文件输入就必须是 multipart
+				end := strings.Index(strings.ToLower(src[m[0]:]), "</form>")
+				body := ""
+				if end >= 0 {
+					body = src[m[0] : m[0]+end]
+				}
+				if fileRe.MatchString(body) && !enctypeRe.MatchString(attrs) {
+					t.Errorf("%s:%d 表单里有文件上传，但缺少 enctype=\"multipart/form-data\"，"+
+						"文件不会被提交", rel, line)
+				}
+			}
+			stack = append(stack, frame{tag: name, line: line, attrs: attrs})
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("遍历模板失败: %v", err)
+	}
+	if checked == 0 {
+		t.Fatal("没有检查到任何表单，检查范围异常")
+	}
+	t.Logf("已检查 %d 个表单的嵌套与 multipart 设置", checked)
+}
