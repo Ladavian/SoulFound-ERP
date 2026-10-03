@@ -1,0 +1,272 @@
+package web
+
+import (
+	"encoding/csv"
+	"fmt"
+	"io"
+	"net/http"
+	"strconv"
+	"strings"
+
+	"github.com/xuri/excelize/v2"
+
+	"icewine-erp/internal/service"
+)
+
+// maxImportSize 上传文件大小上限。
+const maxImportSize = 12 << 20
+
+// importSheet 读进来的表格内容。
+type importSheet struct {
+	Headers []string
+	Rows    [][]string
+}
+
+// cell 按列名取值，支持多个别名，找不到返回空串。
+func (s importSheet) cell(row []string, aliases ...string) string {
+	for _, alias := range aliases {
+		key := normalizeHeader(alias)
+		for i, h := range s.Headers {
+			if normalizeHeader(h) == key {
+				if i < len(row) {
+					return cleanCell(row[i])
+				}
+				return ""
+			}
+		}
+	}
+	return ""
+}
+
+// normalizeHeader 表头归一化：去掉空格与常见标点，便于宽松匹配。
+func normalizeHeader(s string) string {
+	v := strings.TrimSpace(s)
+	v = strings.ReplaceAll(v, " ", "")
+	v = strings.ReplaceAll(v, "\u3000", "")
+	v = strings.ReplaceAll(v, "*", "")
+	v = strings.ReplaceAll(v, "（", "(")
+	v = strings.ReplaceAll(v, "）", ")")
+	return strings.ToLower(v)
+}
+
+// cleanCell 清洗单元格：去掉首尾空白与全角空格。
+func cleanCell(s string) string {
+	v := strings.TrimSpace(s)
+	v = strings.Trim(v, "\u3000")
+	v = strings.TrimSpace(v)
+	// Excel 会把长条码读成 8.32136E+11，这里还原成整数串
+	if strings.ContainsAny(v, "eE") && strings.ContainsAny(v, "0123456789") {
+		if f, err := strconv.ParseFloat(v, 64); err == nil && f > 0 {
+			v = strconv.FormatFloat(f, 'f', -1, 64)
+		}
+	}
+	return v
+}
+
+// readImportFile 读取上传的 xlsx / csv，返回第一个工作表的内容。
+func readImportFile(file io.Reader, filename string) (importSheet, error) {
+	var sh importSheet
+	lower := strings.ToLower(filename)
+	switch {
+	case strings.HasSuffix(lower, ".csv"), strings.HasSuffix(lower, ".txt"):
+		cr := csv.NewReader(file)
+		cr.FieldsPerRecord = -1
+		cr.LazyQuotes = true
+		records, err := cr.ReadAll()
+		if err != nil {
+			return sh, fmt.Errorf("读取 CSV 失败：%w", err)
+		}
+		rows := make([][]string, 0, len(records))
+		for _, r := range records {
+			rows = append(rows, r)
+		}
+		return buildSheet(rows), nil
+	case strings.HasSuffix(lower, ".xlsx"), strings.HasSuffix(lower, ".xlsm"):
+		f, err := excelize.OpenReader(file)
+		if err != nil {
+			return sh, fmt.Errorf("读取 Excel 失败：%w", err)
+		}
+		defer f.Close()
+		sheets := f.GetSheetList()
+		if len(sheets) == 0 {
+			return sh, fmt.Errorf("文件里没有工作表")
+		}
+		rows, err := f.GetRows(sheets[0])
+		if err != nil {
+			return sh, fmt.Errorf("读取工作表失败：%w", err)
+		}
+		return buildSheet(rows), nil
+	default:
+		return sh, fmt.Errorf("只支持 .xlsx 或 .csv 文件")
+	}
+}
+
+// buildSheet 找到表头行（第一行非空），其余作为数据行。
+func buildSheet(rows [][]string) importSheet {
+	var sh importSheet
+	for _, r := range rows {
+		if isEmptyRow(r) {
+			continue
+		}
+		sh.Headers = r
+		rows = rows[1:]
+		break
+	}
+	for _, r := range rows {
+		if isEmptyRow(r) {
+			continue
+		}
+		sh.Rows = append(sh.Rows, r)
+	}
+	return sh
+}
+
+func isEmptyRow(r []string) bool {
+	for _, c := range r {
+		if cleanCell(c) != "" {
+			return false
+		}
+	}
+	return true
+}
+
+// importUpload 读取上传的文件并返回表格内容。
+func importUpload(w http.ResponseWriter, r *http.Request) (importSheet, bool) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxImportSize)
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "请选择要导入的文件（.xlsx 或 .csv）", http.StatusBadRequest)
+		return importSheet{}, false
+	}
+	defer file.Close()
+	sh, err := readImportFile(file, header.Filename)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return importSheet{}, false
+	}
+	if len(sh.Headers) == 0 || len(sh.Rows) == 0 {
+		http.Error(w, "文件里没有可导入的数据行", http.StatusBadRequest)
+		return importSheet{}, false
+	}
+	return sh, true
+}
+
+// ---------------------------------------------------------------- 页面与导入
+
+func (s *Server) handleImportPage(w http.ResponseWriter, r *http.Request) {
+	noCache(w)
+	page := s.newPage(r, "数据导入", "import")
+	if msg := strings.TrimSpace(r.URL.Query().Get("msg")); msg != "" {
+		page["Flash"] = []Flash{{Level: "info", Text: msg}}
+	}
+	if err := s.rnd.Render(w, "import", page); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// handleImportProducts 导入产品档案与期初库存。
+func (s *Server) handleImportProducts(w http.ResponseWriter, r *http.Request) {
+	sh, ok := importUpload(w, r)
+	if !ok {
+		return
+	}
+	rows := make([]service.ProductImportRow, 0, len(sh.Rows))
+	for _, row := range sh.Rows {
+		rows = append(rows, service.ProductImportRow{
+			SKU:        sh.cell(row, "产品编码", "货品编码", "编码", "SKU", "条形码"),
+			Barcode:    sh.cell(row, "条形码", "条码", "barcode"),
+			Name:       sh.cell(row, "产品名称", "货品名称", "名称", "品名"),
+			ShortName:  sh.cell(row, "货品简称", "产品简称", "简称", "别名"),
+			Category:   sh.cell(row, "品类", "货品类型", "分类", "类别"),
+			Brand:      sh.cell(row, "品牌"),
+			Origin:     sh.cell(row, "产地", "产区"),
+			Unit:       sh.cell(row, "单位"),
+			CostPrice:  sh.cell(row, "参考成本", "货品成本", "成本价", "成本"),
+			SalePrice:  sh.cell(row, "建议售价", "货品售价", "售价", "零售价"),
+			LowStock:   sh.cell(row, "库存预警线", "预警线", "安全库存"),
+			Supplier:   sh.cell(row, "供应商"),
+			OpeningQty: sh.cell(row, "期初库存", "初始库存", "库存数量"),
+			OpeningOn:  sh.cell(row, "期初日期"),
+			Notes:      sh.cell(row, "备注"),
+		})
+	}
+	res, err := s.svc.ImportProducts(r.Context(), rows, userFrom(r))
+	if err != nil {
+		s.fail(w, r, "/import", err)
+		return
+	}
+	s.importDone(w, r, "产品", res)
+}
+
+// handleImportPurchases 导入进货明细。
+func (s *Server) handleImportPurchases(w http.ResponseWriter, r *http.Request) {
+	sh, ok := importUpload(w, r)
+	if !ok {
+		return
+	}
+	rows := make([]service.PurchaseImportRow, 0, len(sh.Rows))
+	for _, row := range sh.Rows {
+		rows = append(rows, service.PurchaseImportRow{
+			Date:      sh.cell(row, "日期", "进货日期", "下单日期", "采购日期"),
+			Supplier:  sh.cell(row, "供应商"),
+			SKU:       sh.cell(row, "产品编码", "货品编码", "编码", "SKU", "条形码"),
+			Product:   sh.cell(row, "产品名称", "货品名称", "下单商品", "产品", "品名", "货品简称", "简称"),
+			Qty:       sh.cell(row, "数量", "进货数量"),
+			UnitPrice: sh.cell(row, "单价", "进货单价", "成本价", "单位成本"),
+			Note:      sh.cell(row, "备注"),
+		})
+	}
+	res, err := s.svc.ImportPurchases(r.Context(), rows, userFrom(r))
+	if err != nil {
+		s.fail(w, r, "/import", err)
+		return
+	}
+	s.importDone(w, r, "进货", res)
+}
+
+// handleImportOutbound 导入出库明细（市集现场记录与手工出库）。
+func (s *Server) handleImportOutbound(w http.ResponseWriter, r *http.Request) {
+	sh, ok := importUpload(w, r)
+	if !ok {
+		return
+	}
+	rows := make([]service.OutboundImportRow, 0, len(sh.Rows))
+	for _, row := range sh.Rows {
+		rows = append(rows, service.OutboundImportRow{
+			Market:  sh.cell(row, "市集名称", "市集", "活动名称", "渠道"),
+			Date:    sh.cell(row, "日期", "出货日期", "下单日期"),
+			SKU:     sh.cell(row, "产品编码", "货品编码", "编码", "SKU", "条形码"),
+			Product: sh.cell(row, "产品名称", "货品名称", "下单商品", "产品", "品名", "货品简称", "简称"),
+			Kind:    sh.cell(row, "类型", "出库类型", "客户"),
+			Qty:     sh.cell(row, "数量", "出货数量"),
+			Price:   sh.cell(row, "单价", "售价", "成交价"),
+			Note:    sh.cell(row, "备注"),
+		})
+	}
+	res, err := s.svc.ImportOutbound(r.Context(), rows, userFrom(r))
+	if err != nil {
+		s.fail(w, r, "/import", err)
+		return
+	}
+	s.importDone(w, r, "出库", res)
+}
+
+// importDone 导入结束后把结果回显在导入页上。
+func (s *Server) importDone(w http.ResponseWriter, r *http.Request, label string, res service.ImportResult) {
+	noCache(w)
+	page := s.newPage(r, "数据导入", "import")
+	page["Result"] = res
+	page["ResultLabel"] = label
+	// Flash 必须是 []Flash（模板里的 flash 组件会 range 它）
+	if len(res.Errors) == 0 {
+		page["Flash"] = []Flash{{Level: "success", Text: fmt.Sprintf(
+			"%s导入完成：读取 %d 行，新建 %d 条，更新 %d 条，跳过 %d 行",
+			label, res.Total, res.Created, res.Updated, res.Skipped)}}
+	} else {
+		page["Flash"] = []Flash{{Level: "error", Text: fmt.Sprintf(
+			"%s导入完成，但有 %d 行没能导入，请看下面的说明", label, res.Skipped)}}
+	}
+	if err := s.rnd.Render(w, "import", page); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}

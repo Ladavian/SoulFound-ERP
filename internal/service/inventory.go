@@ -207,13 +207,14 @@ type AdjustInput struct {
 }
 
 var manualReasons = map[string]bool{
-	model.ReasonOpening:    true,
-	model.ReasonAdjustIn:   true,
-	model.ReasonAdjustOut:  true,
-	model.ReasonReturnIn:   true,
-	model.ReasonMarketGift: true,
-	model.ReasonMarketLoss: true,
-	model.ReasonDirectSale: true,
+	model.ReasonOpening:     true,
+	model.ReasonAdjustIn:    true,
+	model.ReasonAdjustOut:   true,
+	model.ReasonReturnIn:    true,
+	model.ReasonMarketGift:  true,
+	model.ReasonMarketLoss:  true,
+	model.ReasonDirectSale:  true,
+	model.ReasonTransferOut: true,
 }
 
 // AdjustStock 手工登记一笔出入库（期初建账、盘点、损耗、退货等）。

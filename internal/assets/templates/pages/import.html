@@ -1,0 +1,141 @@
+{{define "content"}}
+<div class="hero">
+  <div>
+    <div class="hero__title">数据导入</div>
+    <div class="hero__sub">
+      原来是 Excel 表格的话，按下面三步导入即可，不用一条条手填；重复导入同一份文件是安全的
+    </div>
+  </div>
+</div>
+
+{{if .Result}}
+<div class="alert {{if .Result.Errors}}alert--warn{{else}}alert--ok{{end}}">
+  {{template "icon" "check"}}
+  <div class="alert__body">
+    <div class="alert__title">{{.ResultLabel}}导入结果</div>
+    <div>读取 {{.Result.Total}} 行 · 新建 {{.Result.Created}} 条 · 更新 {{.Result.Updated}} 条 · 跳过 {{.Result.Skipped}} 行</div>
+    {{if .Result.Errors}}
+    <div class="tiny" style="margin-top:8px">以下行未能导入：</div>
+    <ul class="import-errors">
+      {{range .Result.Errors}}<li>{{.}}</li>{{end}}
+    </ul>
+    {{end}}
+  </div>
+</div>
+{{end}}
+
+<div class="alert alert--info">
+  {{template "icon" "info"}}
+  <div class="alert__body">
+    <strong>导入顺序很重要</strong>：先导产品，再导进货，最后导出库。
+    产品和进货进来之后，库存会自动算出来；如果产品里同时填了「期初库存」，
+    系统检测到该产品已有流水时会自动跳过期初，避免数量翻倍。
+  </div>
+</div>
+
+<div class="grid grid--3">
+  <div class="card">
+    <div class="card__head">
+      <div class="card__title">
+        <span class="step-badge">1</span>产品档案
+        <span class="card__sub">含期初库存</span>
+      </div>
+    </div>
+    <form method="post" action="/import/products" enctype="multipart/form-data">
+      <div class="card__body">
+        <div class="field">
+          <label class="field__label" for="file-products">选择文件（.xlsx / .csv）</label>
+          <input class="input" id="file-products" name="file" type="file" accept=".xlsx,.xlsm,.csv" required>
+        </div>
+        <div class="import-cols">
+          <div class="import-cols__title">可识别的列名</div>
+          产品编码 / 条形码 / 产品名称 / 货品简称 / 品类 / 品牌 / 产地 / 单位 /
+          参考成本 / 建议售价 / 库存预警线 / 供应商 / 期初库存 / 备注
+        </div>
+        <div class="tiny muted" style="margin-top:6px">
+          按「产品编码」或「条形码」匹配：已存在就更新，不存在就新建。供应商不存在会自动建。
+        </div>
+      </div>
+      <div class="card__foot">
+        <button class="btn btn--primary btn--block" type="submit">
+          {{template "icon" "upload"}}<span>导入产品</span>
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <div class="card">
+    <div class="card__head">
+      <div class="card__title">
+        <span class="step-badge">2</span>进货明细
+        <span class="card__sub">自动确认入库</span>
+      </div>
+    </div>
+    <form method="post" action="/import/purchases" enctype="multipart/form-data">
+      <div class="card__body">
+        <div class="field">
+          <label class="field__label" for="file-purchases">选择文件（.xlsx / .csv）</label>
+          <input class="input" id="file-purchases" name="file" type="file" accept=".xlsx,.xlsm,.csv" required>
+        </div>
+        <div class="import-cols">
+          <div class="import-cols__title">可识别的列名</div>
+          日期 / 供应商 / 产品编码 / 产品名称（或货品简称）/ 数量 / 单价 / 备注
+        </div>
+        <div class="tiny muted" style="margin-top:6px">
+          同一天同一供应商的行会合并成一张采购单并直接确认入库；
+          单价留空时按产品参考成本计价。
+        </div>
+      </div>
+      <div class="card__foot">
+        <button class="btn btn--primary btn--block" type="submit">
+          {{template "icon" "upload"}}<span>导入进货</span>
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <div class="card">
+    <div class="card__head">
+      <div class="card__title">
+        <span class="step-badge">3</span>出库明细
+        <span class="card__sub">市集销售 / 试饮 / 损耗 / 调拨</span>
+      </div>
+    </div>
+    <form method="post" action="/import/outbound" enctype="multipart/form-data">
+      <div class="card__body">
+        <div class="field">
+          <label class="field__label" for="file-outbound">选择文件（.xlsx / .csv）</label>
+          <input class="input" id="file-outbound" name="file" type="file" accept=".xlsx,.xlsm,.csv" required>
+        </div>
+        <div class="import-cols">
+          <div class="import-cols__title">可识别的列名</div>
+          市集名称 / 日期 / 产品编码 / 产品名称（或货品简称）/ 类型 / 数量 / 单价 / 备注
+        </div>
+        <div class="tiny muted" style="margin-top:6px">
+          类型填「销售 / 试饮 / 赠送 / 损耗」才算市集现场记录；
+          填「调拨 / 盘亏」或<strong>不填市集名称</strong>时走手工出库登记。
+          市集不存在会按名称自动创建。<br>
+          <strong>导入后要到「市集活动」里逐场点「结算」，结算才会扣减库存</strong>——
+          这是系统的设计：每场市集的成本与利润在结算时才定下来。
+        </div>
+      </div>
+      <div class="card__foot">
+        <button class="btn btn--primary btn--block" type="submit">
+          {{template "icon" "upload"}}<span>导入出库</span>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__head"><div class="card__title">导入前请先做一次备份</div></div>
+  <div class="card__body">
+    <div class="tiny muted">
+      导入会直接写入数据库。虽然重复导入同一文件不会产生重复数据，
+      但第一次导入前建议先到 <a href="/settings">系统设置</a> 点一次「立即备份」，
+      万一映射不对可以随时下载备份回到导入前的状态。
+    </div>
+  </div>
+</div>
+{{end}}

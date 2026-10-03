@@ -417,6 +417,11 @@ func (s *Server) routes() {
 	m.Handle("GET /profile", s.guard("", s.handleProfile))
 	m.Handle("POST /profile/password", s.guard("", s.handleProfilePassword))
 	m.Handle("POST /profile/username", s.guard("", s.handleProfileUsername))
+	// 数据导入（把原来表格里的数据一次性搬进来）
+	m.Handle("GET /import", s.guard(PermSettingManage, s.handleImportPage))
+	m.Handle("POST /import/products", s.guard(PermSettingManage, s.handleImportProducts))
+	m.Handle("POST /import/purchases", s.guard(PermSettingManage, s.handleImportPurchases))
+	m.Handle("POST /import/outbound", s.guard(PermSettingManage, s.handleImportOutbound))
 	m.Handle("GET /settings", s.guard(PermSettingManage, s.handleSettings))
 	m.Handle("POST /settings", s.guard(PermSettingManage, s.handleSettingsSave))
 	m.Handle("POST /settings/rebuild", s.guard(PermSettingManage, s.handleSettingsRebuild))

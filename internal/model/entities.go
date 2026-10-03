@@ -316,6 +316,7 @@ const (
 	ReasonAdjustOut     = "adjust_out"     // 盘亏/调整减少
 	ReasonReturnIn      = "return_in"      // 退货入库
 	ReasonDirectSale    = "direct_sale"    // 销售出库（市集之外的直销）
+	ReasonTransferOut   = "transfer_out"   // 调拨出库（发到别处仓库）
 	ReasonMarketSale    = "market_sale"    // 市集销售
 	ReasonMarketTasting = "market_tasting" // 市集试饮
 	ReasonMarketGift    = "market_gift"    // 市集赠送
@@ -330,6 +331,7 @@ var ReasonLabels = map[string]string{
 	ReasonAdjustOut:     "盘点调减",
 	ReasonReturnIn:      "退货入库",
 	ReasonDirectSale:    "销售出库",
+	ReasonTransferOut:   "调拨出库",
 	ReasonMarketSale:    "市集销售",
 	ReasonMarketTasting: "市集试饮",
 	ReasonMarketGift:    "市集赠送",
@@ -359,6 +361,7 @@ var (
 	}
 	DirectionOutReasons = []Option{
 		{ReasonDirectSale, "销售出库（卖给了客户）"},
+		{ReasonTransferOut, "调拨出库（发到别的仓库）"},
 		{ReasonAdjustOut, "盘点调减（实物比账面少）"},
 		{ReasonMarketLoss, "破损 / 损耗"},
 		{ReasonMarketGift, "赠送 / 公关用酒"},

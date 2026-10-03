@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"encoding/xml"
 	"html"
@@ -1937,7 +1938,7 @@ func TestAllInteractiveElementsResolve(t *testing.T) {
 	mid := strconv.FormatInt(markets[0].ID, 10)
 
 	pages := []string{
-		"/", "/more", "/profile", "/settings", "/logs", "/users", "/users/new",
+		"/", "/more", "/profile", "/settings", "/import", "/logs", "/users", "/users/new",
 		"/users/" + strconv.FormatInt(users[0].ID, 10) + "/edit",
 		"/users/" + strconv.FormatInt(users[0].ID, 10) + "/password",
 		"/products", "/products/new", "/products/" + pid, "/products/" + pid + "/edit",
@@ -2386,5 +2387,182 @@ func TestGroupOrderPermissionAndValidation(t *testing.T) {
 	}
 	if code, _ := get(t, h, "/group-orders/new", viewer); code != http.StatusForbidden {
 		t.Errorf("没有维护权限不应能新建，实际 %d", code)
+	}
+}
+
+// TestImportFromSpreadsheet 从表格导入产品、进货与出库。
+//
+// 对应真实场景：用户原来用 Excel 记进销存，要一次性搬进系统。
+// 重点验证：给了产品编码就只按编码匹配（不同产品共用条形码很常见）、
+// 重复导入不会产生重复数据、库存能按明细还原出来。
+func TestImportFromSpreadsheet(t *testing.T) {
+	srv, svc, cfg := newTestServer(t)
+	h := srv.Handler()
+	ctx := context.Background()
+	cookie := doLogin(t, h, cfg, "admin", "admin123")
+	admin := mustUser(t, svc, "admin")
+
+	// 产品：其中两款故意共用同一个条形码（真实表格里很常见）
+	// endpoint 是上传地址，filename 决定按 xlsx 还是 csv 解析
+	upload := func(endpoint, filename string, rows [][]string) {
+		t.Helper()
+		var buf bytes.Buffer
+		w := csv.NewWriter(&buf)
+		for _, r := range rows {
+			if err := w.Write(r); err != nil {
+				t.Fatal(err)
+			}
+		}
+		w.Flush()
+		var body bytes.Buffer
+		mw := multipart.NewWriter(&body)
+		fw, err := mw.CreateFormFile("file", filename)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := fw.Write(buf.Bytes()); err != nil {
+			t.Fatal(err)
+		}
+		mw.Close()
+
+		req := httptest.NewRequest(http.MethodPost, endpoint, &body)
+		req.Header.Set("Content-Type", mw.FormDataContentType())
+		req.AddCookie(cookie)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s 导入失败：%d %s", endpoint, rec.Code, rec.Body.String())
+		}
+	}
+
+	productRows := [][]string{
+		{"产品编码", "条形码", "产品名称", "货品简称", "品类", "品牌", "单位", "参考成本", "建议售价", "供应商"},
+		{"SF-001", "832136002173", "邦得唯优小冰甜375ml", "邦小冰", "加拿大冰酒", "邦得唯优", "瓶", "55", "130", "北洲贸易"},
+		{"SF-002", "832136001480", "邦得唯优洛尤凡375ml", "洛尤凡", "加拿大冰酒", "邦得唯优", "瓶", "220", "460", "北洲贸易"},
+		{"SF-003", "832136001480", "邦得唯优维达尔375ml", "邦冰白", "加拿大冰酒", "邦得唯优", "瓶", "220", "460", "北洲贸易"},
+	}
+	upload("/import/products", "products.csv", productRows)
+
+	// 演示数据里本来就有产品，这里只统计本次导入的（编码 SF- 开头）
+	countImported := func() int {
+		list, _ := svc.Store.ListProducts(ctx, store.ProductFilter{})
+		n := 0
+		for _, p := range list {
+			if strings.HasPrefix(p.SKU, "SF-") {
+				n++
+			}
+		}
+		return n
+	}
+	if n := countImported(); n != 3 {
+		t.Fatalf("共用条形码的产品也必须各自建一个，实际 %d 个", n)
+	}
+	p1, _ := svc.Store.ProductBySKU(ctx, "SF-001")
+	if p1 == nil || p1.Barcode != "832136002173" {
+		t.Fatal("产品编码与条形码应正确写入")
+	}
+	if p1.CostPrice != model.MustMoney("55") || p1.SalePrice != model.MustMoney("130") {
+		t.Errorf("成本与售价应写入：%s / %s", p1.CostPrice, p1.SalePrice)
+	}
+	if p1.NameEn != "邦小冰" {
+		t.Errorf("货品简称应写入别名，实际 %q", p1.NameEn)
+	}
+	if sups, _ := svc.Store.ListSuppliers(ctx, "北洲贸易", true); len(sups) == 0 {
+		t.Error("供应商应自动创建")
+	}
+	// 第三款产品因条码被占用而未写入条形码，但不能影响导入
+	p3, _ := svc.Store.ProductBySKU(ctx, "SF-003")
+	if p3 == nil || p3.Barcode != "" {
+		t.Errorf("条码被占用时应跳过条码但保留产品，实际 %q", p3.Barcode)
+	}
+
+	// 重复导入同一份文件：不能产生重复产品
+	upload("/import/products", "products.csv", productRows)
+	if again := countImported(); again != 3 {
+		t.Errorf("重复导入不应新增产品，实际 %d 个", again)
+	}
+
+	// 进货：同一天同一供应商合并成一张采购单
+	upload("/import/purchases", "purchases.csv", [][]string{
+		{"日期", "供应商", "产品编码", "产品名称", "数量", "单价"},
+		{"2026年6月29日", "北洲贸易", "SF-001", "邦小冰", "36", "55"},
+		{"2026年6月29日", "北洲贸易", "SF-002", "洛尤凡", "10", "220"},
+		{"2026/8/15", "北洲贸易", "SF-001", "邦小冰", "12", "55"},
+	})
+	// 演示数据里也有采购单，这里只数导入产生的（备注为「由表格导入」）
+	purchases, _ := svc.Store.ListPurchases(ctx, store.PurchaseFilter{})
+	importedOrders := 0
+	for _, pur := range purchases {
+		if strings.Contains(pur.Notes, "由表格导入") {
+			importedOrders++
+		}
+	}
+	if importedOrders != 2 {
+		t.Fatalf("同一天同一供应商应合并成一张单，实际 %d 张", importedOrders)
+	}
+	afterPurchase, _ := svc.Store.ProductByID(ctx, p1.ID)
+	if afterPurchase.StockQty != model.MustQty("48") {
+		t.Errorf("进货确认后库存应为 48，实际 %s", afterPurchase.StockQty)
+	}
+
+	// 出库：市集销售 + 试饮 + 非市集的调拨/损耗
+	upload("/import/outbound", "outbound.csv", [][]string{
+		{"市集名称", "日期", "产品编码", "产品名称", "类型", "数量", "单价"},
+		{"凤凰汇市集", "2026年8月7日", "SF-001", "邦小冰", "销售", "7", "130"},
+		{"凤凰汇市集", "2026年8月7日", "SF-001", "邦小冰", "试饮", "2", ""},
+		{"", "2026年8月16日", "SF-001", "邦小冰", "调拨", "3", ""},
+		{"", "2026年9月22日", "SF-001", "邦小冰", "损耗", "1", ""},
+	})
+	// 演示数据里也有市集，这里按名称找导入创建的那一场
+	markets, _ := svc.Store.ListMarkets(ctx, store.MarketFilter{Keyword: "凤凰汇市集"})
+	if len(markets) != 1 || markets[0].Name != "凤凰汇市集" {
+		t.Fatalf("市集应按名称自动创建，实际 %+v", markets)
+	}
+	m, _ := svc.Store.MarketByID(ctx, markets[0].ID)
+	if m.SaleCount() == 0 {
+		t.Error("市集应写入现场销售记录")
+	}
+	if m.StartDate != "2026-08-07" {
+		t.Errorf("市集日期应取明细里的日期，实际 %s", m.StartDate)
+	}
+	// 再次导入出库：不应重复建市集
+	upload("/import/outbound", "outbound.csv", [][]string{
+		{"市集名称", "日期", "产品编码", "产品名称", "类型", "数量", "单价"},
+		{"凤凰汇市集", "2026年8月7日", "SF-001", "邦小冰", "销售", "1", "130"},
+	})
+	if again, _ := svc.Store.ListMarkets(ctx, store.MarketFilter{Keyword: "凤凰汇市集"}); len(again) != 1 {
+		t.Errorf("重复导入不应重复建市集，实际 %d 场", len(again))
+	}
+
+	// 调拨与损耗直接扣库存（不走市集）
+	afterOut, _ := svc.Store.ProductByID(ctx, p1.ID)
+	if afterOut.StockQty != model.MustQty("44") {
+		t.Errorf("调拨 3 + 损耗 1 后应剩 44，实际 %s", afterOut.StockQty)
+	}
+
+	// 结算市集后才扣销售与试饮
+	if err := svc.SettleMarket(ctx, m.ID, admin); err != nil {
+		t.Fatalf("结算失败: %v", err)
+	}
+	// 48（进货）− 3（调拨）− 1（损耗）− 7（销售）− 2（试饮）− 1（重复导入那一笔销售）= 34
+	final, _ := svc.Store.ProductByID(ctx, p1.ID)
+	if final.StockQty != model.MustQty("34") {
+		t.Errorf("结算后应剩 34，实际 %s", final.StockQty)
+	}
+
+	// 非市集出库的原因要正确归类
+	movements, _ := svc.Store.ListMovements(ctx, store.MovementFilter{ProductID: p1.ID})
+	seen := map[string]int{}
+	for _, mv := range movements {
+		seen[mv.Reason]++
+	}
+	if seen[model.ReasonTransferOut] == 0 {
+		t.Error("调拨应记成调拨出库")
+	}
+	if seen[model.ReasonMarketLoss] == 0 {
+		t.Error("仓库损耗应记成破损损耗")
+	}
+	if seen[model.ReasonMarketSale] == 0 || seen[model.ReasonMarketTasting] == 0 {
+		t.Error("市集销售与试饮应在结算后写入流水")
 	}
 }

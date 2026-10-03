@@ -4,6 +4,10 @@
     <div class="page-head__title">系统设置</div>
     <div class="page-head__meta"><span>公司信息、业务默认值与数据维护</span></div>
   </div>
+  <div class="page-head__actions">
+    {{/* 原来是 Excel 表格的话，从这里把数据一次性导入 */}}
+    <a class="btn" href="/import">{{template "icon" "upload"}}<span>从表格导入数据</span></a>
+  </div>
 </div>
 
 <form method="post" action="/settings">
