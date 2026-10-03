@@ -445,6 +445,32 @@
       </div>
     </div>
     {{end}}
+
+    {{if .CanManage}}
+    <div class="card card--danger">
+      <div class="card__head"><div class="card__title">删除市集</div></div>
+      <div class="card__body">
+        {{if $m.IsSettled}}
+        <div class="tiny text-2" style="line-height:1.8">
+          本场<strong>已结算</strong>，不能直接删除——结算时已经扣减了库存，
+          必须先<strong>撤销结算</strong>把库存冲回来，之后才能删除。
+        </div>
+        {{else}}
+        <div class="tiny text-2" style="line-height:1.8">
+          删除后，本场的 <strong>{{len $m.Records}}</strong> 条现场记录、
+          <strong>{{len $m.Items}}</strong> 个产品明细与 <strong>{{len $m.Expenses}}</strong> 条费用会一起删除，且无法恢复。<br>
+          本场尚未结算，所以<strong>不会影响库存</strong>。
+        </div>
+        <form method="post" action="/markets/{{$m.ID}}/delete" style="margin-top:10px"
+              onsubmit="return confirm('确定删除「{{$m.Name}}」？\n\n本场的现场记录、产品明细与费用都会一起删除，且无法恢复。')">
+          <button class="btn btn--danger" type="submit">
+            {{template "icon" "trash"}}<span>删除这场市集</span>
+          </button>
+        </form>
+        {{end}}
+      </div>
+    </div>
+    {{end}}
   </div>
 </div>
 {{end}}

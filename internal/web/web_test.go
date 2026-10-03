@@ -2566,3 +2566,131 @@ func TestImportFromSpreadsheet(t *testing.T) {
 		t.Error("市集销售与试饮应在结算后写入流水")
 	}
 }
+
+// TestDeleteMarket 删除市集：未结算可直接删，已结算必须先撤销结算。
+//
+// 用户反馈新建了测试市集却找不到删除入口——后端本来就有，
+// 缺的是界面按钮，所以这里同时验证按钮存在与删除行为正确。
+func TestDeleteMarket(t *testing.T) {
+	h, svc, cfg := testApp(t)
+	ctx := context.Background()
+	cookie := doLogin(t, h, cfg, "admin", "admin123")
+	admin := mustUser(t, svc, "admin")
+
+	// 建一个测试市集，加上产品、记一笔销售、加一条费用
+	post(t, h, "/markets/new", url.Values{
+		"name": {"测试市集（待删除）"}, "start_date": {"2025-06-01"}, "end_date": {"2025-06-01"},
+	}, cookie)
+	markets, _ := svc.Store.ListMarkets(ctx, store.MarketFilter{Keyword: "测试市集（待删除）"})
+	if len(markets) == 0 {
+		t.Fatal("市集未创建")
+	}
+	mid := markets[0].ID
+	id := strconv.FormatInt(mid, 10)
+	products, _ := svc.Store.ListProducts(ctx, store.ProductFilter{})
+	pid := products[0].ID
+
+	if _, err := svc.AddMarketProduct(ctx, mid, pid, admin); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.AddMarketRecord(ctx, mid, service.MarketRecordInput{
+		ProductID: pid, Kind: model.RecordSale, Qty: model.MustQty("1"),
+	}, admin); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SaveMarketExpenses(ctx, mid, []model.MarketExpense{
+		{Category: model.ExpenseBooth, Amount: model.MustMoney("100"), Calc: model.ExpenseCalcFixed},
+	}, admin); err != nil {
+		t.Fatal(err)
+	}
+
+	// 详情页与列表页都要有删除入口
+	code, detail := get(t, h, "/markets/"+id, cookie)
+	if code != http.StatusOK {
+		t.Fatalf("市集详情应可访问，实际 %d", code)
+	}
+	if !strings.Contains(detail, "/markets/"+id+"/delete") {
+		t.Error("市集详情页应有删除入口")
+	}
+	if !strings.Contains(detail, "删除这场市集") {
+		t.Error("详情页应显示删除按钮")
+	}
+	_, list := get(t, h, "/markets", cookie)
+	if !strings.Contains(list, "/markets/"+id+"/delete") {
+		t.Error("市集列表应有删除入口")
+	}
+
+	// 未结算：可以直接删除，且不影响库存
+	stockBefore, _ := svc.Store.ProductByID(ctx, pid)
+	code, _ = post(t, h, "/markets/"+id+"/delete", url.Values{}, cookie)
+	if code != http.StatusSeeOther {
+		t.Fatalf("删除应 303，实际 %d", code)
+	}
+	if gone, _ := svc.Store.MarketByID(ctx, mid); gone != nil {
+		t.Error("删除后不应再查到市集")
+	}
+	// 明细、记录、费用一并清掉
+	items, _ := svc.Store.MarketItems(ctx, mid)
+	if len(items) != 0 {
+		t.Errorf("明细应一并删除，实际 %d 行", len(items))
+	}
+	records, _ := svc.Store.MarketRecords(ctx, mid, 0)
+	if len(records) != 0 {
+		t.Errorf("现场记录应一并删除，实际 %d 条", len(records))
+	}
+	stockAfter, _ := svc.Store.ProductByID(ctx, pid)
+	if stockAfter.StockQty != stockBefore.StockQty {
+		t.Errorf("未结算的市集删除不应影响库存：%s → %s", stockBefore.StockQty, stockAfter.StockQty)
+	}
+
+	// 已结算的市集：删除被拒，撤销结算后才能删
+	post(t, h, "/markets/new", url.Values{
+		"name": {"测试市集（已结算）"}, "start_date": {"2025-06-02"}, "end_date": {"2025-06-02"},
+	}, cookie)
+	settled, _ := svc.Store.ListMarkets(ctx, store.MarketFilter{Keyword: "测试市集（已结算）"})
+	sid := settled[0].ID
+	sidStr := strconv.FormatInt(sid, 10)
+	if _, err := svc.AddMarketProduct(ctx, sid, pid, admin); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.AddMarketRecord(ctx, sid, service.MarketRecordInput{
+		ProductID: pid, Kind: model.RecordSale, Qty: model.MustQty("1"),
+	}, admin); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SettleMarket(ctx, sid, admin); err != nil {
+		t.Fatal(err)
+	}
+
+	// 已结算时界面改成提示先撤销结算，不再显示删除按钮
+	_, settledDetail := get(t, h, "/markets/"+sidStr, cookie)
+	if !strings.Contains(settledDetail, "撤销结算") {
+		t.Error("已结算的市集应提示先撤销结算")
+	}
+	if strings.Contains(settledDetail, "/markets/"+sidStr+"/delete") {
+		t.Error("已结算的市集不应显示删除按钮")
+	}
+	// 注意：失败也会 303（带错误提示跳回），所以只能看真实状态
+	settledStock, _ := svc.Store.ProductByID(ctx, pid)
+	post(t, h, "/markets/"+sidStr+"/delete", url.Values{}, cookie)
+	if still, _ := svc.Store.MarketByID(ctx, sid); still == nil {
+		t.Fatal("已结算的市集不应被删掉")
+	}
+	// 库存也不应被动过（结算时已扣，删除尝试不该再动）
+	if after, _ := svc.Store.ProductByID(ctx, pid); after.StockQty != settledStock.StockQty {
+		t.Errorf("尝试删除已结算市集不应改动库存：%s → %s",
+			settledStock.StockQty, after.StockQty)
+	}
+
+	// 撤销结算 → 库存冲回 → 此时可以删除
+	if err := svc.UnsettleMarket(ctx, sid, admin); err != nil {
+		t.Fatal(err)
+	}
+	code, _ = post(t, h, "/markets/"+sidStr+"/delete", url.Values{}, cookie)
+	if code != http.StatusSeeOther {
+		t.Fatalf("撤销结算后应可删除，实际 %d", code)
+	}
+	if gone, _ := svc.Store.MarketByID(ctx, sid); gone != nil {
+		t.Error("撤销结算后应能删除市集")
+	}
+}

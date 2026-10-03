@@ -1643,3 +1643,7 @@ body.scan-open { overflow: hidden; }
   font-size: 12px;
 }
 .import-errors li { line-height: 1.6; }
+
+/* 危险操作卡片（删除市集等不可恢复的操作） */
+.card--danger { border-color: color-mix(in srgb, var(--danger, #dc2626) 35%, var(--line)); }
+.card--danger .card__title { color: var(--danger, #dc2626); }
