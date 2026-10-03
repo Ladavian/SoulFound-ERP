@@ -114,9 +114,12 @@ func (s *Server) handleReportProducts(w http.ResponseWriter, r *http.Request) {
 	if totalRevenue != 0 {
 		margin = float64(totalProfit) / float64(totalRevenue) * 100
 	}
+	// 试饮带动倍数是"倍数"（销售 ÷ 试饮），不是百分比。
+	// 这里以前误乘了 100（大概是从毛利率那段复制过来的），
+	// 于是单个产品显示 4.1×、合计却显示 410.0×。
 	conversion := 0.0
 	if totalTasting != 0 {
-		conversion = float64(totalSold) / float64(totalTasting) * 100
+		conversion = float64(totalSold) / float64(totalTasting)
 	}
 
 	noCache(w)

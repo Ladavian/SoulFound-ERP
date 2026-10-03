@@ -258,6 +258,7 @@ func (s *Server) handleProductSave(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, r, fallback, err)
 			return
 		}
+		s.logAction(r, "修改产品", "product", &id, product.SKU+" "+product.Name)
 		if !ok {
 			s.fail(w, r, fallback, service.UserErrf("%s（产品其它信息已保存）", note))
 			return
@@ -275,6 +276,7 @@ func (s *Server) handleProductSave(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, fallback, err)
 		return
 	}
+	s.logAction(r, "新建产品", "product", &newID, product.SKU+" "+product.Name)
 	// 新建时是先有产品 ID 才能存图片，没有旧文件需要清理
 	note, ok := s.applyProductImage(r, newID)
 	if !ok {
@@ -490,6 +492,7 @@ func (s *Server) handleProductImageUpload(w http.ResponseWriter, r *http.Request
 		s.redirect(w, r, back)
 		return
 	}
+	s.logAction(r, "上传产品图片", "product", &productID, header.Filename)
 	s.setFlash(w, "success", "图片已保存（已压缩到长边 1280，原图 "+service.ImageSizeText(len(data))+"）")
 	s.redirect(w, r, back)
 }

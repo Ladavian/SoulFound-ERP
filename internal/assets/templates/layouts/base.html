@@ -37,11 +37,24 @@
     </div>
 
     <nav class="sidebar__nav" @click="menu = false">
+      {{/* 菜单按"卖货 → 进货 → 存货 → 档案 → 报表"的顺序分组，
+          每个分组职责单一，之后加电商账单也只需往"销售与对账"里加条目。 */}}
       <div class="nav-group">
-        <div class="nav-group__title">日常操作</div>
+        <div class="nav-group__title">经营概览</div>
         {{template "nav_item" (dict "Href" "/" "Icon" "dashboard" "Label" "经营看板" "Page" .Nav "Key" "dashboard")}}
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-group__title">销售与对账</div>
         {{if .Perms.Has "market.view"}}{{template "nav_item" (dict "Href" "/markets" "Icon" "market" "Label" "市集活动" "Page" .Nav "Key" "markets")}}{{end}}
         {{if .Perms.Has "grouporder.view"}}{{template "nav_item" (dict "Href" "/group-orders" "Icon" "clipboard" "Label" "线下团单" "Page" .Nav "Key" "group-orders")}}{{end}}
+        {{/* 电商平台账单：位置先占住，功能后续接入。
+             做成真实页面（说明规划）而不是死链，避免点到 404。 */}}
+        {{template "nav_item" (dict "Href" "/ecommerce" "Icon" "cart" "Label" "电商平台账单" "Page" .Nav "Key" "ecommerce" "Badge" "规划中")}}
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-group__title">采购与库存</div>
         {{if .Perms.Has "purchase.view"}}{{template "nav_item" (dict "Href" "/purchases" "Icon" "truck" "Label" "采购入库" "Page" .Nav "Key" "purchases")}}{{end}}
         {{if .Perms.Has "inventory.view"}}{{template "nav_item" (dict "Href" "/inventory" "Icon" "box" "Label" "库存查询" "Page" .Nav "Key" "inventory")}}{{end}}
         {{if .Perms.Has "inventory.view"}}{{template "nav_item" (dict "Href" "/inventory/movements" "Icon" "layers" "Label" "库存流水" "Page" .Nav "Key" "movements")}}{{end}}

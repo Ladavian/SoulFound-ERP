@@ -253,6 +253,10 @@ func (s *Server) handleImportOutbound(w http.ResponseWriter, r *http.Request) {
 
 // importDone 导入结束后把结果回显在导入页上。
 func (s *Server) importDone(w http.ResponseWriter, r *http.Request, label string, res service.ImportResult) {
+	// 导入会批量改数据，必须留痕：谁、什么时候、导了什么、结果如何
+	s.logAction(r, "导入"+label, "import", nil, fmt.Sprintf(
+		"读取 %d 行，新建 %d 条，更新 %d 条，跳过 %d 行",
+		res.Total, res.Created, res.Updated, res.Skipped))
 	noCache(w)
 	page := s.newPage(r, "数据导入", "import")
 	page["Result"] = res

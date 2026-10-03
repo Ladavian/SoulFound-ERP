@@ -188,13 +188,16 @@ func (s *Server) partnerSave(kind string) http.HandlerFunc {
 					s.fail(w, r, base, err)
 					return
 				}
+				s.logAction(r, "修改"+label, "supplier", &id, item.Name)
 				s.ok(w, r, base, label+"已更新")
 				return
 			}
-			if _, err := s.svc.Store.CreateSupplier(ctx, item); err != nil {
+			newID, err := s.svc.Store.CreateSupplier(ctx, item)
+			if err != nil {
 				s.fail(w, r, base, err)
 				return
 			}
+			s.logAction(r, "新建"+label, "supplier", &newID, item.Name)
 			s.ok(w, r, base, label+"已创建")
 			return
 		}
@@ -208,13 +211,16 @@ func (s *Server) partnerSave(kind string) http.HandlerFunc {
 				s.fail(w, r, base, err)
 				return
 			}
+			s.logAction(r, "修改"+label, "customer", &id, item.Name)
 			s.ok(w, r, base, label+"已更新")
 			return
 		}
-		if _, err := s.svc.Store.CreateCustomer(ctx, item); err != nil {
+		newID, err := s.svc.Store.CreateCustomer(ctx, item)
+		if err != nil {
 			s.fail(w, r, base, err)
 			return
 		}
+		s.logAction(r, "新建"+label, "customer", &newID, item.Name)
 		s.ok(w, r, base, label+"已创建")
 	}
 }
@@ -225,16 +231,24 @@ func (s *Server) partnerDelete(kind string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := pathID(r, "id")
 		ctx := r.Context()
+		name := ""
 		var err error
 		if kind == "supplier" {
+			if row, e := s.svc.Store.SupplierByID(ctx, id); e == nil && row != nil {
+				name = row.Name
+			}
 			err = s.svc.Store.DeleteSupplier(ctx, id)
 		} else {
+			if row, e := s.svc.Store.CustomerByID(ctx, id); e == nil && row != nil {
+				name = row.Name
+			}
 			err = s.svc.Store.DeleteCustomer(ctx, id)
 		}
 		if err != nil {
 			s.fail(w, r, base, err)
 			return
 		}
+		s.logAction(r, "删除"+label, kind, &id, name)
 		s.ok(w, r, base, label+"已删除")
 	}
 }

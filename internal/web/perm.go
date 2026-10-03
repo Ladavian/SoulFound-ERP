@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 
@@ -301,4 +302,14 @@ func trimAll(values ...string) []string {
 		out[i] = strings.TrimSpace(v)
 	}
 	return out
+}
+
+// logAction 记一条操作日志。
+//
+// 产品、供应商、客户这类直接走 store 的写操作没有包事务，
+// 统一用这个方法补日志；失败只打日志，不影响用户操作。
+func (s *Server) logAction(r *http.Request, action, entity string, entityID *int64, detail string) {
+	if err := s.svc.Store.LogNow(r.Context(), userFrom(r), action, entity, entityID, detail); err != nil {
+		log.Printf("写操作日志失败（%s %s）: %v", action, entity, err)
+	}
 }

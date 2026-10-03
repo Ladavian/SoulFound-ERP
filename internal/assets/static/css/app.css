@@ -1661,3 +1661,18 @@ body.scan-open { overflow: hidden; }
 /* 危险操作卡片（删除市集等不可恢复的操作） */
 .card--danger { border-color: color-mix(in srgb, var(--danger, #dc2626) 35%, var(--line)); }
 .card--danger .card__title { color: var(--danger, #dc2626); }
+
+/* 规划说明清单（电商账单等"开发中"页面用） */
+.plan-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-2);
+}
+.plan-list strong { color: var(--text); }
+.grid--2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 900px) { .grid--2 { grid-template-columns: 1fr; } }

@@ -50,9 +50,10 @@ func (s *Server) handleMarketList(w http.ResponseWriter, r *http.Request) {
 		totalSold += m.SoldQty()
 		totalTasting += m.TastingQty()
 	}
+	// 带动倍数是倍数不是百分比（同样踩过 ×100 的坑）
 	conversion := 0.0
 	if totalTasting != 0 {
-		conversion = float64(totalSold) / float64(totalTasting) * 100
+		conversion = float64(totalSold) / float64(totalTasting)
 	}
 
 	// 正在进行的那场放到最上面，方便现场一键进收银台

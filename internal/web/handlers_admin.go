@@ -4,10 +4,12 @@ import (
 	"html/template"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"icewine-erp/internal/model"
 	"icewine-erp/internal/service"
+	"icewine-erp/internal/store"
 )
 
 func timeNow() time.Time { return time.Now() }
@@ -101,7 +103,7 @@ func (s *Server) handleUserSave(w http.ResponseWriter, r *http.Request) {
 	if id == 0 {
 		_, err := s.svc.CreateUser(r.Context(),
 			f.Required("username", "用户名"), f.Raw("password"),
-			f.Str("full_name"), role, f.List("permissions"), userFrom(r))
+			f.Str("full_name"), role, splitPermissions(f.List("permissions")), userFrom(r))
 		if err != nil {
 			s.fail(w, r, fallback, err)
 			return
@@ -110,7 +112,7 @@ func (s *Server) handleUserSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.svc.UpdateUser(r.Context(), id, f.Required("username", "用户名"),
-		f.Str("full_name"), role, isActive, f.List("permissions"), userFrom(r)); err != nil {
+		f.Str("full_name"), role, isActive, splitPermissions(f.List("permissions")), userFrom(r)); err != nil {
 		s.fail(w, r, fallback, err)
 		return
 	}
@@ -234,6 +236,8 @@ func (s *Server) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.rnd.SetSymbol(updated.CurrencySymbol)
+	s.logAction(r, "修改系统设置", "setting", nil,
+		"公司名 "+f.Str("company_name")+" · 币种 "+f.Str("currency"))
 	s.ok(w, r, "/settings", "设置已保存")
 }
 
@@ -243,6 +247,7 @@ func (s *Server) handleSettingsRebuild(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, "/settings", err)
 		return
 	}
+	s.logAction(r, "重算库存", "setting", nil, "依据库存流水重算库存与平均成本")
 	s.ok(w, r, "/settings", "已依据库存流水重算 "+strconv.Itoa(count)+" 个产品的库存与平均成本")
 }
 
@@ -258,19 +263,81 @@ func (s *Server) handleSettingsBackup(w http.ResponseWriter, r *http.Request) {
 
 // ---------------------------------------------------------------- 操作日志
 
+// logPageSize 操作日志每页条数。
+const logPageSize = 100
+
 func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
-	logs, err := s.svc.Store.ListLogs(r.Context(), 300)
+	ctx := r.Context()
+	f := newFormReader(r)
+	pageNo := atoiDefault(f.Str("page"), 1)
+	if pageNo < 1 {
+		pageNo = 1
+	}
+
+	// 主账号在这里能按账号、动作、时间、关键词查所有人的操作记录
+	filter := store.LogFilter{
+		Keyword: f.Str("q"),
+		Action:  f.Str("action"),
+		From:    f.Str("from"),
+		To:      f.Str("to"),
+		Limit:   logPageSize,
+		Offset:  (pageNo - 1) * logPageSize,
+	}
+	actor := f.Str("actor")
+	if actor != "" {
+		if u, err := s.svc.Store.UserByUsername(ctx, actor); err == nil && u != nil {
+			id := u.ID
+			filter.UserID = &id
+		}
+	}
+
+	logs, err := s.svc.Store.ListLogsFiltered(ctx, filter)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	total, err := s.svc.Store.CountLogs(ctx, filter)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	actors, _ := s.svc.Store.LogActors(ctx, 60)
+	actions, _ := s.svc.Store.LogActions(ctx, 60)
+
+	totalPages := (total + logPageSize - 1) / logPageSize
+	if totalPages < 1 {
+		totalPages = 1
+	}
+
 	noCache(w)
 	page := s.newPage(r, "操作日志", "logs")
 	page["Logs"] = logs
 	page["Count"] = len(logs)
+	page["Total"] = total
+	page["Keyword"] = filter.Keyword
+	page["Action"] = filter.Action
+	page["Actor"] = actor
+	page["From"] = filter.From
+	page["To"] = filter.To
+	page["Actors"] = actors
+	page["Actions"] = actions
+	page["Page"] = pageNo
+	page["TotalPages"] = totalPages
+	page["HasPrev"] = pageNo > 1
+	page["HasNext"] = pageNo < totalPages
+	page["PrevURL"] = logsWithPage(r, pageNo-1)
+	page["NextURL"] = logsWithPage(r, pageNo+1)
+	page["HasFilter"] = filter.Keyword != "" || filter.Action != "" || actor != "" ||
+		filter.From != "" || filter.To != ""
 	if err := s.rnd.Render(w, "logs", page); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+func logsWithPage(r *http.Request, pageNo int) string {
+	values := r.URL.Query()
+	values.Set("page", strconv.Itoa(pageNo))
+	return r.URL.Path + "?" + values.Encode()
 }
 
 // handleBackupDownload 下载一份备份文件，方便取到本机或另一块盘保存。
@@ -312,4 +379,20 @@ func backupStateText(d service.AutoBackupDecision) string {
 		state = "数据有变化"
 	}
 	return "上次备份 " + last + " · " + state + " · " + d.Reason
+}
+
+// splitPermissions 把权限项规整成一个列表。
+//
+// 表单会提交多个同名字段，但手工调用（或用接口/脚本）时
+// 常写成用逗号分隔的一串，两种都接受更不容易踩坑。
+func splitPermissions(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		for _, part := range strings.Split(v, ",") {
+			if p := strings.TrimSpace(part); p != "" {
+				out = append(out, p)
+			}
+		}
+	}
+	return out
 }

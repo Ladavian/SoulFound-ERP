@@ -395,8 +395,14 @@ func (s *Service) ExportProductSales(ctx context.Context, from, to string) ([]by
 	if totalRevenue != 0 {
 		totalMargin = float64(totalRevenue-totalCogs) / float64(totalRevenue) * 100
 	}
+	// 合计行的带动倍数与报表保持一致：销售 ÷ 试饮
+	totalConversion := 0.0
+	if totalTasting != 0 {
+		totalConversion = float64(totalSold) / float64(totalTasting)
+	}
 	body = append(body, []any{
-		"合计", fmt.Sprintf("%d 个产品", len(rows)), totalTasting, totalSold, "",
+		"合计", fmt.Sprintf("%d 个产品", len(rows)), totalTasting, totalSold,
+		round2(totalConversion),
 		totalRevenue, totalCogs, totalRevenue - totalCogs, round2(totalMargin),
 	})
 	return WriteXLSX([]Table{{Name: "产品销售", Columns: cols, Rows: body}}, s.currencySymbol(ctx))

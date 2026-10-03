@@ -152,7 +152,13 @@ func (s *Service) ChangePassword(ctx context.Context, userID int64, oldPassword,
 	if err != nil {
 		return err
 	}
-	return s.Store.UpdatePassword(ctx, userID, hash)
+	// 改密码是敏感操作，必须留痕（谁在什么时候改了谁的密码）
+	return s.Store.Tx(ctx, func(tx *sql.Tx) error {
+		if err := s.Store.UpdatePasswordTx(ctx, tx, userID, hash); err != nil {
+			return err
+		}
+		return s.Store.Log(ctx, tx, user, "修改密码", "user", &userID, user.Username+" 修改了本人的登录密码")
+	})
 }
 
 // ---------------------------------------------------------------- 令牌签名

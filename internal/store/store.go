@@ -613,6 +613,148 @@ func (s *Store) Log(ctx context.Context, tx DBTX, user *model.User, action, enti
 	return err
 }
 
+// LogNow 在事务之外写一条操作日志。
+//
+// 产品、供应商、客户这些模块的写操作直接走 store，没有包事务，
+// 用这个方法补日志；写失败只记录错误，不影响主流程。
+func (s *Store) LogNow(ctx context.Context, user *model.User, action, entity string, entityID *int64, detail string) error {
+	return s.Log(ctx, s.db, user, action, entity, entityID, detail)
+}
+
+// LogFilter 操作日志的筛选条件。
+type LogFilter struct {
+	UserID  *int64 // 只看某个账号
+	Action  string // 动作关键字
+	Keyword string // 综合搜索（操作人、动作、明细）
+	From    string
+	To      string
+	Limit   int
+	Offset  int
+}
+
+func (f LogFilter) where() (string, []any) {
+	var (
+		conds []string
+		args  []any
+	)
+	if f.UserID != nil {
+		conds = append(conds, "user_id = ?")
+		args = append(args, *f.UserID)
+	}
+	if a := strings.TrimSpace(f.Action); a != "" {
+		conds = append(conds, "action = ?")
+		args = append(args, a)
+	}
+	if kw := strings.TrimSpace(f.Keyword); kw != "" {
+		like := "%" + kw + "%"
+		conds = append(conds, "(username LIKE ? OR action LIKE ? OR detail LIKE ?)")
+		args = append(args, like, like, like)
+	}
+	if f.From != "" {
+		conds = append(conds, "date(created_at) >= ?")
+		args = append(args, f.From)
+	}
+	if f.To != "" {
+		conds = append(conds, "date(created_at) <= ?")
+		args = append(args, f.To)
+	}
+	if len(conds) == 0 {
+		return "", nil
+	}
+	return " WHERE " + strings.Join(conds, " AND "), args
+}
+
+// ListLogsFiltered 按条件查询操作日志（新的在前）。
+func (s *Store) ListLogsFiltered(ctx context.Context, f LogFilter) ([]model.ActivityLog, error) {
+	if f.Limit <= 0 {
+		f.Limit = 100
+	}
+	where, args := f.where()
+	args = append(args, f.Limit, f.Offset)
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, user_id, username, action, entity, entity_id, detail, created_at
+		 FROM activity_logs`+where+` ORDER BY id DESC LIMIT ? OFFSET ?`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanLogs(rows)
+}
+
+// CountLogs 统计符合条件的日志条数（分页用）。
+func (s *Store) CountLogs(ctx context.Context, f LogFilter) (int, error) {
+	where, args := f.where()
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM activity_logs`+where, args...).Scan(&n)
+	return n, err
+}
+
+// LogActors 出现过的操作人（筛选下拉用）。
+func (s *Store) LogActors(ctx context.Context, limit int) ([]model.Option, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT username, COUNT(*) FROM activity_logs
+		 WHERE username <> '' GROUP BY username ORDER BY COUNT(*) DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []model.Option
+	for rows.Next() {
+		var name string
+		var n int
+		if err := rows.Scan(&name, &n); err != nil {
+			return nil, err
+		}
+		out = append(out, model.Option{Value: name, Label: fmt.Sprintf("%s（%d）", name, n)})
+	}
+	return out, rows.Err()
+}
+
+// LogActions 出现过的动作类型（筛选下拉用）。
+func (s *Store) LogActions(ctx context.Context, limit int) ([]model.Option, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT action, COUNT(*) FROM activity_logs
+		 GROUP BY action ORDER BY COUNT(*) DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []model.Option
+	for rows.Next() {
+		var name string
+		var n int
+		if err := rows.Scan(&name, &n); err != nil {
+			return nil, err
+		}
+		out = append(out, model.Option{Value: name, Label: fmt.Sprintf("%s（%d）", name, n)})
+	}
+	return out, rows.Err()
+}
+
+func scanLogs(rows *sql.Rows) ([]model.ActivityLog, error) {
+	var out []model.ActivityLog
+	for rows.Next() {
+		var (
+			l        model.ActivityLog
+			uid      sql.NullInt64
+			entityID sql.NullInt64
+		)
+		if err := rows.Scan(&l.ID, &uid, &l.Username, &l.Action, &l.Entity, &entityID, &l.Detail, &l.CreatedAt); err != nil {
+			return nil, err
+		}
+		l.UserID = ptrInt(uid)
+		l.EntityID = ptrInt(entityID)
+		out = append(out, l)
+	}
+	return out, rows.Err()
+}
+
 // ListLogs 最近的日志。
 func (s *Store) ListLogs(ctx context.Context, limit int) ([]model.ActivityLog, error) {
 	if limit <= 0 {

@@ -1,0 +1,60 @@
+{{define "content"}}
+<div class="page-head">
+  <div class="page-head__main">
+    <div class="page-head__title">电商平台账单</div>
+    <div class="page-head__meta">
+      <span>位置已预留，功能开发中</span>
+      <span class="badge badge--warn">规划中</span>
+    </div>
+  </div>
+</div>
+
+<div class="alert alert--info">
+  {{template "icon" "info"}}
+  <div class="alert__body">
+    这一块是给<strong>电商平台账单导入与对账</strong>预留的位置。
+    菜单里先占住入口，接入后不需要再调整菜单结构。
+  </div>
+</div>
+
+<div class="grid grid--2">
+  <div class="card">
+    <div class="card__head"><div class="card__title">接入后能做什么</div></div>
+    <div class="card__body">
+      <ul class="plan-list">
+        <li><strong>导入平台账单</strong>：把平台导出的结算单（Excel / CSV）直接上传，自动识别订单号、商品、数量、成交价、平台佣金与运费。</li>
+        <li><strong>自动匹配产品</strong>：按产品编码或条形码对上档案里的产品；对不上的会列出来手工指定，下次记住。</li>
+        <li><strong>按平台算收入与费用</strong>：平台佣金、支付手续费、推广费、退款分别归集，算出每个平台的净收入与毛利。</li>
+        <li><strong>对账差异提示</strong>：账单金额与系统记录不一致时直接标出来，不用自己一格一格核。</li>
+        <li><strong>与现有口径并存</strong>：市集、线下团单、电商三个渠道各自独立统计，也能合起来看总销售额。</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card__head"><div class="card__title">需要你提供的信息</div></div>
+    <div class="card__body">
+      <div class="small text-2" style="line-height:1.9">
+        接入前我需要知道这几件事，你说清楚我就能一次做对：<br>
+        1. 平台有哪些（例如淘宝 / 抖音 / 小红书 / 微信小商店）？<br>
+        2. 每个平台导出的账单长什么样（把导出的表格发我最好）？<br>
+        3. 平台佣金、手续费是账单里直接给出的，还是要按比例算？<br>
+        4. 电商的货是从本系统仓库发，还是也从大仓发？（决定要不要扣库存）
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__head"><div class="card__title">现在可以先用的替代做法</div></div>
+  <div class="card__body">
+    <div class="small text-2" style="line-height:1.9">
+      • 电商销售如果<strong>从本仓库发货</strong>：用
+      <a href="/inventory/adjust">出入库登记</a> 选「销售出库」，填售价即可记录收入。<br>
+      • 电商销售如果<strong>从大仓发货、不进本系统库存</strong>：用
+      <a href="/group-orders">线下团单</a> 记录订单信息，不影响库存。<br>
+      • 需要看合计：<a href="/inventory">库存查询</a> 页有「本月直销出库」与「本月出库构成」。
+    </div>
+  </div>
+</div>
+{{end}}

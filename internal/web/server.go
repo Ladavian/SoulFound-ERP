@@ -309,6 +309,8 @@ func (s *Server) routes() {
 
 	// 全部功能（底部导航「更多」，纯链接、不依赖 JS）
 	m.Handle("GET /more", s.guard("", s.handleMore))
+	// 电商平台账单：入口先占住（菜单里标"规划中"），功能后续接入
+	m.Handle("GET /ecommerce", s.guard("", s.handleEcommerce))
 
 	// 产品
 	m.Handle("GET /products", s.guard(PermProductView, s.handleProductList))

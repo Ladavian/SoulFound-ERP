@@ -3013,3 +3013,111 @@ func TestPerformanceGuardrails(t *testing.T) {
 		}
 	}
 }
+
+// TestAllAccountsActionsAreLogged 所有账号的操作都要有记录，且主账号能按人查到。
+//
+// 用户反馈"其他账号的操作记录看不到"：实际是两个问题叠加——
+// 产品、供应商、客户这些模块压根没有写日志，日志页也没有按操作人筛选。
+func TestAllAccountsActionsAreLogged(t *testing.T) {
+	h, svc, cfg := testApp(t)
+	ctx := context.Background()
+	admin := doLogin(t, h, cfg, "admin", "admin123")
+
+	// 建一个员工账号（有产品/库存/往来单位权限）
+	post(t, h, "/users/new", url.Values{
+		"username": {"stafflog"}, "password": {"staffpass123"}, "full_name": {"李四"},
+		"role": {"staff"}, "is_active": {"1"},
+		// 故意用逗号串，验证"逗号分隔"这种写法也能被接受
+		"permissions": {"product.view,product.manage,partner.view,partner.manage"},
+	}, admin)
+	staff := doLogin(t, h, cfg, "stafflog", "staffpass123")
+
+	// 员工做一串操作
+	post(t, h, "/products/new", url.Values{
+		"sku": {"LOG-001"}, "name": {"日志测试产品"}, "unit": {"瓶"},
+		"sale_price": {"200"}, "is_active": {"1"},
+	}, staff)
+	product, _ := svc.Store.ProductBySKU(ctx, "LOG-001")
+	if product == nil {
+		t.Fatal("员工应有权限新建产品")
+	}
+	post(t, h, "/products/"+strconv.FormatInt(product.ID, 10)+"/edit", url.Values{
+		"sku": {"LOG-001"}, "name": {"日志测试产品改名"}, "unit": {"瓶"},
+		"sale_price": {"220"}, "is_active": {"1"},
+	}, staff)
+	post(t, h, "/customers/new", url.Values{"name": {"日志测试客户"}, "is_active": {"1"}}, staff)
+
+	// 数据库里要有这个账号的操作记录，且动作要能区分
+	logs, err := svc.Store.ListLogsFiltered(ctx, store.LogFilter{Keyword: "日志测试"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(logs) == 0 {
+		t.Fatal("产品与客户的操作必须写日志，否则主账号无从追溯")
+	}
+	actions := map[string]bool{}
+	actors := map[string]bool{}
+	for _, l := range logs {
+		actions[l.Action] = true
+		actors[l.Username] = true
+	}
+	for _, want := range []string{"新建产品", "修改产品", "新建客户"} {
+		if !actions[want] {
+			t.Errorf("缺少动作日志：%s（实际记录：%v）", want, actions)
+		}
+	}
+	if !actors["李四"] {
+		t.Errorf("日志要记到具体账号上，实际操作人：%v", actors)
+	}
+
+	// 主账号按操作人筛选，要能只看到这个员工的操作
+	filtered, err := svc.Store.ListLogsFiltered(ctx, store.LogFilter{Keyword: "李四"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(filtered) == 0 {
+		t.Error("按操作人搜索应能查到该账号的记录")
+	}
+
+	// 日志页本身可用，并且带上了筛选控件
+	code, page := get(t, h, "/logs?q=日志测试", admin)
+	if code != http.StatusOK {
+		t.Fatalf("日志页应可访问，实际 %d", code)
+	}
+	for _, need := range []string{`name="actor"`, `name="action"`, `name="from"`, `name="q"`, "操作人"} {
+		if !strings.Contains(page, need) {
+			t.Errorf("日志页缺少筛选控件 %s", need)
+		}
+	}
+	if !strings.Contains(page, "李四") {
+		t.Error("按关键词搜索应能显示该员工的记录")
+	}
+
+	// 系统设置与改密码这类敏感操作也要留痕
+	post(t, h, "/settings", url.Values{
+		"company_name": {"SoulFound"}, "currency": {"CNY"}, "currency_symbol": {"¥"},
+	}, admin)
+	post(t, h, "/profile/password", url.Values{
+		"old_password":     {"staffpass123"},
+		"new_password":     {"staffpass456"},
+		"confirm_password": {"staffpass456"},
+	}, staff)
+
+	all, err := svc.Store.ListLogsFiltered(ctx, store.LogFilter{Limit: 500})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, l := range all {
+		seen[l.Action] = true
+	}
+	if !seen["修改系统设置"] {
+		t.Error("修改系统设置应写日志")
+	}
+	if !seen["修改密码"] {
+		t.Error("修改密码应写日志")
+	}
+	if !seen["新建用户"] {
+		t.Error("新建用户应写日志")
+	}
+}
