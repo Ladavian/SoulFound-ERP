@@ -17,17 +17,9 @@
 </div>
 
 <form method="post" action="{{.FormAction}}" x-data="groupLines({{.ProductsJSON}}, {{if .IsNew}}[]{{else}}{{json .Order.Items}}{{end}})">
-  {{/* 明细用 JSON 驱动，提交时按列拆开；金额只在这里展示，服务端会重新计算 */}}
-  <template x-for="(row, index) in rows" :key="index">
-    <input type="hidden" name="product_id" :value="row.productId">
-    <input type="hidden" name="product_name" :value="row.productName">
-    <input type="hidden" name="item_sku" :value="row.sku">
-    <input type="hidden" name="qty" :value="row.qty">
-    <input type="hidden" name="unit" :value="row.unit">
-    <input type="hidden" name="unit_price" :value="row.unitPrice">
-    <input type="hidden" name="item_note" :value="row.note">
-  </template>
-
+  {{/* 明细字段直接放在可见的行输入框上提交。
+       注意：Alpine 的 x-for 只接受**一个根元素**，多个并列元素只会渲染第一个，
+       所以不能再另开一段隐藏字段——那样只有 product_id 会被提交。 */}}
   <div class="card">
     <div class="card__head"><div class="card__title">客户与日期</div></div>
     <div class="card__body">
@@ -96,27 +88,30 @@
           <template x-for="(row, index) in rows" :key="index">
             <tr>
               <td class="entry-cell--name" data-label="产品">
-                <select class="select" x-model="row.productId" @change="onProduct(row)">
+                <select class="select" name="product_id" x-model="row.productId" @change="onProduct(row)">
                   <option value="0">— 手填产品 —</option>
                   <template x-for="p in products" :key="p.id">
                     <option :value="p.id" x-text="p.label"></option>
                   </template>
                 </select>
-                <input class="input" type="text" x-model="row.productName" :readonly="row.productId !== 0 && row.productId !== '0'"
+                <input class="input" type="text" name="product_name" x-model="row.productName"
+                       :readonly="row.productId !== 0 && row.productId !== '0'"
                        placeholder="产品名称（手填时必填）" style="margin-top:6px">
+                <input type="hidden" name="item_sku" :value="row.sku">
               </td>
               <td class="num" data-label="数量">
-                <input class="input input--sm entry-input" type="text" inputmode="decimal" x-model="row.qty">
+                <input class="input input--sm entry-input" type="text" inputmode="decimal" name="qty" x-model="row.qty">
               </td>
               <td data-label="单位">
-                <input class="input input--sm" type="text" x-model="row.unit" style="width:64px">
+                <input class="input input--sm" type="text" name="unit" x-model="row.unit" style="width:64px">
               </td>
               <td class="num" data-label="单价">
-                <input class="input input--sm entry-input entry-input--price" type="text" inputmode="decimal" x-model="row.unitPrice">
+                <input class="input input--sm entry-input entry-input--price" type="text" inputmode="decimal"
+                       name="unit_price" x-model="row.unitPrice">
               </td>
               <td class="num strong" data-label="金额" x-text="fmt(lineAmount(row))"></td>
               <td data-label="备注">
-                <input class="input input--sm" type="text" x-model="row.note">
+                <input class="input input--sm" type="text" name="item_note" x-model="row.note">
               </td>
               <td>
                 <button class="btn btn--ghost btn--icon" type="button" @click="removeRow(index)" title="删除该行">

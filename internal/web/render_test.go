@@ -410,3 +410,84 @@ func TestNoNestedFormsAndMultipart(t *testing.T) {
 	}
 	t.Logf("已检查 %d 个表单的嵌套与 multipart 设置", checked)
 }
+
+// TestAlpineTemplatesHaveSingleRoot Alpine 的 x-for / x-if 模板只能有一个根元素。
+//
+// 用户反馈"新建团单填完信息却提示请至少填写一行产品明细"：
+// 明细的隐藏提交字段写成了 7 个并列的 <input> 放在同一个 <template x-for> 里，
+// 而 Alpine 只克隆第一个根元素，于是只有 product_id 被提交，
+// product_name 等全部丢失，服务端看不到明细就报错。
+// 这个坑不看文档很难知道，所以固定成检查。
+func TestAlpineTemplatesHaveSingleRoot(t *testing.T) {
+	root := "templates"
+	if _, err := os.Stat(root); err != nil {
+		root = "../assets/templates"
+	}
+
+	templateRe := regexp.MustCompile(`(?is)<template\b([^>]*)>(.*?)</template>`)
+	directiveRe := regexp.MustCompile(`(?i)x-(for|if)\s*=`)
+	tagRe := regexp.MustCompile(`(?is)<(/?)([a-z][a-z0-9]*)((?:"[^"]*"|'[^']*'|[^>"'])*)>`)
+	voidTags := map[string]bool{
+		"area": true, "base": true, "br": true, "col": true, "embed": true, "hr": true,
+		"img": true, "input": true, "link": true, "meta": true, "param": true,
+		"source": true, "track": true, "wbr": true, "path": true, "circle": true,
+		"rect": true, "line": true, "polyline": true, "polygon": true, "ellipse": true,
+		"use": true, "stop": true,
+	}
+
+	checked := 0
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".html") {
+			return err
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		src := string(raw)
+		rel := strings.TrimPrefix(path, root+string(filepath.Separator))
+
+		for _, m := range templateRe.FindAllStringSubmatchIndex(src, -1) {
+			attrs := src[m[2]:m[3]]
+			if !directiveRe.MatchString(attrs) {
+				continue
+			}
+			line := strings.Count(src[:m[0]], "\n") + 1
+			body := src[m[4]:m[5]]
+			checked++
+
+			// 数模板里的顶层元素个数
+			depth, roots := 0, 0
+			for _, t := range tagRe.FindAllStringSubmatch(body, -1) {
+				closing, name, a := t[1] == "/", strings.ToLower(t[2]), t[3]
+				if voidTags[name] || strings.HasSuffix(strings.TrimSpace(a), "/") {
+					if depth == 0 {
+						roots++
+					}
+					continue
+				}
+				if closing {
+					depth--
+				} else {
+					if depth == 0 {
+						roots++
+					}
+					depth++
+				}
+			}
+			if roots != 1 {
+				t.Errorf("%s:%d 的 Alpine 模板有 %d 个根元素："+
+					"Alpine 只会克隆第一个，其余内容不会渲染、表单字段也不会提交",
+					rel, line, roots)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("遍历模板失败: %v", err)
+	}
+	if checked == 0 {
+		t.Fatal("没有检查到任何 Alpine 模板，检查范围异常")
+	}
+	t.Logf("已检查 %d 个 Alpine 模板的根元素数量", checked)
+}

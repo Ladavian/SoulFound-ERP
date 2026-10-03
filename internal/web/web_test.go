@@ -2870,3 +2870,39 @@ func flashHTML(t *testing.T, h http.Handler, rec *httptest.ResponseRecorder, pat
 	h.ServeHTTP(w, req)
 	return w.Body.String()
 }
+
+// TestGroupOrderFormSubmitsLines 团单明细必须真的能被提交。
+//
+// 用户反馈"新建团单填完信息却提示请至少填写一行产品明细"：
+// 明细的提交字段原本放在一个多根 <template x-for> 里，
+// Alpine 只克隆第一个根元素，导致只有 product_id 提交、其余全丢。
+// 这里断言表单里的明细输入框本身带 name，能随表单一起提交。
+func TestGroupOrderFormSubmitsLines(t *testing.T) {
+	h, _, cfg := testApp(t)
+	cookie := doLogin(t, h, cfg, "admin", "admin123")
+
+	code, page := get(t, h, "/group-orders/new", cookie)
+	if code != http.StatusOK {
+		t.Fatalf("新建团单页应可访问，实际 %d", code)
+	}
+
+	// 明细行里的每个字段都要是可提交的表单控件（带 name）
+	for _, field := range []string{"product_id", "product_name", "item_sku", "qty", "unit", "unit_price", "item_note"} {
+		if !strings.Contains(page, `name="`+field+`"`) {
+			t.Errorf("明细字段 %s 没有 name 属性，不会被提交", field)
+		}
+	}
+
+	// 不能再出现"单独一段隐藏字段模板"的写法（多根模板会丢字段）
+	hiddenTemplate := regexp.MustCompile(`(?is)<template[^>]*x-for[^>]*>\s*<input type="hidden" name="product_id"`)
+	if hiddenTemplate.MatchString(page) {
+		t.Error("明细提交字段不应另开隐藏字段模板（Alpine 只渲染第一个根元素）")
+	}
+
+	// 客户与日期字段照旧可提交
+	for _, field := range []string{"customer_id", "customer_name", "order_date", "warehouse", "discount", "extra_fee"} {
+		if !strings.Contains(page, `name="`+field+`"`) {
+			t.Errorf("表单缺少字段 %s", field)
+		}
+	}
+}
