@@ -6,6 +6,7 @@ import (
 	"crypto/pbkdf2"
 	"crypto/rand"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/base64"
 	"fmt"
 	"strconv"
@@ -95,6 +96,41 @@ func (s *Service) Authenticate(ctx context.Context, username, password string) (
 		return nil, err
 	}
 	return user, nil
+}
+
+// ChangeUsername 用户修改自己的账号名。
+//
+// 与「用户管理」里的改名共用同一套校验（格式、唯一性），
+// 区别是这里只能改自己，且不涉及角色与权限。
+func (s *Service) ChangeUsername(ctx context.Context, userID int64, newUsername string, actor *model.User) error {
+	newUsername = strings.TrimSpace(newUsername)
+	if !usernamePattern.MatchString(newUsername) {
+		return UserErrf("账号名只能是 3-32 位字母、数字、点、下划线或中划线")
+	}
+	target, err := s.Store.UserByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if target == nil {
+		return UserErrf("用户不存在")
+	}
+	if newUsername == target.Username {
+		return UserErrf("新账号名与当前相同，没有需要修改的内容")
+	}
+	existing, err := s.Store.UserByUsername(ctx, newUsername)
+	if err != nil {
+		return err
+	}
+	if existing != nil {
+		return UserErrf("账号名「%s」已被占用，请换一个", newUsername)
+	}
+	return s.Store.Tx(ctx, func(tx *sql.Tx) error {
+		if err := s.Store.UpdateUsernameTx(ctx, tx, userID, newUsername); err != nil {
+			return err
+		}
+		return s.Store.Log(ctx, tx, actor, "修改账号名", "user", &userID,
+			target.Username+" → "+newUsername)
+	})
 }
 
 // ChangePassword 修改密码（校验旧密码）。

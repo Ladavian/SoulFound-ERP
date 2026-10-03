@@ -82,6 +82,25 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleProfileUsername 用户在「我的账号」里修改自己的账号名。
+//
+// 以前只能由管理员在「用户管理」里改，而管理员本人往往找不到入口，
+// 所以这里提供自助修改，校验规则与用户管理里完全一致。
+func (s *Server) handleProfileUsername(w http.ResponseWriter, r *http.Request) {
+	user := userFrom(r)
+	f := newFormReader(r)
+	newName := f.Str("username")
+	if strings.TrimSpace(newName) == "" {
+		s.fail(w, r, "/profile", service.UserErrf("请输入新的账号名"))
+		return
+	}
+	if err := s.svc.ChangeUsername(r.Context(), user.ID, newName, user); err != nil {
+		s.fail(w, r, "/profile", err)
+		return
+	}
+	s.ok(w, r, "/profile", "账号名已改为「"+strings.TrimSpace(newName)+"」，下次登录请用新账号名")
+}
+
 func (s *Server) handleProfilePassword(w http.ResponseWriter, r *http.Request) {
 	user := userFrom(r)
 	f := newFormReader(r)

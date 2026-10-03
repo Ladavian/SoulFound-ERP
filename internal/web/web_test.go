@@ -1589,3 +1589,71 @@ func TestBackupRoutes(t *testing.T) {
 		t.Errorf("没有设置权限不应能备份，实际 %d", code)
 	}
 }
+
+// TestSelfUsernameChange 用户在「我的账号」里改自己的账号名。
+//
+// 以前只有「用户管理」里能改，管理员本人常常找不到入口。
+func TestSelfUsernameChange(t *testing.T) {
+	h, svc, cfg := testApp(t)
+	ctx := context.Background()
+	cookie := doLogin(t, h, cfg, "admin", "admin123")
+	admin := mustUser(t, svc, "admin")
+
+	// 页面上有改名入口
+	code, page := get(t, h, "/profile", cookie)
+	if code != http.StatusOK {
+		t.Fatalf("我的账号页应可访问，实际 %d", code)
+	}
+	if !strings.Contains(page, "/profile/username") {
+		t.Fatal("「我的账号」里应当能修改账号名")
+	}
+
+	// 格式不合法要被拦下
+	for _, bad := range []string{"ab", "有中文", "with space", "a@b"} {
+		if code, _ := post(t, h, "/profile/username", url.Values{"username": {bad}}, cookie); code != http.StatusSeeOther {
+			t.Fatalf("非法账号名 %q 应 303（带错误提示），实际 %d", bad, code)
+		}
+		if u, _ := svc.Store.UserByID(ctx, admin.ID); u.Username != "admin" {
+			t.Fatalf("非法账号名不应写入，实际 %q", u.Username)
+		}
+	}
+
+	// 与当前相同应提示没有变化
+	post(t, h, "/profile/username", url.Values{"username": {"admin"}}, cookie)
+	if u, _ := svc.Store.UserByID(ctx, admin.ID); u.Username != "admin" {
+		t.Error("账号名未变时不应改动")
+	}
+
+	// 正常改名
+	code, _ = post(t, h, "/profile/username", url.Values{"username": {"boss"}}, cookie)
+	if code != http.StatusSeeOther {
+		t.Fatalf("改名应 303，实际 %d", code)
+	}
+	renamed, _ := svc.Store.UserByID(ctx, admin.ID)
+	if renamed.Username != "boss" {
+		t.Fatalf("账号名应改为 boss，实际 %q", renamed.Username)
+	}
+	// 角色与权限不能被这次改名影响
+	if renamed.Role != model.RoleAdmin || !renamed.IsActive {
+		t.Errorf("改名不应影响角色与启用状态: %+v", renamed)
+	}
+
+	// 当前会话继续有效（会话认的是用户 ID）
+	if code, _ := get(t, h, "/", cookie); code != http.StatusOK {
+		t.Errorf("改名后当前会话应继续可用，实际 %d", code)
+	}
+	// 新账号名可以登录，旧的不行
+	doLogin(t, h, cfg, "boss", "admin123")
+	if u, _ := svc.Store.UserByUsername(ctx, "admin"); u != nil {
+		t.Error("旧账号名应已释放")
+	}
+
+	// 重名被拒
+	if _, err := svc.CreateUser(ctx, "taken", "takenpass1", "占用", model.RoleStaff, nil, renamed); err != nil {
+		t.Fatal(err)
+	}
+	post(t, h, "/profile/username", url.Values{"username": {"taken"}}, cookie)
+	if u, _ := svc.Store.UserByID(ctx, admin.ID); u.Username != "boss" {
+		t.Errorf("重名时不应改写，实际 %q", u.Username)
+	}
+}

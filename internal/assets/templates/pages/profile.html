@@ -29,8 +29,38 @@
           <dt>最后登录</dt><dd>{{if $u.LastLoginAt}}{{datetime $u.LastLoginAt}}{{else}}—{{end}}</dd>
           <dt>创建时间</dt><dd>{{if $u.CreatedAt}}{{datetime $u.CreatedAt}}{{else}}—{{end}}</dd>
         </dl>
-        <div class="small muted" style="margin-top:12px">姓名、角色等信息需要管理员在「用户管理」里修改。</div>
+        <div class="small muted" style="margin-top:12px">姓名、角色与权限由管理员在「用户管理」里维护；账号名可以自己改，见下。</div>
       </div>
+    </div>
+
+    {{/* 账号名自助修改：管理员本人也常在这里改，不必绕到用户管理 */}}
+    <div class="card">
+      <div class="card__head"><div class="card__title">修改账号名<span class="card__sub">登录时使用的名字</span></div></div>
+      <form method="post" action="/profile/username">
+        <div class="card__body">
+          <div class="form-grid">
+            <div class="field">
+              <label class="field__label" for="current_username">当前账号名</label>
+              <input class="input mono" id="current_username" type="text" value="{{$u.Username}}" readonly>
+            </div>
+            <div class="field">
+              <label class="field__label" for="username">新的账号名<span class="req">*</span></label>
+              <input class="input mono" id="username" name="username" type="text" required
+                     autocomplete="off" autocapitalize="none" spellcheck="false"
+                     placeholder="3-32 位字母、数字、点、下划线或中划线">
+            </div>
+          </div>
+          <div class="alert alert--warn" style="margin:12px 0 0">
+            {{template "icon" "alert"}}
+            <div class="alert__body">
+              改完立即生效，<strong>下次登录要用新账号名</strong>。当前已登录的会话不受影响。
+            </div>
+          </div>
+        </div>
+        <div class="card__foot" style="display:flex;justify-content:flex-end">
+          <button class="btn btn--primary" type="submit">{{template "icon" "save"}}<span>保存账号名</span></button>
+        </div>
+      </form>
     </div>
 
     <div class="card">

@@ -403,6 +403,7 @@ func (s *Server) routes() {
 
 	m.Handle("GET /profile", s.guard("", s.handleProfile))
 	m.Handle("POST /profile/password", s.guard("", s.handleProfilePassword))
+	m.Handle("POST /profile/username", s.guard("", s.handleProfileUsername))
 	m.Handle("GET /settings", s.guard(PermSettingManage, s.handleSettings))
 	m.Handle("POST /settings", s.guard(PermSettingManage, s.handleSettingsSave))
 	m.Handle("POST /settings/rebuild", s.guard(PermSettingManage, s.handleSettingsRebuild))

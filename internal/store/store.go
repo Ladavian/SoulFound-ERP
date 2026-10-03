@@ -533,6 +533,12 @@ func (s *Store) UpdatePassword(ctx context.Context, id int64, hash string) error
 	return updatePassword(ctx, s.db, id, hash)
 }
 
+// UpdateUsernameTx 只改账号名，不动角色与权限。
+func (s *Store) UpdateUsernameTx(ctx context.Context, tx DBTX, id int64, username string) error {
+	_, err := tx.ExecContext(ctx, `UPDATE users SET username = ? WHERE id = ?`, username, id)
+	return err
+}
+
 // UpdatePasswordTx 在事务内修改密码。
 func (s *Store) UpdatePasswordTx(ctx context.Context, tx DBTX, id int64, hash string) error {
 	return updatePassword(ctx, tx, id, hash)
