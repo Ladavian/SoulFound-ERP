@@ -153,6 +153,8 @@ func (s *Server) handleProductForm(w http.ResponseWriter, r *http.Request) {
 	page["Suppliers"] = suppliers
 	page["Categories"] = merged
 	page["Units"] = productUnits
+	// 表单里可以扫码填条码：只有这一页需要 328KB 的扫码库
+	page["NeedsScanner"] = true
 	page["FormAction"] = "/products/new"
 	if !isNew {
 		page["FormAction"] = "/products/" + strconv.FormatInt(id, 10) + "/edit"

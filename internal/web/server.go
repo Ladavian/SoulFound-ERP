@@ -72,6 +72,8 @@ func (s *Server) Handler() http.Handler {
 	var h http.Handler = s.mux
 	h = s.recoverer(h)
 	h = s.context(h)
+	// gzip 放最外层：HTML、CSS、JS、JSON 都能压到约 1/4，手机端切页明显更快
+	h = withGzip(h)
 	return h
 }
 
@@ -489,7 +491,12 @@ func (s *Server) handleServiceWorker(w http.ResponseWriter, r *http.Request) {
 }
 
 // noCache 用于 HTML 页面。
+// noCache 动态页面不缓存。
+//
+// 用 no-cache（每次使用前要跟服务器核对）而不是 no-store：
+// no-store 会让浏览器彻底放弃这份文档，连前进/后退缓存都不能用，
+// 于是"返回上一页"也要整页重新请求，用起来发卡。
 func noCache(w http.ResponseWriter) {
-	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Cache-Control", "no-cache, must-revalidate")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 }

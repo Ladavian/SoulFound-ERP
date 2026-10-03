@@ -3,6 +3,7 @@ package web
 import (
 	"archive/zip"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/csv"
 	"encoding/json"
@@ -2903,6 +2904,112 @@ func TestGroupOrderFormSubmitsLines(t *testing.T) {
 	for _, field := range []string{"customer_id", "customer_name", "order_date", "warehouse", "discount", "extra_fee"} {
 		if !strings.Contains(page, `name="`+field+`"`) {
 			t.Errorf("表单缺少字段 %s", field)
+		}
+	}
+}
+
+// TestPerformanceGuardrails 性能相关的护栏。
+//
+// 用户反馈切换页面有点卡。排查发现两处：
+//  1. 328KB 的扫码库（zxing）写在了公共布局里，每个页面都加载，
+//     而其实只有收银台和产品表单需要；
+//  2. 所有响应都没有压缩，列表页 HTML 有 25-53KB，CSS 约 60KB。
+//
+// 这里把结论固定下来，避免以后又被改回去。
+func TestPerformanceGuardrails(t *testing.T) {
+	h, _, cfg := testApp(t)
+	cookie := doLogin(t, h, cfg, "admin", "admin123")
+
+	// 1) 重资源不能出现在公共布局里
+	raw, err := os.ReadFile("../assets/templates/layouts/base.html")
+	if err != nil {
+		t.Fatalf("读取布局失败: %v", err)
+	}
+	layout := string(raw)
+	// 只允许"按需引入"（同一行带 {{if .NeedsScanner}} 之类的条件），
+	// 不允许无条件引入重资源
+	for _, line := range strings.Split(layout, "\n") {
+		if !strings.Contains(line, "<script") {
+			continue
+		}
+		for _, heavy := range []string{"zxing.min.js", "scan.js", "chart.umd.js", "jsbarcode.min.js"} {
+			if strings.Contains(line, heavy) && !strings.Contains(line, "{{if") {
+				t.Errorf("公共布局无条件引入了 %s：只有个别页面需要，会拖慢所有页面", heavy)
+			}
+		}
+	}
+
+	// 2) 需要扫码的页面要有，其它页面不能有
+	withScanner := []string{"/markets/1/pos", "/products/new"}
+	withoutScanner := []string{"/", "/markets", "/products", "/inventory", "/settings"}
+	for _, p := range withScanner {
+		_, body := get(t, h, p, cookie)
+		if !strings.Contains(body, "zxing.min.js") {
+			t.Errorf("%s 需要扫码功能，应引入 zxing", p)
+		}
+	}
+	for _, p := range withoutScanner {
+		_, body := get(t, h, p, cookie)
+		if strings.Contains(body, "zxing.min.js") {
+			t.Errorf("%s 不需要扫码，不应引入 328KB 的 zxing", p)
+		}
+	}
+
+	// 3) 文本响应要支持 gzip，且内容能正确解压
+	req := httptest.NewRequest(http.MethodGet, "/markets", nil)
+	req.AddCookie(cookie)
+	req.Header.Set("Accept-Encoding", "gzip")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if enc := rec.Header().Get("Content-Encoding"); enc != "gzip" {
+		t.Errorf("支持 gzip 的客户端应收到压缩响应，实际 Content-Encoding=%q", enc)
+	}
+	if !strings.Contains(rec.Header().Get("Vary"), "Accept-Encoding") {
+		t.Error("压缩响应必须带 Vary: Accept-Encoding")
+	}
+	zr, err := gzip.NewReader(bytes.NewReader(rec.Body.Bytes()))
+	if err != nil {
+		t.Fatalf("响应声称是 gzip 但解不开: %v", err)
+	}
+	plain, err := io.ReadAll(zr)
+	if err != nil {
+		t.Fatalf("解压失败: %v", err)
+	}
+	if !bytes.Contains(plain, []byte("</html>")) {
+		t.Error("解压后应是完整的 HTML 页面")
+	}
+	if len(plain) <= rec.Body.Len() {
+		t.Errorf("压缩后应更小：原始 %d，压缩 %d", len(plain), rec.Body.Len())
+	}
+
+	// 不接受 gzip 的客户端要拿到未压缩内容
+	req2 := httptest.NewRequest(http.MethodGet, "/markets", nil)
+	req2.AddCookie(cookie)
+	rec2 := httptest.NewRecorder()
+	h.ServeHTTP(rec2, req2)
+	if enc := rec2.Header().Get("Content-Encoding"); enc != "" {
+		t.Errorf("未声明支持 gzip 时不应压缩，实际 %q", enc)
+	}
+
+	// 4) Service Worker 预缓存列表里的资源必须真实存在
+	swRaw, err := os.ReadFile("../assets/static/sw.js")
+	if err != nil {
+		t.Fatalf("读取 sw.js 失败: %v", err)
+	}
+	listRe := regexp.MustCompile(`(?s)const PRECACHE = \[(.*?)\];`)
+	m := listRe.FindStringSubmatch(string(swRaw))
+	if m == nil {
+		t.Fatal("sw.js 里没有找到 PRECACHE 列表")
+	}
+	urls := regexp.MustCompile(`'([^']+)'`).FindAllStringSubmatch(m[1], -1)
+	if len(urls) == 0 {
+		t.Fatal("PRECACHE 列表为空")
+	}
+	for _, u := range urls {
+		// 预缓存里有一个资源取不到，cache.addAll 会整体失败，离线缓存就废了
+		path := filepath.Join("..", "assets", filepath.FromSlash(strings.TrimPrefix(u[1], "/")))
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("Service Worker 预缓存了不存在的资源 %s（会导致 cache.addAll 整体失败）", u[1])
 		}
 	}
 }

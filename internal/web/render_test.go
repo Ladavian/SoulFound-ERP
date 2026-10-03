@@ -588,3 +588,80 @@ func TestTableLayoutContract(t *testing.T) {
 	}
 	t.Logf("已解析 %d 条 CSS 规则", len(rules))
 }
+
+// TestCSSIntegrity 样式表结构完整性。
+//
+// 背景：修手机端样式时把一条规则的选择器整行替换掉了，结果多出一个 "}"，
+// 媒体查询提前闭合，本该只在手机端生效的规则（例如
+// .data--stack .mobile-hide { display: none }）跑到了全局，
+// 桌面端表格表体少了 4 列、整行左移，数值显示在错误的表头下面。
+// 这种错误浏览器不会报错、页面看起来也"有内容"，只能靠结构检查。
+func TestCSSIntegrity(t *testing.T) {
+	raw, err := os.ReadFile("../assets/static/css/app.css")
+	if err != nil {
+		t.Fatalf("读取样式失败: %v", err)
+	}
+	src := regexp.MustCompile(`(?s)/\*.*?\*/`).ReplaceAllString(string(raw), "")
+
+	type block struct {
+		head   string
+		atRule bool
+		line   int
+		decls  []string // 该块内出现的声明片段（用于报错定位）
+	}
+	var stack []block
+	var buf strings.Builder
+	lineOf := func(pos int) int { return strings.Count(src[:pos], "\n") + 1 }
+
+	for i := 0; i < len(src); i++ {
+		switch src[i] {
+		case '{':
+			head := strings.TrimSpace(buf.String())
+			buf.Reset()
+			if head == "" {
+				t.Errorf("样式表第 %d 行出现空的规则头（多余的 { ）", lineOf(i))
+			}
+			stack = append(stack, block{
+				head:   head,
+				atRule: strings.HasPrefix(head, "@"),
+				line:   lineOf(i),
+			})
+		case '}':
+			if len(stack) == 0 {
+				t.Errorf("样式表第 %d 行出现多余的 }", lineOf(i))
+				buf.Reset()
+				continue
+			}
+			top := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			body := strings.TrimSpace(buf.String())
+			// 关闭一个 @ 块（媒体查询等）时，若还残留声明，
+			// 说明这些声明写在了规则外面——通常是漏写选择器。
+			if top.atRule && body != "" {
+				t.Errorf("样式表第 %d 行的 @ 块（%s，起始第 %d 行）闭合前残留了规则外声明："+
+					"多半是选择器被误删，会导致后面的规则跑到媒体查询外面去\n    残留内容: %s",
+					lineOf(i), top.head, top.line, firstLine(body))
+			}
+			buf.Reset()
+		default:
+			buf.WriteByte(src[i])
+		}
+	}
+	if len(stack) != 0 {
+		t.Errorf("样式表有 %d 个未闭合的块，第一个是第 %d 行的 %q",
+			len(stack), stack[0].line, stack[0].head)
+	}
+	if tail := strings.TrimSpace(buf.String()); tail != "" {
+		t.Errorf("样式表结尾有规则外内容: %s", firstLine(tail))
+	}
+}
+
+func firstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	if len(s) > 90 {
+		s = s[:90] + "…"
+	}
+	return strings.TrimSpace(s)
+}

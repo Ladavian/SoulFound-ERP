@@ -111,6 +111,7 @@ func (s *Server) posPanelData(r *http.Request, marketID int64, view map[string]a
 		"CanManage":     canEdit(r, PermMarketManage),
 		"CanSettle":     canEdit(r, PermMarketSettle),
 		"ShowCost":      canEdit(r, PermReportView),
+		"NeedsScanner":  true, // 收银台要扫码
 		"OnMarketCount": onMarketCount(tiles),
 		"TotalCount":    len(tiles),
 		"ScanNotice":    "",

@@ -1246,11 +1246,12 @@ body.scan-open { overflow: hidden; }
     color: var(--text-3);
     text-align: left;
   }
-  /* 标题与操作区横跨整行 */
   /* 卡片模式（手机）：首列变成卡片标题，不需要最小宽度。
-     选择器要与桌面规则同等具体（table.data td.row-cell--main），
+     复位选择器要与桌面规则同等具体（table.data td.row-cell--main），
      否则优先级不够、复位不生效。 */
   table.data td.row-cell--main { min-width: 0; }
+  /* 标题与操作区横跨整行 */
+  .data--stack td.row-cell--main {
     grid-column: 1 / -1;
     order: -2; /* 标题在最前，操作区紧随其后 */
     display: block;

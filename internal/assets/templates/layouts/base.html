@@ -18,9 +18,10 @@
 <link rel="stylesheet" href="/static/css/app.css?v={{.Cfg.Version}}">
 <script src="/static/vendor/htmx.min.js" defer></script>
 <script src="/static/vendor/alpine.min.js" defer></script>
-<script src="/static/vendor/zxing.min.js" defer></script>
+{{/* 扫码库有 328KB，只有收银台与产品表单需要，按需加载 */}}
+{{if .NeedsScanner}}<script src="/static/vendor/zxing.min.js" defer></script>{{end}}
 <script src="/static/js/app.js?v={{.Cfg.Version}}" defer></script>
-<script src="/static/js/scan.js?v={{.Cfg.Version}}" defer></script>
+{{if .NeedsScanner}}<script src="/static/js/scan.js?v={{.Cfg.Version}}" defer></script>{{end}}
 {{block "head" .}}{{end}}
 </head>
 <body>
