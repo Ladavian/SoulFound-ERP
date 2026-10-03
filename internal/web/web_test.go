@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"encoding/xml"
+	"html"
 	"image"
 	"image/color"
 	"image/png"
@@ -16,6 +17,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -29,6 +31,14 @@ import (
 
 // testApp 启动一套完整环境（临时数据库 + 演示数据 + HTTP 处理器）。
 func testApp(t *testing.T) (http.Handler, *service.Service, *config.Config) {
+	t.Helper()
+	srv, svc, cfg := newTestServer(t)
+	return srv.Handler(), svc, cfg
+}
+
+// newTestServer 与 testApp 相同，但返回 *Server，
+// 便于测试直接访问路由表（例如体检按钮目标是否真的注册过）。
+func newTestServer(t *testing.T) (*Server, *service.Service, *config.Config) {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -74,7 +84,7 @@ func testApp(t *testing.T) (http.Handler, *service.Service, *config.Config) {
 	if err != nil {
 		t.Fatalf("初始化 HTTP 服务失败: %v", err)
 	}
-	return srv.Handler(), svc, cfg
+	return srv, svc, cfg
 }
 
 func doLogin(t *testing.T, h http.Handler, cfg *config.Config, username, password string) *http.Cookie {
@@ -1898,4 +1908,158 @@ func TestPOSWorksWithoutPlanning(t *testing.T) {
 	if len(full.Items) < 2 {
 		t.Errorf("加入全部在售应至少带上 2 个产品，实际 %d", len(full.Items))
 	}
+}
+
+// TestAllInteractiveElementsResolve 全站操作体检。
+//
+// 背景：用户反馈"某个按钮点了没反应"，这类问题肉眼很难查全。
+// 这里把每个页面上的所有交互元素抓出来，逐个检查：
+//   - 表单 action / HTMX 请求地址：路由是否真的注册过（含方法是否匹配）
+//   - HTMX 的 hx-target：目标元素在当前页面上是否存在
+//   - 站内链接：是否指向已注册的路由
+//
+// 检查走 ServeMux.Handler，只做匹配、不执行处理器，因此不会改动数据。
+func TestAllInteractiveElementsResolve(t *testing.T) {
+	srv, svc, cfg := newTestServer(t)
+	h := srv.Handler()
+	cookie := doLogin(t, h, cfg, "admin", "admin123")
+	ctx := context.Background()
+
+	// 准备一些真实 ID，覆盖带参数的页面
+	products, _ := svc.Store.ListProducts(ctx, store.ProductFilter{})
+	markets, _ := svc.Store.ListMarkets(ctx, store.MarketFilter{})
+	suppliers, _ := svc.Store.ListSuppliers(ctx, "", true)
+	users, _ := svc.Store.ListUsers(ctx)
+	if len(products) == 0 || len(markets) == 0 || len(users) == 0 {
+		t.Fatal("演示数据不足，无法体检")
+	}
+	pid := strconv.FormatInt(products[0].ID, 10)
+	mid := strconv.FormatInt(markets[0].ID, 10)
+
+	pages := []string{
+		"/", "/more", "/profile", "/settings", "/logs", "/users", "/users/new",
+		"/users/" + strconv.FormatInt(users[0].ID, 10) + "/edit",
+		"/users/" + strconv.FormatInt(users[0].ID, 10) + "/password",
+		"/products", "/products/new", "/products/" + pid, "/products/" + pid + "/edit",
+		"/products/labels",
+		"/suppliers", "/suppliers/new", "/customers", "/customers/new",
+		"/purchases", "/purchases/new",
+		"/inventory", "/inventory/movements", "/inventory/adjust",
+		"/markets", "/markets/new", "/markets/" + mid, "/markets/" + mid + "/edit",
+		"/markets/" + mid + "/pos",
+		"/reports/markets", "/reports/products", "/reports/inventory",
+	}
+	if len(suppliers) > 0 {
+		pages = append(pages, "/suppliers/"+strconv.FormatInt(suppliers[0].ID, 10)+"/edit")
+	}
+
+	formRe := regexp.MustCompile(`(?s)<form[^>]*method="([a-zA-Z]+)"[^>]*action="([^"]*)"`)
+	formRe2 := regexp.MustCompile(`(?s)<form[^>]*action="([^"]*)"[^>]*method="([a-zA-Z]+)"`)
+	hxRe := regexp.MustCompile(`hx-(get|post|put|delete|patch)="([^"]+)"`)
+	targetRe := regexp.MustCompile(`hx-target="([^"]+)"`)
+	linkRe := regexp.MustCompile(`<a\b[^>]*href="([^"]+)"`)
+	idRe := regexp.MustCompile(`id="([^"]+)"`)
+
+	checkedRoutes, checkedTargets, checkedLinks := 0, 0, 0
+
+	// 站点有兜底 404 路由（模式为 "/"），任何地址都能匹配到它，
+	// 所以不能只看"有没有匹配"，必须要求匹配到的是带方法的具体路由。
+	methods := map[string]bool{
+		"GET": true, "POST": true, "PUT": true, "DELETE": true, "PATCH": true, "HEAD": true,
+	}
+
+	// routeExists 检查 (方法, 地址) 是否注册了具体路由，返回命中的模式。
+	routeExists := func(method, rawURL string) string {
+		u := html.UnescapeString(strings.TrimSpace(rawURL))
+		if u == "" || !strings.HasPrefix(u, "/") {
+			return "" // 外链、锚点、javascript: 不检查
+		}
+		req := httptest.NewRequest(strings.ToUpper(method), u, nil)
+		_, pattern := srv.mux.Handler(req)
+		parts := strings.SplitN(pattern, " ", 2)
+		if len(parts) != 2 || !methods[parts[0]] {
+			return "" // 命中兜底路由，等同于没有这个路由
+		}
+		return pattern
+	}
+
+	// 自检：不存在的路由必须被判为不存在，否则这套体检就是空跑
+	if routeExists(http.MethodPost, "/definitely-not-a-route") != "" {
+		t.Fatal("体检自身失效：不存在的路由竟然匹配成功")
+	}
+	if routeExists(http.MethodPost, "/products") != "" {
+		t.Fatal("体检自身失效：POST 到只支持 GET 的路由竟然匹配成功")
+	}
+
+	for _, page := range pages {
+		code, body := get(t, h, page, cookie)
+		if code != http.StatusOK {
+			t.Errorf("页面 %s 应可访问，实际 %d", page, code)
+			continue
+		}
+		if !strings.Contains(body, "<form") && !strings.Contains(body, "hx-") &&
+			!strings.Contains(body, "<a ") {
+			continue
+		}
+
+		// 当前页面有哪些元素 id，用于校验 hx-target
+		ids := map[string]bool{}
+		for _, m := range idRe.FindAllStringSubmatch(body, -1) {
+			ids[m[1]] = true
+		}
+
+		// 1) 表单提交目标
+		for _, m := range formRe.FindAllStringSubmatch(body, -1) {
+			checkedRoutes++
+			if routeExists(m[1], m[2]) == "" {
+				t.Errorf("%s：表单提交到 %s %s，但没有注册这个路由（按钮会 404/405）", page, m[1], m[2])
+			}
+		}
+		for _, m := range formRe2.FindAllStringSubmatch(body, -1) {
+			checkedRoutes++
+			if routeExists(m[2], m[1]) == "" {
+				t.Errorf("%s：表单提交到 %s %s，但没有注册这个路由（按钮会 404/405）", page, m[2], m[1])
+			}
+		}
+
+		// 2) HTMX 请求地址
+		for _, m := range hxRe.FindAllStringSubmatch(body, -1) {
+			checkedRoutes++
+			if routeExists(m[1], m[2]) == "" {
+				t.Errorf("%s：按钮请求 %s %s，但没有注册这个路由（点了不会有反应）", page, strings.ToUpper(m[1]), m[2])
+			}
+		}
+
+		// 3) hx-target 必须存在于当前页面
+		for _, m := range targetRe.FindAllStringSubmatch(body, -1) {
+			sel := strings.TrimSpace(html.UnescapeString(m[1]))
+			if !strings.HasPrefix(sel, "#") {
+				continue // this / closest tr / next 这类相对选择器跳过
+			}
+			checkedTargets++
+			if !ids[strings.TrimPrefix(sel, "#")] {
+				t.Errorf("%s：hx-target=%s 指向的元素不存在，局部刷新会静默失效", page, sel)
+			}
+		}
+
+		// 4) 站内链接
+		for _, m := range linkRe.FindAllStringSubmatch(body, -1) {
+			href := html.UnescapeString(strings.TrimSpace(m[1]))
+			if strings.HasPrefix(href, "#") || strings.HasPrefix(href, "mailto:") ||
+				strings.HasPrefix(href, "tel:") || strings.HasPrefix(href, "javascript:") {
+				continue
+			}
+			checkedLinks++
+			if routeExists(http.MethodGet, href) == "" {
+				t.Errorf("%s：链接 %s 没有对应路由（点了会 404）", page, href)
+			}
+		}
+	}
+
+	if checkedRoutes < 40 || checkedTargets < 5 || checkedLinks < 40 {
+		t.Fatalf("体检覆盖不足：路由 %d、hx-target %d、链接 %d",
+			checkedRoutes, checkedTargets, checkedLinks)
+	}
+	t.Logf("已体检 %d 个提交/请求地址、%d 个 hx-target、%d 个站内链接",
+		checkedRoutes, checkedTargets, checkedLinks)
 }

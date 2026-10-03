@@ -2,8 +2,8 @@
 {{$base := .BasePath}}
 {{$label := .KindLabel}}
 {{$row := .Row}}
+{{/* 往来单位没有单独的详情页，返回与取消一律回列表 */}}
 {{$backURL := $base}}
-{{if not .IsNew}}{{$backURL = printf "%s/%d" $base $row.ID}}{{end}}
 
 <div class="page-head">
   <div class="page-head__main">

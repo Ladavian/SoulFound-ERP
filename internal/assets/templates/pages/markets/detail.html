@@ -247,9 +247,10 @@
       <div class="card__head">
         <div class="card__title">活动费用<span class="card__sub">摊位费可设一口价或按销售额扣点</span></div>
       </div>
-      <form hx-post="/markets/{{$m.ID}}/expenses" hx-target="#market-panel" hx-swap="outerHTML">
+      <form hx-post="/markets/{{$m.ID}}/expenses" hx-target="#market-panel" hx-swap="outerHTML"
+            x-data="{ extra: 0 }">
         <div class="table-wrap">
-          <table class="data data--compact entry-table" x-data="{ extra: 0 }">
+          <table class="data data--compact entry-table">
             <thead>
               <tr>
                 <th style="width:130px">类别</th>
@@ -336,7 +337,7 @@
         </div>
         {{if and .CanManage (not $m.IsSettled)}}
         <div class="card__foot" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-          <button class="btn btn--sm" type="button" @click="extra++" x-data>{{template "icon" "plus"}}<span>添加一行费用</span></button>
+          <button class="btn btn--sm" type="button" @click="extra++">{{template "icon" "plus"}}<span>添加一行费用</span></button>
           <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
             <span class="save-state save-state--idle tiny">已同步</span>
             <button class="btn btn--primary" type="submit">{{template "icon" "save"}}<span>保存费用</span></button>
