@@ -366,6 +366,13 @@ table.data--compact th, table.data--compact td { padding: 7px 10px; }
 .filters .field { flex: 0 1 180px; }
 .filters .field--wide { flex: 1 1 240px; }
 .filters .field--actions { flex: 0 0 auto; flex-direction: row; gap: 8px; }
+/* 宽屏：布局与改造前完全一致（搜索 → 各条件 → 筛选/重置） */
+@media (min-width: 901px) {
+  .filters__more { display: contents; }
+  .filters__toggle { display: none; }
+  .filters__more-actions { display: flex; order: 11; }
+  .filters__submit { order: 10; }
+}
 .filters__spacer { flex: 1; }
 
 /* ---------------------------------------------------------------- 提示 */
@@ -1053,9 +1060,31 @@ body.scan-open { overflow: hidden; }
    手机上把数据表格变成卡片（不再需要往右滑）
    ========================================================================== */
 @media (max-width: 900px) {
+  /* 筛选栏：只留搜索与按钮，「更多条件」展开后两列排布 */
+  .filters { padding: 12px; gap: 8px; align-items: stretch; }
+  .filters .field--wide { flex: 1 1 100%; }
+  .filters__toggle, .filters .btn[type="submit"] { flex: 1 1 0; min-width: 0; }
+  .filters__more { display: none; }
+  .filters__more.is-open {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    width: 100%;
+    padding-top: 4px;
+    border-top: 1px dashed var(--line);
+  }
+  .filters__more .field { flex: 1 1 auto; }
+  .filters__more-actions { grid-column: 1 / -1; display: flex; }
+  .filters__more-actions .btn { flex: 1 1 auto; justify-content: center; }
+
+  /* 表格转卡片：字段两列排布，操作按钮紧跟标题，卡片不再拉长 */
   .data--stack thead, .data--stack tfoot { display: none; }
-  .data--stack, .data--stack tbody, .data--stack tr, .data--stack td { display: block; width: 100%; }
+  .data--stack { display: block; width: 100%; }
+  .data--stack tbody { display: block; }
   .data--stack tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 3px 12px;
     border: 1px solid var(--line);
     border-radius: var(--radius);
     margin-bottom: 10px;
@@ -1065,39 +1094,55 @@ body.scan-open { overflow: hidden; }
   }
   .data--stack td {
     border: 0;
-    padding: 4px 0;
+    padding: 2px 0;
     display: flex;
-    align-items: center;
+    align-items: baseline;
     justify-content: space-between;
-    gap: 12px;
+    gap: 8px;
     text-align: right;
+    min-width: 0;
   }
   .data--stack td::before {
     content: attr(data-label);
     flex: 0 0 auto;
-    font-size: 12px;
+    font-size: 11.5px;
     font-weight: 550;
     color: var(--text-3);
     text-align: left;
   }
+  /* 标题与操作区横跨整行 */
   .data--stack td.row-cell--main {
+    grid-column: 1 / -1;
+    order: -2; /* 标题在最前，操作区紧随其后 */
     display: block;
     text-align: left;
-    padding-bottom: 9px;
-    margin-bottom: 6px;
+    padding-bottom: 8px;
+    margin-bottom: 4px;
     border-bottom: 1px dashed var(--line);
   }
   .data--stack td.row-cell--main::before { display: none; }
   .data--stack td.right {
+    grid-column: 1 / -1;
+    order: -1; /* 操作按钮提到字段前面，手机上不用往下翻 */
     display: block;
-    padding-top: 9px;
-    margin-top: 6px;
-    border-top: 1px dashed var(--line);
+    padding: 0 0 9px;
+    margin-bottom: 5px;
+    border-bottom: 1px dashed var(--line);
   }
   .data--stack td.right::before { display: none; }
   .data--stack .row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-  .data--stack .row-actions .btn { flex: 1 1 auto; justify-content: center; }
-  .data--stack .actions-col { display: block; }
+  .data--stack .row-actions .btn { flex: 1 1 auto; justify-content: center; min-height: 42px; }
+  .data--stack .row-actions .btn--primary { flex: 2 1 auto; }
+  .data--stack .mobile-hide { display: none; }
+  .data--stack td.actions-col {
+    grid-column: 1 / -1;
+    display: block;
+    padding-top: 9px;
+    margin-top: 5px;
+    border-top: 1px dashed var(--line);
+  }
+  .data--stack td.actions-col::before { display: none; }
+  .data--stack td.actions-col .btn { width: 100%; justify-content: center; min-height: 42px; }
 }
 
 /* ==========================================================================

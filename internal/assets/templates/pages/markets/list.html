@@ -30,39 +30,46 @@
 {{if .Ongoing}}{{template "ongoing_market" .Ongoing}}{{end}}
 
 <div class="card">
-  <form class="filters" method="get" action="/markets">
+  {{/* 手机上只留搜索 + 筛选按钮，其余条件折叠起来，避免挤成一团 */}}
+  <form class="filters" method="get" action="/markets" x-data="{ more: false }">
     <div class="field field--wide">
-      <label class="field__label" for="q">搜索</label>
-      <input class="input" id="q" name="q" type="search" value="{{.Keyword}}" placeholder="市集名称、场地、城市、主办方或单据号">
+      <input class="input" id="q" name="q" type="search" value="{{.Keyword}}"
+             placeholder="搜索市集名称、场地、城市或单据号" aria-label="搜索市集">
     </div>
-    <div class="field">
-      <label class="field__label" for="status">状态</label>
-      <select class="select" id="status" name="status">
-        {{$cur := .Status}}
-        {{range .StatusOptions}}<option value="{{.Value}}"{{if eq .Value $cur}} selected{{end}}>{{.Label}}</option>{{end}}
-      </select>
-    </div>
-    <div class="field">
-      <label class="field__label" for="from">开始日期</label>
-      <input class="input" id="from" name="from" type="date" value="{{.From}}">
-    </div>
-    <div class="field">
-      <label class="field__label" for="to">结束日期</label>
-      <input class="input" id="to" name="to" type="date" value="{{.To}}">
-    </div>
-    <div class="field">
-      <label class="field__label" for="sort">排序</label>
-      <select class="select" id="sort" name="sort">
-        {{$s := .Sort}}
-        <option value=""{{if eq $s ""}} selected{{end}}>最近在前</option>
-        <option value="oldest"{{if eq $s "oldest"}} selected{{end}}>最早在前</option>
-        <option value="revenue"{{if eq $s "revenue"}} selected{{end}}>销售额最高</option>
-        {{if $.ShowCost}}<option value="profit"{{if eq $s "profit"}} selected{{end}}>净利润最高</option>{{end}}
-      </select>
-    </div>
-    <div class="field field--actions">
-      <button class="btn btn--primary" type="submit">{{template "icon" "search"}}<span>筛选</span></button>
-      <a class="btn" href="/markets">重置</a>
+    <button class="btn filters__toggle" type="button" @click="more = !more" :aria-expanded="more">
+      {{template "icon" "filter"}}<span x-text="more ? '收起条件' : '筛选条件'">筛选条件</span>
+    </button>
+    <button class="btn btn--primary filters__submit" type="submit">{{template "icon" "search"}}<span>筛选</span></button>
+
+    <div class="filters__more" :class="more ? 'is-open' : ''">
+      <div class="field">
+        <label class="field__label" for="status">状态</label>
+        <select class="select" id="status" name="status">
+          {{$cur := .Status}}
+          {{range .StatusOptions}}<option value="{{.Value}}"{{if eq .Value $cur}} selected{{end}}>{{.Label}}</option>{{end}}
+        </select>
+      </div>
+      <div class="field">
+        <label class="field__label" for="from">开始日期</label>
+        <input class="input" id="from" name="from" type="date" value="{{.From}}">
+      </div>
+      <div class="field">
+        <label class="field__label" for="to">结束日期</label>
+        <input class="input" id="to" name="to" type="date" value="{{.To}}">
+      </div>
+      <div class="field">
+        <label class="field__label" for="sort">排序</label>
+        <select class="select" id="sort" name="sort">
+          {{$s := .Sort}}
+          <option value=""{{if eq $s ""}} selected{{end}}>最近在前</option>
+          <option value="oldest"{{if eq $s "oldest"}} selected{{end}}>最早在前</option>
+          <option value="revenue"{{if eq $s "revenue"}} selected{{end}}>销售额最高</option>
+          {{if $.ShowCost}}<option value="profit"{{if eq $s "profit"}} selected{{end}}>净利润最高</option>{{end}}
+        </select>
+      </div>
+      <div class="filters__more-actions">
+        <a class="btn" href="/markets">重置条件</a>
+      </div>
     </div>
   </form>
 
@@ -115,11 +122,11 @@
           <td class="num" data-label="转化">{{if $m.TastingQty}}{{fixed 1 $m.SalesMultiplier}}×{{else}}<span class="muted">—</span>{{end}}</td>
           <td class="num strong" data-label="销售额">{{money $t.Revenue}}</td>
           {{if $.ShowCost}}
-          <td class="num muted" data-label="售出成本">{{money $t.CogsSold}}</td>
-          <td class="num muted" data-label="试饮成本">{{money $t.TastingCost}}</td>
-          <td class="num muted" data-label="费用">{{money $t.ExpenseCost}}</td>
+          <td class="num muted mobile-hide" data-label="售出成本">{{money $t.CogsSold}}</td>
+          <td class="num muted mobile-hide" data-label="试饮成本">{{money $t.TastingCost}}</td>
+          <td class="num muted mobile-hide" data-label="费用">{{money $t.ExpenseCost}}</td>
           <td class="num strong {{if $t.NetProfit.IsNeg}}neg{{else}}pos{{end}}" data-label="净利润">{{money $t.NetProfit}}</td>
-          <td class="num small {{if $t.NetProfit.IsNeg}}neg{{end}}" data-label="净利率">{{pct $t.NetMargin}}</td>
+          <td class="num small mobile-hide {{if $t.NetProfit.IsNeg}}neg{{end}}" data-label="净利率">{{pct $t.NetMargin}}</td>
           {{end}}
           <td class="right">
             <div class="row-actions">
