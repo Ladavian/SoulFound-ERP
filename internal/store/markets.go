@@ -144,7 +144,7 @@ func (s *Store) MarketItems(ctx context.Context, marketID int64) ([]model.Market
 		`SELECT mi.id, mi.market_id, mi.product_id, p.name, p.sku, p.category,
 		        mi.carried_qty, mi.tasting_qty, mi.sold_qty, mi.gift_qty, mi.loss_qty,
 		        mi.unit_price, mi.discount_amt, mi.unit_cost, mi.note, mi.sort_order,
-		        p.sale_price, p.avg_cost, p.stock_qty, p.unit
+		        p.sale_price, p.avg_cost, p.stock_qty, p.unit, p.image_url
 		 FROM market_items mi JOIN products p ON p.id = mi.product_id
 		 WHERE mi.market_id = ? ORDER BY mi.sort_order, mi.id`, marketID)
 	if err != nil {
@@ -161,7 +161,7 @@ func scanMarketItems(rows *sql.Rows) ([]model.MarketItem, error) {
 		if err := rows.Scan(&it.ID, &it.MarketID, &it.ProductID, &it.ProductName, &it.ProductSKU,
 			&it.Category, &it.CarriedQty, &it.TastingQty, &it.SoldQty, &it.GiftQty, &it.LossQty,
 			&it.UnitPrice, &it.DiscountAmt, &it.UnitCost, &it.Note, &it.SortOrder,
-			&it.SalePrice, &it.AvgCost, &it.StockQty, &it.Unit); err != nil {
+			&it.SalePrice, &it.AvgCost, &it.StockQty, &it.Unit, &it.ImageURL); err != nil {
 			return nil, err
 		}
 		out = append(out, it)
@@ -184,7 +184,7 @@ func (s *Store) attachMarketItems(ctx context.Context, list []model.Market) erro
 		`SELECT mi.id, mi.market_id, mi.product_id, p.name, p.sku, p.category,
 		        mi.carried_qty, mi.tasting_qty, mi.sold_qty, mi.gift_qty, mi.loss_qty,
 		        mi.unit_price, mi.discount_amt, mi.unit_cost, mi.note, mi.sort_order,
-		        p.sale_price, p.avg_cost, p.stock_qty, p.unit
+		        p.sale_price, p.avg_cost, p.stock_qty, p.unit, p.image_url
 		 FROM market_items mi JOIN products p ON p.id = mi.product_id
 		 WHERE mi.market_id IN (`+placeholders(len(ids))+`) ORDER BY mi.sort_order, mi.id`,
 		idArgs(ids)...)
@@ -357,7 +357,7 @@ func (s *Store) MarketItemByID(ctx context.Context, id int64) (*model.MarketItem
 		`SELECT mi.id, mi.market_id, mi.product_id, p.name, p.sku, p.category,
 		        mi.carried_qty, mi.tasting_qty, mi.sold_qty, mi.gift_qty, mi.loss_qty,
 		        mi.unit_price, mi.discount_amt, mi.unit_cost, mi.note, mi.sort_order,
-		        p.sale_price, p.avg_cost, p.stock_qty, p.unit
+		        p.sale_price, p.avg_cost, p.stock_qty, p.unit, p.image_url
 		 FROM market_items mi JOIN products p ON p.id = mi.product_id
 		 WHERE mi.id = ?`, id)
 	if err != nil {

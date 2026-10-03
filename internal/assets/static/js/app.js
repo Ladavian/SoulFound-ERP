@@ -357,4 +357,113 @@
     }, { passive: true });
   })();
 
+
+  /* ------------------------------------------------- 主题（浅色/深色/跟随系统）
+     首屏由 base.html 里的内联脚本先把 data-theme 定下来，
+     这里负责按钮切换、记住选择、以及跟随系统时的实时响应。 */
+  var THEME_KEY = 'erp_theme';
+  var THEMES = ['light', 'dark', 'system'];
+  var THEME_TEXT = { light: '浅色', dark: '深色', system: '跟随系统' };
+  var THEME_ICON = {
+    light: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2.2M12 19.2v2.2M4.2 12H2M22 12h-2.2M5.6 5.6 4.1 4.1M19.9 19.9l-1.5-1.5M18.4 5.6l1.5-1.5M4.1 19.9l1.5-1.5"/></svg>',
+    dark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.4A8.4 8.4 0 0 1 9.6 4a8.4 8.4 0 1 0 10.4 10.4z"/></svg>',
+    system: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.6" y="4" width="18.8" height="12.4" rx="2"/><path d="M8.6 20h6.8M12 16.4V20"/></svg>'
+  };
+
+  function systemDark() {
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+
+  window.erpApplyTheme = function (mode) {
+    if (THEMES.indexOf(mode) < 0) mode = 'system';
+    var dark = mode === 'dark' || (mode === 'system' && systemDark());
+    var root = document.documentElement;
+    root.setAttribute('data-theme', dark ? 'dark' : 'light');
+    root.setAttribute('data-theme-mode', mode);
+    // 手机状态栏跟着变
+    var meta = document.getElementById('meta-theme-color');
+    if (meta) meta.setAttribute('content', dark ? '#0F1216' : '#14171C');
+
+    var icon = document.getElementById('theme-icon');
+    var label = document.getElementById('theme-label');
+    if (icon) icon.innerHTML = THEME_ICON[mode];
+    if (label) label.textContent = THEME_TEXT[mode];
+    // 「我的账号」里的单选项同步
+    var inputs = document.querySelectorAll('input[name="theme_pref"]');
+    Array.prototype.forEach.call(inputs, function (el) {
+      el.checked = el.value === mode;
+    });
+    try { localStorage.setItem(THEME_KEY, mode); } catch (e) { /* 忽略 */ }
+  };
+
+  window.erpCycleTheme = function () {
+    var cur = document.documentElement.getAttribute('data-theme-mode') || 'system';
+    var next = THEMES[(THEMES.indexOf(cur) + 1) % THEMES.length];
+    window.erpApplyTheme(next);
+  };
+
+  // 选择"跟随系统"时，系统切换要实时生效
+  if (window.matchMedia) {
+    var mq = window.matchMedia('(prefers-color-scheme: dark)');
+    var onChange = function () {
+      if ((document.documentElement.getAttribute('data-theme-mode') || 'system') === 'system') {
+        window.erpApplyTheme('system');
+      }
+    };
+    if (mq.addEventListener) mq.addEventListener('change', onChange);
+    else if (mq.addListener) mq.addListener(onChange);
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    window.erpApplyTheme(document.documentElement.getAttribute('data-theme-mode') || 'system');
+  });
+
+
+  /* ------------------------------------------------- 产品图悬停放大
+     表格外层是 overflow:auto，直接放大的图会被裁掉，
+     所以用固定定位的浮层，跟着缩略图的位置走。 */
+  (function imageZoom() {
+    if (window.matchMedia && window.matchMedia('(hover: none)').matches) return;
+    var box = null;
+
+    function ensure() {
+      if (!box) {
+        box = document.createElement('img');
+        box.id = 'img-zoom';
+        box.alt = '';
+        document.body.appendChild(box);
+      }
+      return box;
+    }
+
+    function place(thumb) {
+      var el = ensure();
+      el.src = thumb.getAttribute('data-zoom');
+      var r = thumb.getBoundingClientRect();
+      var size = el.offsetWidth || 240;
+      var left = r.right + 12;
+      // 右边放不下就放左边
+      if (left + size > window.innerWidth - 8) left = Math.max(8, r.left - size - 12);
+      var top = r.top + r.height / 2 - size / 2;
+      top = Math.max(8, Math.min(top, window.innerHeight - size - 8));
+      el.style.left = left + 'px';
+      el.style.top = top + 'px';
+      el.classList.add('is-on');
+    }
+
+    function hide() {
+      if (box) box.classList.remove('is-on');
+    }
+
+    document.addEventListener('mouseover', function (e) {
+      var el = e.target.closest ? e.target.closest('[data-zoom]') : null;
+      if (el) place(el);
+    });
+    document.addEventListener('mouseout', function (e) {
+      var el = e.target.closest ? e.target.closest('[data-zoom]') : null;
+      if (el) hide();
+    });
+    window.addEventListener('scroll', hide, { passive: true });
+  })();
+
 })();

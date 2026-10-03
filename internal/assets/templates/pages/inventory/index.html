@@ -144,12 +144,17 @@
             {{range .Products}}
             <tr>
               <td class="row-cell--main">
+                <div class="prod-cell">
+                  {{template "prod_thumb" (dict "Image" .ImageURL "Name" .Name "Class" "sm")}}
+                  <div class="prod-cell__main">
                 <a class="strong" href="/products/{{.ID}}">{{.Name}}</a>
                 <div class="tiny muted">
                   <span class="mono">{{.SKU}}</span>
                   {{if .Vintage}} · {{.Vintage}} 年{{end}}
                   {{if .Spec}} · {{.Spec}}{{end}}
                   {{if not .IsActive}} <span class="badge badge--muted">停用</span>{{end}}
+                </div>
+                  </div>
                 </div>
               </td>
               <td class="small" data-label="品类">{{default "—" .Category}}</td>

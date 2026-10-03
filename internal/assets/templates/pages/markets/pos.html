@@ -145,7 +145,7 @@
        x-show="match($el.dataset.search)">
     <div class="pos-tile__head">
       {{if .Product.ImageURL}}
-      <img class="pos-tile__img" src="{{.Product.ImageURL}}" alt="{{.Product.Name}}" loading="lazy">
+      <img class="pos-tile__img" src="{{.Product.ImageURL}}" alt="{{.Product.Name}}" loading="lazy" data-zoom="{{.Product.ImageURL}}">
       {{else}}
       <span class="pos-tile__img pos-tile__img--empty">{{template "icon" "image"}}</span>
       {{end}}

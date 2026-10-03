@@ -83,6 +83,105 @@ h1, h2, h3, h4 { margin: 0; font-weight: 650; line-height: 1.3; }
 p { margin: 0 0 8px; }
 hr { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
 
+/* ---------------------------------------------------------------- 深色主题
+   浅色是默认（:root）。深色通过 <html data-theme="dark"> 切换，
+   「跟随系统」在 JS 里先解析成 light/dark 再写进来，样式只认最终值。
+   --brand-700/800/900 本身就是深石墨色（侧栏底色），深色模式保持不变；
+   只把强调色与浅色底纹调整到深色背景下可读。 */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --brand-600: #5B93C7;
+  --brand-500: #6FA5D6;
+  --brand-200: #2C3A4B;
+  --brand-100: #1F2733;
+  --brand-50:  #1A2029;
+
+  --ice-100: #1B2634;
+  --ice-200: #243449;
+  --ice-400: #6E9AC4;
+  --gold: #D6B36A;
+  --gold-100: #2A2317;
+
+  --bg: #0F1216;
+  --surface: #161A21;
+  --surface-2: #1B2029;
+  --line: #262C36;
+  --line-strong: #333B47;
+
+  --text: #E8ECF1;
+  --text-2: #A9B3C0;
+  --text-3: #77818F;
+
+  --ok: #5FBF8E;
+  --ok-bg: #16281F;
+  --warn: #E0AC5C;
+  --warn-bg: #2A2114;
+  --danger: #E87F72;
+  --danger-bg: #2C1A18;
+  --info: #6FAEDC;
+  --info-bg: #16232E;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .4), 0 1px 3px rgba(0, 0, 0, .3);
+  --shadow: 0 4px 14px rgba(0, 0, 0, .45), 0 1px 3px rgba(0, 0, 0, .3);
+  --shadow-lg: 0 18px 40px rgba(0, 0, 0, .55);
+}
+
+/* 少量写死的浅色底纹，在深色下必须单独换掉 */
+[data-theme="dark"] table.data tbody tr:nth-child(even) { background: #1A1F27; }
+[data-theme="dark"] table.data tbody tr:hover { background: #1F2733; }
+[data-theme="dark"] .badge--muted { background: #242A34; color: var(--text-2); }
+[data-theme="dark"] .progress,
+[data-theme="dark"] .meter { background: #242A34; }
+[data-theme="dark"] .segmented a:hover,
+[data-theme="dark"] .segmented button:hover,
+[data-theme="dark"] .segmented .is-active { background: #232A34; }
+[data-theme="dark"] .pos-search__box,
+[data-theme="dark"] .image-edit__preview { background: var(--surface-2); }
+[data-theme="dark"] .prod-thumb--empty,
+[data-theme="dark"] .pick-thumb--empty { background: var(--surface-2); }
+/* 打印与条码标签始终保持白底黑字 */
+@media print {
+  [data-theme="dark"] body { background: #fff !important; }
+}
+
+/* 顶栏的主题切换按钮 */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+}
+.theme-toggle__label { display: none; }
+@media (min-width: 901px) { .theme-toggle__label { display: inline; } }
+
+/* 我的账号里的主题选择 */
+.theme-choice { display: flex; flex-wrap: wrap; gap: 8px; }
+.theme-choice label { flex: 1 1 120px; }
+.theme-choice input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.theme-choice span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 12.5px;
+  cursor: pointer;
+  text-align: center;
+}
+.theme-choice span svg { width: 17px; height: 17px; color: var(--text-3); }
+.theme-choice input:checked + span {
+  border-color: var(--brand-600);
+  background: var(--brand-50);
+  color: var(--brand-700);
+  font-weight: 600;
+}
+.theme-choice input:checked + span svg { color: var(--brand-600); }
+.theme-choice input:focus-visible + span { outline: 2px solid var(--brand-500); outline-offset: 2px; }
+
 /* ---------------------------------------------------------------- 布局 */
 .app { display: flex; min-height: 100%; }
 
@@ -1676,3 +1775,31 @@ body.scan-open { overflow: hidden; }
 .plan-list strong { color: var(--text); }
 .grid--2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 @media (max-width: 900px) { .grid--2 { grid-template-columns: 1fr; } }
+
+/* 产品缩略图：悬停放大（用 JS 定位的浮层，不会被子表格的滚动容器裁掉） */
+.prod-thumb[data-zoom] { cursor: zoom-in; }
+.prod-thumb--sm { flex-basis: 34px; width: 34px; height: 34px; border-radius: 7px; }
+.prod-thumb--md { flex-basis: 48px; width: 48px; height: 48px; }
+.prod-thumb--empty svg { width: 18px; height: 18px; }
+.prod-thumb--sm.prod-thumb--empty svg { width: 15px; height: 15px; }
+
+#img-zoom {
+  position: fixed;
+  z-index: 200;
+  width: 240px;
+  height: 240px;
+  object-fit: contain;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .14s ease;
+}
+#img-zoom.is-on { opacity: 1; }
+@media (max-width: 900px), (hover: none) { #img-zoom { display: none; } }
+
+/* 产品图在列表里的单元格（缩略图 + 文字） */
+.prod-cell { display: flex; align-items: center; gap: 10px; min-width: 0; }

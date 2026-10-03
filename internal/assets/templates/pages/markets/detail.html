@@ -126,12 +126,17 @@
                 hx-swap="outerHTML"
                 hx-include="this"{{end}}>
               <td class="entry-cell--name" data-label="产品">
-                <div class="strong">{{$it.ProductName}}</div>
+                <div class="prod-cell">
+                  {{template "prod_thumb" (dict "Image" $it.ImageURL "Name" $it.ProductName "Class" "sm")}}
+                  <div class="prod-cell__main">
+                    <div class="strong">{{$it.ProductName}}</div>
                 <div class="tiny muted">
                   {{$it.ProductSKU}}
                   {{if $showCost}} · 成本 {{money4 $it.CostBasis}}{{end}}
                   {{if not $m.IsSettled}} · 库存 {{$it.StockQty}}{{end}}
                   {{if and $showCost $it.HasSnapshot}} <span class="badge badge--muted">已锁定</span>{{end}}
+                </div>
+                  </div>
                 </div>
               </td>
               <td class="num" data-label="带去">

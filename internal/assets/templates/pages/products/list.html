@@ -112,11 +112,7 @@
         <tr>
           <td class="row-cell--main">
             <div class="prod-cell">
-              {{if $p.ImageURL}}
-              <img class="prod-thumb" src="{{$p.ImageURL}}" alt="{{$p.Name}}" loading="lazy">
-              {{else}}
-              <span class="prod-thumb prod-thumb--empty">{{template "icon" "image"}}</span>
-              {{end}}
+              {{template "prod_thumb" (dict "Image" $p.ImageURL "Name" $p.Name)}}
               <div class="prod-cell__main">
                 <a class="strong" href="/products/{{$p.ID}}">{{$p.Name}}</a>
                 {{if not $p.IsActive}}<span class="badge badge--muted">已停用</span>{{end}}

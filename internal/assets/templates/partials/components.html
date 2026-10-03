@@ -1,3 +1,7 @@
+{{/* 产品缩略图：有图显示图（鼠标悬停会放大），没有图显示占位图标。
+     参数：Image / Name / Class（sm|md） */}}
+{{define "prod_thumb"}}{{if .Image}}<img class="prod-thumb{{with .Class}} prod-thumb--{{.}}{{end}}" src="{{.Image}}" alt="{{.Name}}" loading="lazy" data-zoom="{{.Image}}">{{else}}<span class="prod-thumb prod-thumb--empty{{with .Class}} prod-thumb--{{.}}{{end}}">{{template "icon" "image"}}</span>{{end}}{{end}}
+
 {{define "group_status"}}<span class="badge{{if eq . "done"}} badge--ok{{else if eq . "shipped"}} badge--info{{else if eq . "cancelled"}} badge--muted{{else if eq . "confirmed"}} badge--live{{end}}">{{groupStatus .}}</span>{{end}}
 
 {{define "ongoing_market"}}

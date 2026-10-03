@@ -97,6 +97,30 @@
     </div>
 
     <div class="card">
+      <div class="card__head"><div class="card__title">界面主题<span class="card__sub">存在本机浏览器里，不影响别人</span></div></div>
+      <div class="card__body">
+        {{/* 与顶栏那个按钮是同一份设置，点哪个都同步 */}}
+        <div class="theme-choice">
+          <label>
+            <input type="radio" name="theme_pref" value="light" onclick="erpApplyTheme('light')">
+            <span>{{template "icon" "sun"}}浅色</span>
+          </label>
+          <label>
+            <input type="radio" name="theme_pref" value="dark" onclick="erpApplyTheme('dark')">
+            <span>{{template "icon" "moon"}}深色</span>
+          </label>
+          <label>
+            <input type="radio" name="theme_pref" value="system" onclick="erpApplyTheme('system')">
+            <span>{{template "icon" "monitor"}}跟随系统</span>
+          </label>
+        </div>
+        <div class="tiny muted" style="margin-top:8px">
+          选「跟随系统」时，手机或电脑切换深色模式，这里会自动跟着变。
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
       <div class="card__head"><div class="card__title">安装到手机桌面（PWA）<span class="card__sub">像 App 一样全屏打开</span></div></div>
       <div class="card__body">
         <div class="grid grid--2">

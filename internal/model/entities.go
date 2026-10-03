@@ -1009,6 +1009,7 @@ type MarketItem struct {
 	AvgCost   Money
 	StockQty  Qty
 	Unit      string
+	ImageURL  string
 }
 
 // Revenue 该行销售额 = 销售数量 × 单价 - 优惠。
