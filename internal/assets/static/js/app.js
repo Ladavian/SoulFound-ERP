@@ -279,4 +279,45 @@
     };
   };
 
+
+  /* ------------------------------------------------- 收银台产品筛选
+     搜索框在 HTMX 刷新的面板之外，所以输入内容不会被冲掉；
+     产品块用 data-search 携带可搜索文本，避免把文本拼进 JS 表达式。 */
+  window.posFilter = function () {
+    return {
+      q: '',
+      visible: 0,
+      init: function () {
+        this.count();
+      },
+      match: function (haystack) {
+        var q = (this.q || '').trim().toLowerCase();
+        if (!q) return true;
+        return String(haystack || '').toLowerCase().indexOf(q) !== -1;
+      },
+      count: function () {
+        var self = this;
+        var n = 0;
+        var list = document.querySelectorAll('#pos-panel .pos-tile');
+        Array.prototype.forEach.call(list, function (el) {
+          if (self.match(el.getAttribute('data-search'))) n++;
+        });
+        this.visible = n;
+      }
+    };
+  };
+
+  /* HTMX 换入的新节点交给 Alpine 重新初始化，
+     保证局部刷新后 x-show / x-text 依然生效。 */
+  document.body.addEventListener('htmx:afterSwap', function (e) {
+    if (window.Alpine && e.detail && e.detail.target) {
+      window.Alpine.initTree(e.detail.target);
+    }
+    var panel = document.getElementById('pos-panel');
+    var scope = panel && panel.closest('[x-data]');
+    if (scope && window.Alpine && typeof window.Alpine.$data === 'function') {
+      try { window.Alpine.$data(scope).count(); } catch (err) { /* 忽略 */ }
+    }
+  });
+
 })();

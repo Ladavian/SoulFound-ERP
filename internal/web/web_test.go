@@ -1657,3 +1657,245 @@ func TestSelfUsernameChange(t *testing.T) {
 		t.Errorf("重名时不应改写，实际 %q", u.Username)
 	}
 }
+
+// TestProductProfileFields 产品档案的完整字段（不只服务酒类）。
+func TestProductProfileFields(t *testing.T) {
+	h, svc, cfg := testApp(t)
+	ctx := context.Background()
+	cookie := doLogin(t, h, cfg, "admin", "admin123")
+
+	code, _ := post(t, h, "/products/new", url.Values{
+		"sku":              {"GIFT-001"},
+		"name":             {"节日礼盒"},
+		"name_en":          {"Holiday Gift Box"},
+		"brand":            {"SoulFound"},
+		"category":         {"礼盒"},
+		"origin":           {"加拿大 尼亚加拉"},
+		"vintage":          {"2020"},
+		"volume_ml":        {"375"},
+		"abv":              {"11.5%"},
+		"unit":             {"盒"},
+		"bottles_per_case": {"6"},
+		"sale_price":       {"598"},
+		"cost_price":       {"268.50"},
+		"specs":            {"葡萄品种: 维代尔\n甜度：很甜\n375ml 双支装\n\n"},
+		"low_stock_qty":    {"4"},
+		"is_active":        {"1"},
+	}, cookie)
+	if code != http.StatusSeeOther {
+		t.Fatalf("新建产品应 303，实际 %d", code)
+	}
+
+	p, err := svc.Store.ProductBySKU(ctx, "GIFT-001")
+	if err != nil || p == nil {
+		t.Fatalf("产品未创建: %v", err)
+	}
+	// 非酒类也能填：品类/单位自由输入
+	if p.Category != "礼盒" || p.Unit != "盒" {
+		t.Errorf("品类与单位应支持自由输入，实际 %q / %q", p.Category, p.Unit)
+	}
+	if p.Brand != "SoulFound" || p.Origin != "加拿大 尼亚加拉" {
+		t.Errorf("品牌与产地未保存: %+v", p)
+	}
+	if p.ABV != 1150 {
+		t.Errorf("酒精度应存成 1150（11.5%%），实际 %d", p.ABV)
+	}
+	if p.ABVText() != "11.5%" {
+		t.Errorf("酒精度文本应为 11.5%%，实际 %q", p.ABVText())
+	}
+	if p.CostPrice != model.MustMoney("268.50") {
+		t.Errorf("参考成本价应为 268.50，实际 %s", p.CostPrice)
+	}
+	if p.BottlesPerCase != 6 || p.VolumeML != 375 || p.Vintage != 2020 {
+		t.Errorf("规格字段未保存: %+v", p)
+	}
+
+	// 规格参数：中英文冒号都认，没有冒号的行整行当值，空行丢掉
+	specs := p.SpecList()
+	if len(specs) != 3 {
+		t.Fatalf("规格参数应解析出 3 条，实际 %d：%+v", len(specs), specs)
+	}
+	if specs[0].Label != "葡萄品种" || specs[0].Value != "维代尔" {
+		t.Errorf("第一条解析错误: %+v", specs[0])
+	}
+	if specs[1].Label != "甜度" || specs[1].Value != "很甜" {
+		t.Errorf("中文冒号解析错误: %+v", specs[1])
+	}
+	if specs[2].Label != "" || specs[2].Value != "375ml 双支装" {
+		t.Errorf("无冒号行应整行作为值: %+v", specs[2])
+	}
+
+	// 没有采购记录时，参考成本价应当被当作成本使用
+	if got := p.CostPriceOrAvg(); got != model.MustMoney("268.50") {
+		t.Errorf("无采购记录时应退回参考成本价，实际 %s", got)
+	}
+
+	// 详情页要把这些都显示出来
+	code, body := get(t, h, "/products/"+strconv.FormatInt(p.ID, 10), cookie)
+	if code != http.StatusOK {
+		t.Fatalf("产品详情应可访问，实际 %d", code)
+	}
+	for _, want := range []string{"品牌", "产地 / 产区", "酒精度", "参考成本价", "规格参数",
+		"葡萄品种", "维代尔", "375ml 双支装", "11.5%"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("详情页应显示 %q", want)
+		}
+	}
+
+	// 编辑时能改回来（字段可空）
+	code, _ = post(t, h, "/products/"+strconv.FormatInt(p.ID, 10)+"/edit", url.Values{
+		"sku": {"GIFT-001"}, "name": {"节日礼盒"}, "category": {"礼盒"}, "unit": {"盒"},
+		"sale_price": {"598"}, "abv": {""}, "is_active": {"1"},
+	}, cookie)
+	if code != http.StatusSeeOther {
+		t.Fatalf("保存应 303，实际 %d", code)
+	}
+	updated, _ := svc.Store.ProductByID(ctx, p.ID)
+	if updated.ABV != 0 || updated.ABVText() != "" {
+		t.Errorf("清空酒精度后应为 0 且不显示，实际 %d / %q", updated.ABV, updated.ABVText())
+	}
+	if updated.Specs != "" {
+		t.Errorf("未提交规格参数时应清空，实际 %q", updated.Specs)
+	}
+
+	// 非法酒精度要被拦下
+	post(t, h, "/products/"+strconv.FormatInt(p.ID, 10)+"/edit", url.Values{
+		"sku": {"GIFT-001"}, "name": {"节日礼盒"}, "sale_price": {"598"},
+		"abv": {"120"}, "is_active": {"1"},
+	}, cookie)
+	if after, _ := svc.Store.ProductByID(ctx, p.ID); after.ABV != 0 {
+		t.Errorf("超出 0-100 的酒精度不应写入，实际 %d", after.ABV)
+	}
+}
+
+// TestPurchasePrefillsCostPrice 采购单的单价应预填成本价而不是售价。
+func TestPurchasePrefillsCostPrice(t *testing.T) {
+	h, svc, cfg := testApp(t)
+	ctx := context.Background()
+	cookie := doLogin(t, h, cfg, "admin", "admin123")
+
+	post(t, h, "/products/new", url.Values{
+		"sku": {"PF-001"}, "name": {"预填测试"}, "unit": {"瓶"},
+		"sale_price": {"398"}, "cost_price": {"168"}, "is_active": {"1"},
+	}, cookie)
+	p, _ := svc.Store.ProductBySKU(ctx, "PF-001")
+	if p == nil {
+		t.Fatal("产品未创建")
+	}
+
+	// 采购单页面拿到的产品选项里，成本应是参考成本价
+	opts, err := svc.Store.ListProducts(ctx, store.ProductFilter{Keyword: "PF-001"})
+	if err != nil || len(opts) == 0 {
+		t.Fatal("查询产品失败")
+	}
+	if got := opts[0].CostPriceOrAvg(); got != model.MustMoney("168") {
+		t.Errorf("参考成本价应为 168，实际 %s", got)
+	}
+	if opts[0].CostPrice == opts[0].SalePrice {
+		t.Error("参考成本价不应等于售价")
+	}
+
+	// 页面里要有成本价的提示文案
+	_, page := get(t, h, "/purchases/new", cookie)
+	if !strings.Contains(page, "成本") {
+		t.Error("采购单页面的产品选项应显示成本")
+	}
+}
+
+// TestPOSWorksWithoutPlanning 收银台不需要提前选产品。
+//
+// 用户反馈：每场市集都要先勾选产品太繁琐。正确用法是现场直接卖，
+// 系统在记账时自动把产品补进本场明细。
+func TestPOSWorksWithoutPlanning(t *testing.T) {
+	h, svc, cfg := testApp(t)
+	ctx := context.Background()
+	cookie := doLogin(t, h, cfg, "admin", "admin123")
+
+	// 建两个产品，但**都不加入市集**
+	for _, s := range [][2]string{{"NP-001", "甲产品"}, {"NP-002", "乙产品"}} {
+		post(t, h, "/products/new", url.Values{
+			"sku": {s[0]}, "name": {s[1]}, "unit": {"瓶"},
+			"sale_price": {"200"}, "is_active": {"1"},
+		}, cookie)
+	}
+	a, _ := svc.Store.ProductBySKU(ctx, "NP-001")
+
+	// 建一场空市集（一个产品都不加）
+	post(t, h, "/markets/new", url.Values{
+		"name": {"不预选测试市集"}, "start_date": {"2025-07-01"}, "end_date": {"2025-07-01"},
+	}, cookie)
+	markets, _ := svc.Store.ListMarkets(ctx, store.MarketFilter{Keyword: "不预选测试"})
+	marketID := markets[0].ID
+	mkt := strconv.FormatInt(marketID, 10)
+
+	// 收银台应能打开，并且列出全部在售产品
+	code, body := get(t, h, "/markets/"+mkt+"/pos", cookie)
+	if code != http.StatusOK {
+		t.Fatalf("空市集的收银台也应能打开，实际 %d", code)
+	}
+	if !strings.Contains(body, "甲产品") || !strings.Contains(body, "乙产品") {
+		t.Fatal("收银台应直接列出全部在售产品，不需要提前上架")
+	}
+	if !strings.Contains(body, "不需要提前选产品") {
+		t.Error("收银台应说明不需要提前选产品")
+	}
+
+	// 直接记一笔销售：应成功，并自动把产品补进本场明细
+	code, body = postHTMX(t, h, "/markets/"+mkt+"/records",
+		url.Values{"product_id": {strconv.FormatInt(a.ID, 10)}, "kind": {"sale"}, "qty": {"2"}}, cookie)
+	if code != http.StatusOK {
+		t.Fatalf("未上架也要能直接记账，实际 %d", code)
+	}
+	if !strings.Contains(body, "¥400.00") {
+		t.Errorf("2 瓶 × 200 应记 ¥400.00")
+	}
+
+	// 产品应当被自动加入本场
+	m, _ := svc.Store.MarketByID(ctx, marketID)
+	if len(m.Items) != 1 || m.Items[0].ProductID != a.ID {
+		t.Fatalf("记账后应自动补进本场明细，实际 %+v", m.Items)
+	}
+	if m.Items[0].UnitPrice != model.MustMoney("200") {
+		t.Errorf("自动上架时应带出产品建议售价，实际 %s", m.Items[0].UnitPrice)
+	}
+
+	// 没填带去数量时不应出现"尚未填写"这类打扰提示
+	if strings.Contains(body, "尚未填写带去数量") {
+		t.Error("不预选是正常用法，不应提示未填带去数量")
+	}
+
+	// 一键沿用上一场：新建第二场，从第一场复制产品
+	post(t, h, "/markets/new", url.Values{
+		"name": {"沿用测试市集"}, "start_date": {"2025-07-08"}, "end_date": {"2025-07-08"},
+	}, cookie)
+	next, _ := svc.Store.ListMarkets(ctx, store.MarketFilter{Keyword: "沿用测试"})
+	nextID := next[0].ID
+	code, _ = postHTMX(t, h, "/markets/"+strconv.FormatInt(nextID, 10)+"/items/copy-last",
+		url.Values{}, cookie)
+	if code != http.StatusOK {
+		t.Fatalf("沿用上一场应 200，实际 %d", code)
+	}
+	copied, _ := svc.Store.MarketByID(ctx, nextID)
+	if len(copied.Items) == 0 {
+		t.Fatal("沿用上一场后应带上产品")
+	}
+	// 再点一次不应产生重复
+	before := len(copied.Items)
+	postHTMX(t, h, "/markets/"+strconv.FormatInt(nextID, 10)+"/items/copy-last", url.Values{}, cookie)
+	again, _ := svc.Store.MarketByID(ctx, nextID)
+	if len(again.Items) != before {
+		t.Errorf("重复沿用不应产生重复产品，%d → %d", before, len(again.Items))
+	}
+
+	// 一键加入全部在售
+	post(t, h, "/markets/new", url.Values{
+		"name": {"批量加入市集"}, "start_date": {"2025-07-15"}, "end_date": {"2025-07-15"},
+	}, cookie)
+	bulk, _ := svc.Store.ListMarkets(ctx, store.MarketFilter{Keyword: "批量加入"})
+	bulkID := bulk[0].ID
+	postHTMX(t, h, "/markets/"+strconv.FormatInt(bulkID, 10)+"/items/add-all", url.Values{}, cookie)
+	full, _ := svc.Store.MarketByID(ctx, bulkID)
+	if len(full.Items) < 2 {
+		t.Errorf("加入全部在售应至少带上 2 个产品，实际 %d", len(full.Items))
+	}
+}

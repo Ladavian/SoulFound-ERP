@@ -32,7 +32,7 @@ func at(list []string, i int) string {
 	return strings.TrimSpace(list[i])
 }
 
-var productUnits = []string{"瓶", "箱", "套", "礼盒"}
+var productUnits = model.DefaultUnits
 
 // ---------------------------------------------------------------- 产品列表
 
@@ -175,11 +175,16 @@ func (s *Server) handleProductSave(w http.ResponseWriter, r *http.Request) {
 		Name:           f.Required("name", "产品名称"),
 		NameEn:         f.Str("name_en"),
 		Category:       f.Str("category"),
-		Vintage:        f.Int("vintage", "年份"),
+		Brand:          f.Str("brand"),
+		Origin:         f.Str("origin"),
+		Vintage:        f.Int("vintage", "年份 / 批次"),
 		VolumeML:       f.Int("volume_ml", "容量"),
+		ABV:            parseABV(f.Str("abv")),
 		Unit:           f.Str("unit"),
-		BottlesPerCase: f.Int("bottles_per_case", "每箱瓶数"),
+		BottlesPerCase: f.Int("bottles_per_case", "每箱数量"),
 		SalePrice:      f.Money("sale_price", "建议售价"),
+		CostPrice:      f.Money("cost_price", "参考成本价"),
+		Specs:          normalizeSpecs(f.Raw("specs")),
 		LowStockQty:    f.Qty("low_stock_qty", "库存预警线"),
 		SupplierID:     f.OptionalID("supplier_id"),
 		Barcode:        f.Str("barcode"),
@@ -188,7 +193,7 @@ func (s *Server) handleProductSave(w http.ResponseWriter, r *http.Request) {
 		IsActive:       f.Bool("is_active"),
 	}
 	if product.Category == "" {
-		product.Category = "冰酒"
+		product.Category = model.DefaultCategory
 	}
 	if product.Unit == "" {
 		product.Unit = "瓶"
@@ -197,10 +202,13 @@ func (s *Server) handleProductSave(w http.ResponseWriter, r *http.Request) {
 		product.BottlesPerCase = 1
 	}
 	if product.Vintage < 0 || product.Vintage > 2100 {
-		f.AddError("年份不正确")
+		f.AddError("年份 / 批次不正确")
 	}
-	if product.VolumeML < 0 || product.VolumeML > 10000 {
+	if product.VolumeML < 0 || product.VolumeML > 100000 {
 		f.AddError("容量不正确")
+	}
+	if product.ABV < 0 || product.ABV > 10000 {
+		f.AddError("酒精度应在 0-100 之间")
 	}
 	if err := f.Err(); err != nil {
 		s.fail(w, r, fallback, err)
@@ -404,4 +412,31 @@ func (s *Server) handleProductImageDelete(w http.ResponseWriter, r *http.Request
 	}
 	s.setFlash(w, "success", "图片已删除")
 	s.redirect(w, r, "/products/"+itoa(productID)+"/edit")
+}
+
+// parseABV 把「11.5」「11.5%」这类输入转成百分之一为单位的整数。
+func parseABV(raw string) int {
+	v := strings.TrimSpace(raw)
+	v = strings.TrimSuffix(v, "%")
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return 0
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil || f < 0 {
+		return -1 // 交给上层报错
+	}
+	return int(f*100 + 0.5)
+}
+
+// normalizeSpecs 规整规格参数文本：去掉空行、统一换行。
+func normalizeSpecs(raw string) string {
+	raw = strings.ReplaceAll(raw, "\r\n", "\n")
+	lines := make([]string, 0, 8)
+	for _, line := range strings.Split(raw, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return strings.Join(lines, "\n")
 }

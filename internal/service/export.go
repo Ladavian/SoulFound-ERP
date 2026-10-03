@@ -401,8 +401,10 @@ func (s *Service) ExportInventory(ctx context.Context, includeMovements bool) ([
 	}
 	cols := []Column{
 		{"产品编码", 14, false}, {"产品名称", 28, false}, {"英文名", 22, false},
-		{"品类", 10, false}, {"年份", 7, false}, {"规格", 12, false}, {"供应商", 20, false},
-		{"库存数量", 11, false}, {"平均成本", 12, true}, {"库存成本", 13, true},
+		{"品牌", 14, false}, {"品类", 10, false}, {"产地", 16, false},
+		{"年份", 7, false}, {"容量ml", 8, false}, {"酒精度%", 9, false},
+		{"规格参数", 30, false}, {"条形码", 16, false}, {"供应商", 20, false},
+		{"库存数量", 11, false}, {"参考成本", 11, true}, {"平均成本", 12, true}, {"库存成本", 13, true},
 		{"建议售价", 12, true}, {"毛利率%", 10, false}, {"库存预警", 10, false}, {"状态", 8, false},
 	}
 	var (
@@ -423,14 +425,22 @@ func (s *Service) ExportInventory(ctx context.Context, includeMovements bool) ([
 		if p.IsLowStock() && p.IsActive {
 			warn = "低于预警线"
 		}
+		var volume any = ""
+		if p.VolumeML > 0 {
+			volume = p.VolumeML
+		}
 		body = append(body, []any{
-			p.SKU, p.Name, p.NameEn, p.Category, p.Vintage, p.Spec(), p.SupplierName,
-			p.StockQty, p.AvgCost, p.StockValue, p.SalePrice, round2(margin), warn, status,
+			p.SKU, p.Name, p.NameEn, p.Brand, p.Category, p.Origin,
+			p.Vintage, volume, p.ABVText(),
+			specsOneLine(p), p.Barcode, p.SupplierName,
+			p.StockQty, p.CostPrice, p.AvgCost, p.StockValue,
+			p.SalePrice, round2(margin), warn, status,
 		})
 		totalQty += p.StockQty
 		totalVal += p.StockValue
 	}
-	body = append(body, []any{"合计", "", "", "", "", "", "", totalQty, "", totalVal, "", "", "", ""})
+	body = append(body, []any{"合计", "", "", "", "", "", "", "", "", "", "", "",
+		totalQty, "", "", totalVal, "", "", "", ""})
 
 	tables := []Table{{Name: "库存总览", Columns: cols, Rows: body}}
 	if includeMovements {
@@ -496,4 +506,21 @@ func copySign(magnitude, sign float64) float64 {
 		return -magnitude
 	}
 	return magnitude
+}
+
+// specsOneLine 把多行规格参数合成一行，便于放进 Excel 单元格。
+func specsOneLine(p model.Product) string {
+	items := p.SpecList()
+	if len(items) == 0 {
+		return p.Spec() // 没填规格参数时退回"容量 · 装箱"这种摘要
+	}
+	parts := make([]string, 0, len(items))
+	for _, it := range items {
+		if it.Label == "" {
+			parts = append(parts, it.Value)
+			continue
+		}
+		parts = append(parts, it.Label+": "+it.Value)
+	}
+	return strings.Join(parts, "；")
 }

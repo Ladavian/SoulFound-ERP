@@ -364,6 +364,8 @@ func (s *Server) routes() {
 	m.Handle("POST /markets/{id}/edit", s.guard(PermMarketManage, s.handleMarketSave))
 	m.Handle("POST /markets/{id}/status", s.guard(PermMarketManage, s.handleMarketStatus))
 	m.Handle("POST /markets/{id}/items", s.guard(PermMarketManage, s.handleMarketItemAdd))
+	m.Handle("POST /markets/{id}/items/copy-last", s.guard(PermMarketManage, s.handleMarketItemsCopyLast))
+	m.Handle("POST /markets/{id}/items/add-all", s.guard(PermMarketManage, s.handleMarketItemsAddAll))
 	m.Handle("POST /markets/{id}/items/{itemID}", s.guard(PermMarketManage, s.handleMarketItemUpdate))
 	m.Handle("POST /markets/{id}/items/{itemID}/delete", s.guard(PermMarketManage, s.handleMarketItemDelete))
 	m.Handle("POST /markets/{id}/expenses", s.guard(PermMarketManage, s.handleMarketExpenses))

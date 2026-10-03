@@ -10,8 +10,9 @@ import (
 	"icewine-erp/internal/model"
 )
 
-const productCols = `p.id, p.sku, p.name, p.name_en, p.category, p.vintage, p.volume_ml,
-	p.unit, p.bottles_per_case, p.sale_price, p.low_stock_qty, p.supplier_id,
+const productCols = `p.id, p.sku, p.name, p.name_en, p.category, p.brand, p.origin,
+	p.vintage, p.volume_ml, p.abv, p.unit, p.bottles_per_case, p.sale_price,
+	p.cost_price, p.specs, p.low_stock_qty, p.supplier_id,
 	COALESCE(s.name, ''), p.image_url, p.notes, p.barcode, p.is_active,
 	p.stock_qty, p.avg_cost, p.stock_value, p.created_at, p.updated_at`
 
@@ -23,8 +24,9 @@ func scanProduct(row interface{ Scan(...any) error }) (*model.Product, error) {
 		supplierID sql.NullInt64
 		isActive   int64
 	)
-	err := row.Scan(&p.ID, &p.SKU, &p.Name, &p.NameEn, &p.Category, &p.Vintage, &p.VolumeML,
-		&p.Unit, &p.BottlesPerCase, &p.SalePrice, &p.LowStockQty, &supplierID,
+	err := row.Scan(&p.ID, &p.SKU, &p.Name, &p.NameEn, &p.Category, &p.Brand, &p.Origin,
+		&p.Vintage, &p.VolumeML, &p.ABV, &p.Unit, &p.BottlesPerCase, &p.SalePrice,
+		&p.CostPrice, &p.Specs, &p.LowStockQty, &supplierID,
 		&p.SupplierName, &p.ImageURL, &p.Notes, &p.Barcode, &isActive,
 		&p.StockQty, &p.AvgCost, &p.StockValue, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
@@ -55,9 +57,10 @@ func (s *Store) ListProducts(ctx context.Context, f ProductFilter) ([]model.Prod
 		where = append(where, "p.is_active = 1")
 	}
 	if kw := strings.TrimSpace(f.Keyword); kw != "" {
-		where = append(where, "(p.name LIKE ? OR p.sku LIKE ? OR p.name_en LIKE ? OR p.notes LIKE ? OR p.barcode LIKE ?)")
+		where = append(where, "(p.name LIKE ? OR p.sku LIKE ? OR p.name_en LIKE ? OR p.notes LIKE ?"+
+			" OR p.barcode LIKE ? OR p.brand LIKE ? OR p.origin LIKE ? OR p.specs LIKE ?)")
 		like := "%" + kw + "%"
-		args = append(args, like, like, like, like, like)
+		args = append(args, like, like, like, like, like, like, like, like)
 	}
 	if f.Category != "" {
 		where = append(where, "p.category = ?")
@@ -190,13 +193,14 @@ func (s *Store) ListProductOptions(ctx context.Context) ([]model.Product, error)
 func (s *Store) CreateProduct(ctx context.Context, p *model.Product) (int64, error) {
 	now := Now()
 	res, err := s.db.ExecContext(ctx,
-		`INSERT INTO products(sku, name, name_en, category, vintage, volume_ml, unit,
-		        bottles_per_case, sale_price, low_stock_qty, supplier_id, image_url,
-		        notes, barcode, is_active, stock_qty, avg_cost, stock_value, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?)`,
-		p.SKU, p.Name, p.NameEn, p.Category, p.Vintage, p.VolumeML, p.Unit,
-		p.BottlesPerCase, int64(p.SalePrice), int64(p.LowStockQty), p.SupplierID, p.ImageURL,
-		p.Notes, p.Barcode, b2i(p.IsActive), now, now)
+		`INSERT INTO products(sku, name, name_en, category, brand, origin, vintage, volume_ml, abv,
+		        unit, bottles_per_case, sale_price, cost_price, specs, low_stock_qty,
+		        supplier_id, image_url, notes, barcode, is_active,
+		        stock_qty, avg_cost, stock_value, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?)`,
+		p.SKU, p.Name, p.NameEn, p.Category, p.Brand, p.Origin, p.Vintage, p.VolumeML, p.ABV,
+		p.Unit, p.BottlesPerCase, int64(p.SalePrice), int64(p.CostPrice), p.Specs, int64(p.LowStockQty),
+		p.SupplierID, p.ImageURL, p.Notes, p.Barcode, b2i(p.IsActive), now, now)
 	if err != nil {
 		return 0, err
 	}
@@ -206,14 +210,16 @@ func (s *Store) CreateProduct(ctx context.Context, p *model.Product) (int64, err
 // UpdateProduct 更新产品档案（不触碰库存与成本字段，那些由库存服务维护）。
 func (s *Store) UpdateProduct(ctx context.Context, p *model.Product) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE products SET sku = ?, name = ?, name_en = ?, category = ?, vintage = ?,
-		        volume_ml = ?, unit = ?, bottles_per_case = ?, sale_price = ?,
-		        low_stock_qty = ?, supplier_id = ?, image_url = ?, notes = ?, barcode = ?,
+		`UPDATE products SET sku = ?, name = ?, name_en = ?, category = ?, brand = ?, origin = ?,
+		        vintage = ?, volume_ml = ?, abv = ?, unit = ?, bottles_per_case = ?,
+		        sale_price = ?, cost_price = ?, specs = ?, low_stock_qty = ?,
+		        supplier_id = ?, image_url = ?, notes = ?, barcode = ?,
 		        is_active = ?, updated_at = ?
 		 WHERE id = ?`,
-		p.SKU, p.Name, p.NameEn, p.Category, p.Vintage, p.VolumeML, p.Unit,
-		p.BottlesPerCase, int64(p.SalePrice), int64(p.LowStockQty), p.SupplierID,
-		p.ImageURL, p.Notes, p.Barcode, b2i(p.IsActive), Now(), p.ID)
+		p.SKU, p.Name, p.NameEn, p.Category, p.Brand, p.Origin,
+		p.Vintage, p.VolumeML, p.ABV, p.Unit, p.BottlesPerCase,
+		int64(p.SalePrice), int64(p.CostPrice), p.Specs, int64(p.LowStockQty),
+		p.SupplierID, p.ImageURL, p.Notes, p.Barcode, b2i(p.IsActive), Now(), p.ID)
 	return err
 }
 

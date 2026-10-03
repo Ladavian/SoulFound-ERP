@@ -107,6 +107,18 @@ ALTER TABLE settings ADD COLUMN backup_idle_days INTEGER NOT NULL DEFAULT 7;
 CREATE INDEX IF NOT EXISTS idx_market_records_occurred ON market_records(occurred_at);
 `
 
+// migrationV5 产品档案补全。
+//
+// 系统不只用于冰酒，因此把"酒类专有"的信息做成可选字段，
+// 另外补一个通用的「规格参数」多行文本，任何品类都能填自己的规格。
+const migrationV5 = `
+ALTER TABLE products ADD COLUMN cost_price INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE products ADD COLUMN abv INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE products ADD COLUMN brand TEXT NOT NULL DEFAULT '';
+ALTER TABLE products ADD COLUMN origin TEXT NOT NULL DEFAULT '';
+ALTER TABLE products ADD COLUMN specs TEXT NOT NULL DEFAULT '';
+`
+
 // migrations 按顺序执行的迁移脚本。新增结构或数据变更时在末尾追加一段 SQL，
 // 已执行过的版本不会重复执行（版本号记录在 schema_meta 表）。
 var migrations = []string{
@@ -114,4 +126,5 @@ var migrations = []string{
 	migrationV2,
 	migrationV3,
 	migrationV4,
+	migrationV5,
 }

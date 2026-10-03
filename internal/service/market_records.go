@@ -346,10 +346,9 @@ func OutQtyOf(records []model.MarketRecord, productID int64) model.Qty {
 // StockWarning 判断某产品是否已经超出带去数量，用于收银台提示。
 func StockWarning(item model.MarketItem, records []model.MarketRecord) string {
 	out := OutQtyOf(records, item.ProductID)
+	// 没填带去数量是正常用法（现场直接卖），不提示；
+	// 只有填了计划数量又超出时才提醒。
 	if item.CarriedQty <= 0 {
-		if out > 0 {
-			return fmt.Sprintf("尚未填写带去数量，已记 %s", out.String())
-		}
 		return ""
 	}
 	if out > item.CarriedQty {

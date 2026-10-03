@@ -43,7 +43,7 @@ func (s *Server) productOptions(r *http.Request) ([]ProductOption, error) {
 			SKU:   p.SKU,
 			Image: p.ImageURL,
 			Price: p.SalePrice.Float(),
-			Cost:  p.AvgCost.Float(),
+			Cost:  p.CostPriceOrAvg().Float(),
 			Stock: p.StockQty.Float(),
 		})
 	}

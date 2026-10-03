@@ -122,8 +122,10 @@
                 {{if not $p.IsActive}}<span class="badge badge--muted">已停用</span>{{end}}
                 <div class="tiny muted">
                   <span class="mono">{{$p.SKU}}</span>
+                  {{if $p.Brand}} · {{$p.Brand}}{{end}}
                   {{if $p.Vintage}} · {{$p.Vintage}} 年{{end}}
                   {{if $p.Spec}} · {{$p.Spec}}{{end}}
+                  {{if $p.ABVText}} · {{$p.ABVText}}{{end}}
                 </div>
               </div>
             </div>

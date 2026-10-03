@@ -12,7 +12,8 @@ window.purchaseLines = function () {
     onProduct: function (row) {
       if (row.productId) {
         var p = this.products.find(function (x) { return String(x.id) === String(row.productId); });
-        if (p) { if (!row.unitPrice) { row.unitPrice = p.price; } }
+        // 采购单价预填「参考成本价」，没有成本时才退回售价
+        if (p) { if (!row.unitPrice) { row.unitPrice = p.cost || p.price; } }
       }
     },
     lineAmount: function (row) { return (parseFloat(row.qty) || 0) * (parseFloat(row.unitPrice) || 0); },
@@ -119,7 +120,7 @@ window.purchaseLines = function () {
                             @change="row.productId = $event.target.value; onProduct(row)">
                       <option value="0">— 选择产品 —</option>
                       <template x-for="p in products" :key="p.id">
-                        <option :value="p.id" :selected="String(p.id) === String(row.productId)" x-text="p.label + '（售价 ' + p.price + ' / 库存 ' + p.stock + '）'"></option>
+                        <option :value="p.id" :selected="String(p.id) === String(row.productId)" x-text="p.label + '（成本 ' + p.cost + ' / 库存 ' + p.stock + '）'"></option>
                       </template>
                     </select>
                   </td>

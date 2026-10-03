@@ -32,7 +32,7 @@
           <label class="field__label" for="sku">产品编码<span class="req">*</span></label>
           <input class="input mono" id="sku" name="sku" type="text" value="{{$p.SKU}}" required
                  placeholder="例如：ICE-2020-375"{{if .IsNew}} autofocus{{end}}>
-          <div class="field__hint">建议用「品牌-年份-容量」，编码不能重复。</div>
+          <div class="field__hint">内部唯一编号，建议「品牌-年份-容量」，不能重复。</div>
         </div>
         <div class="field">
           <label class="field__label" for="name">产品名称<span class="req">*</span></label>
@@ -40,83 +40,36 @@
                  placeholder="例如：威代尔冰酒">
         </div>
         <div class="field">
-          <label class="field__label" for="name_en">英文名</label>
+          <label class="field__label" for="name_en">英文名 / 别名</label>
           <input class="input" id="name_en" name="name_en" type="text" value="{{$p.NameEn}}"
                  placeholder="例如：Vidal Icewine">
         </div>
         <div class="field">
+          <label class="field__label" for="brand">品牌</label>
+          <input class="input" id="brand" name="brand" type="text" value="{{$p.Brand}}"
+                 placeholder="例如：SoulFound / 酒庄名">
+        </div>
+        <div class="field">
           <label class="field__label" for="category">品类</label>
-          <select class="select" id="category" name="category">
-            {{$curCat := $p.Category}}
-            {{range .Categories}}<option value="{{.}}"{{if eq . $curCat}} selected{{end}}>{{.}}</option>{{end}}
-          </select>
-        </div>
-        <div class="field">
-          <label class="field__label" for="vintage">年份</label>
-          <input class="input input--num" id="vintage" name="vintage" type="number" min="0" max="2100" step="1"
-                 value="{{if $p.Vintage}}{{$p.Vintage}}{{end}}" placeholder="例如：2020">
-        </div>
-        <div class="field">
-          <label class="field__label" for="volume_ml">容量（ml）</label>
-          <input class="input input--num" id="volume_ml" name="volume_ml" type="number" min="0" max="10000" step="1"
-                 value="{{if $p.VolumeML}}{{$p.VolumeML}}{{end}}" placeholder="例如：375">
-          <div class="field__hint">常见规格：200ml / 375ml / 750ml。</div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card__head">
-      <div class="card__title">规格、价格与库存<span class="card__sub">售价与预警线用于市集现场录入时的默认值</span></div>
-    </div>
-    <div class="card__body">
-      <div class="form-grid">
-        <div class="field">
-          <label class="field__label" for="unit">计量单位</label>
-          <select class="select" id="unit" name="unit">
-            {{$curUnit := $p.Unit}}
-            {{range .Units}}<option value="{{.}}"{{if eq . $curUnit}} selected{{end}}>{{.}}</option>{{end}}
-          </select>
-        </div>
-        <div class="field">
-          <label class="field__label" for="bottles_per_case">每箱瓶数</label>
-          <input class="input input--num" id="bottles_per_case" name="bottles_per_case" type="number" min="1" step="1"
-                 value="{{$p.BottlesPerCase}}" placeholder="例如：6">
-          <div class="field__hint">用于按箱折算库存，单瓶填 1。</div>
-        </div>
-        <div class="field">
-          <label class="field__label" for="sale_price">建议售价</label>
-          <input class="input input--num" id="sale_price" name="sale_price" type="text" inputmode="decimal"
-                 value="{{moneyInput2 $p.SalePrice}}" placeholder="0.00">
-          <div class="field__hint">市集录入销售时的默认单价，现场可以临时改。</div>
-        </div>
-        <div class="field">
-          <label class="field__label" for="low_stock_qty">库存预警线</label>
-          <input class="input input--num" id="low_stock_qty" name="low_stock_qty" type="text" inputmode="decimal"
-                 value="{{qtyInput $p.LowStockQty}}" placeholder="6">
-          <div class="field__hint">库存低于或等于这个数量时，列表会提示补货。</div>
-        </div>
-        <div class="field">
-          <label class="field__label" for="supplier_id">供应商</label>
-          {{$curSupID := deref $p.SupplierID}}
-          <select class="select" id="supplier_id" name="supplier_id">
-            <option value="">— 无 —</option>
-            {{range .Suppliers}}<option value="{{.ID}}"{{if eq .ID $curSupID}} selected{{end}}>{{.Name}}</option>{{end}}
-          </select>
+          <input class="input" id="category" name="category" type="text" list="category-list"
+                 value="{{$p.Category}}" placeholder="例如：冰酒 / 葡萄酒 / 礼盒">
+          <datalist id="category-list">
+            {{range .Categories}}<option value="{{.}}"></option>{{end}}
+          </datalist>
+          <div class="field__hint">可以直接输入新的品类，之后会出现在筛选里。</div>
         </div>
         <div class="field">
           <label class="field__label" for="barcode">条形码</label>
           <div class="input-group">
             <input class="input mono" id="barcode" name="barcode" type="text" value="{{$p.Barcode}}"
-                   placeholder="扫一次瓶身条码即可自动填入" autocomplete="off">
+                   placeholder="扫一次商品条码即可自动填入" autocomplete="off">
             <button class="btn" type="button" data-scan-fill="#barcode">
               {{template "icon" "scan"}}<span>扫码录入</span>
             </button>
           </div>
           <div class="field__hint">
-            录一次以后，市集收银台扫这瓶酒就能自动出库。没有原厂条码的产品，可以到
-            <a href="/products/labels">条码标签</a>页用 SKU 打印一张贴上。
+            录一次以后，市集收银台扫这个条码就能直接出库。没有原厂条码的产品，可以到
+            <a href="/products/labels">条码标签</a>页用产品编码打印一张贴上。
           </div>
         </div>
         <div class="field span-2">
@@ -140,7 +93,7 @@
                        accept="image/jpeg,image/png,image/webp,image/gif" required>
                 <button class="btn btn--primary" type="submit">{{template "icon" "upload"}}<span>上传图片</span></button>
               </form>
-              <div class="field__hint">手机拍的原图直接上传即可，系统会压到长边 1280，市集现场加载更快。</div>
+              <div class="field__hint">手机拍的原图直接上传即可，系统会压到长边 1280，现场加载更快。</div>
               {{if $p.ImageURL}}
               <form method="post" action="/products/{{$p.ID}}/image/delete" class="inline"
                     onsubmit="return confirm('确定删除这张图片？')">
@@ -151,12 +104,108 @@
             </div>
           </div>
         </div>
-
         <div class="field span-2">
           <label class="field__label" for="image_url">或填写图片地址</label>
           <input class="input" id="image_url" name="image_url" type="text" value="{{$p.ImageURL}}"
                  placeholder="https://...">
           <div class="field__hint">也可以直接贴外部图片链接；上传成功后这里会自动填上地址。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card__head">
+      <div class="card__title">规格<span class="card__sub">酒类与非酒类都适用，用不到的留空即可</span></div>
+    </div>
+    <div class="card__body">
+      <div class="form-grid">
+        <div class="field">
+          <label class="field__label" for="unit">计量单位</label>
+          <input class="input" id="unit" name="unit" type="text" list="unit-list" value="{{$p.Unit}}"
+                 placeholder="瓶 / 盒 / 袋">
+          <datalist id="unit-list">
+            {{range .Units}}<option value="{{.}}"></option>{{end}}
+          </datalist>
+          <div class="field__hint">进货与销售都按这个单位记账。</div>
+        </div>
+        <div class="field">
+          <label class="field__label" for="bottles_per_case">每箱数量</label>
+          <input class="input input--num" id="bottles_per_case" name="bottles_per_case" type="number" min="1" step="1"
+                 value="{{$p.BottlesPerCase}}" placeholder="例如：12">
+          <div class="field__hint">一箱等于几个计量单位，散装填 1。</div>
+        </div>
+        <div class="field">
+          <label class="field__label" for="vintage">年份 / 批次</label>
+          <input class="input input--num" id="vintage" name="vintage" type="number" min="0" max="2100" step="1"
+                 value="{{if $p.Vintage}}{{$p.Vintage}}{{end}}" placeholder="例如：2020">
+          <div class="field__hint">非年份产品或其它品类可以留空。</div>
+        </div>
+        <div class="field">
+          <label class="field__label" for="volume_ml">容量（ml）</label>
+          <input class="input input--num" id="volume_ml" name="volume_ml" type="number" min="0" max="100000" step="1"
+                 value="{{if $p.VolumeML}}{{$p.VolumeML}}{{end}}" placeholder="例如：375">
+          <div class="field__hint">常见：200 / 375 / 750。</div>
+        </div>
+        <div class="field">
+          <label class="field__label" for="abv">酒精度（%）</label>
+          <input class="input input--num" id="abv" name="abv" type="text" inputmode="decimal"
+                 value="{{$p.ABVText}}" placeholder="例如：11.5">
+          <div class="field__hint">填数字即可，可以带 % 号；非酒类留空。</div>
+        </div>
+        <div class="field">
+          <label class="field__label" for="origin">产地 / 产区</label>
+          <input class="input" id="origin" name="origin" type="text" value="{{$p.Origin}}"
+                 placeholder="例如：加拿大 尼亚加拉">
+        </div>
+        <div class="field span-2">
+          <label class="field__label" for="specs">规格参数</label>
+          <textarea class="textarea" id="specs" name="specs" rows="5"
+                    placeholder="每行一条，用冒号分隔名称与内容，例如：&#10;葡萄品种: 维代尔&#10;甜度: 很甜&#10;等级: VQA&#10;包装: 单支礼盒">{{$p.Specs}}</textarea>
+          <div class="field__hint">
+            这里可以放任何品类的规格：酒类的葡萄品种、甜度、等级，其它产品的成分、尺寸、颜色、保质期等。
+            详情页与市集收银台会按「名称：内容」列出来。
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card__head">
+      <div class="card__title">价格与库存<span class="card__sub">售价与预警线用于市集现场录入时的默认值</span></div>
+    </div>
+    <div class="card__body">
+      <div class="form-grid">
+        <div class="field">
+          <label class="field__label" for="sale_price">建议售价</label>
+          <input class="input input--num" id="sale_price" name="sale_price" type="text" inputmode="decimal"
+                 value="{{moneyInput2 $p.SalePrice}}" placeholder="0.00">
+          <div class="field__hint">市集录入销售时的默认单价，现场可以临时改。</div>
+        </div>
+        <div class="field">
+          <label class="field__label" for="cost_price">参考成本价</label>
+          <input class="input input--num" id="cost_price" name="cost_price" type="text" inputmode="decimal"
+                 value="{{moneyInput2 $p.CostPrice}}" placeholder="0.00">
+          <div class="field__hint">
+            手动维护的成本参考值，新建采购单时会预填。
+            <strong>利润计算用的是系统按入库自动算出的移动加权平均成本</strong>
+            {{if not .IsNew}}{{if $p.AvgCost}}（当前平均成本 {{money4 $p.AvgCost}}）{{end}}{{end}}，不是这个数。
+          </div>
+        </div>
+        <div class="field">
+          <label class="field__label" for="low_stock_qty">库存预警线</label>
+          <input class="input input--num" id="low_stock_qty" name="low_stock_qty" type="text" inputmode="decimal"
+                 value="{{qtyInput $p.LowStockQty}}" placeholder="6">
+          <div class="field__hint">库存低于或等于这个数量时，列表会提示补货。</div>
+        </div>
+        <div class="field">
+          <label class="field__label" for="supplier_id">供应商</label>
+          {{$curSupID := deref $p.SupplierID}}
+          <select class="select" id="supplier_id" name="supplier_id">
+            <option value="">— 无 —</option>
+            {{range .Suppliers}}<option value="{{.ID}}"{{if eq .ID $curSupID}} selected{{end}}>{{.Name}}</option>{{end}}
+          </select>
         </div>
       </div>
     </div>

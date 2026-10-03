@@ -203,14 +203,29 @@
         </table>
       </div>
       {{else}}
-      {{template "empty" (dict "Icon" "market" "Title" "还没有添加产品" "Hint" "从下面选择本次市集要带的产品，添加后到收银台逐笔记账。")}}
+      {{template "empty" (dict "Icon" "market" "Title" "本场还没有计划产品" "Hint" "不添加也能直接去收银台卖：扫码或点按任何在售产品都会自动记进本场。这里添加只是为了提前定好「带多少、卖多少钱」。")}}
       {{end}}
 
       {{if and .CanManage (not $m.IsSettled)}}
       <div class="card__foot">
+        <div class="plan-actions">
+          {{/* 市集往往卖的还是那几款，提供一键沿用与批量加入 */}}
+          <button class="btn" type="button"
+                  hx-post="/markets/{{$m.ID}}/items/copy-last"
+                  hx-target="#market-panel" hx-swap="outerHTML"
+                  hx-confirm="把最近一场市集的产品清单复制到本场（只复制产品与计划数量，不含销售记录）？">
+            {{template "icon" "layers"}}<span>沿用上一场</span>
+          </button>
+          <button class="btn" type="button"
+                  hx-post="/markets/{{$m.ID}}/items/add-all"
+                  hx-target="#market-panel" hx-swap="outerHTML"
+                  hx-confirm="把全部在售产品加入本场？">
+            {{template "icon" "plus"}}<span>加入全部在售</span>
+          </button>
+        </div>
         <form hx-post="/markets/{{$m.ID}}/items" hx-target="#market-panel" hx-swap="outerHTML" class="entry-actions">
           <div class="field" style="min-width:240px;flex:1">
-            <label class="field__label" for="add-product">添加产品到本场市集</label>
+            <label class="field__label" for="add-product">或单独添加一个产品</label>
             <select class="select" id="add-product" name="product_id">
               <option value="">— 选择产品 —</option>
               {{range .AvailableProducts}}
@@ -220,6 +235,10 @@
           </div>
           <button class="btn btn--primary" type="submit">{{template "icon" "plus"}}<span>添加</span></button>
         </form>
+        <div class="tiny muted" style="margin-top:8px">
+          提前把产品加进来只是为了定好「带多少、卖多少钱」，方便统计与库存预警；
+          <strong>不加也能直接去收银台卖</strong>，现场扫码或点按任何在售产品都会自动记进本场。
+        </div>
       </div>
       {{end}}
     </div>

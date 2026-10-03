@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"icewine-erp/internal/model"
@@ -328,20 +329,35 @@ func (s *Service) seedDemo(ctx context.Context, admin *model.User) error {
 	type productSeed struct {
 		sku, name, nameEn string
 		vintage, volume   int
-		price, lowStock   string
+		abv               string
+		price, cost       string
+		lowStock          string
+		brand, origin     string
+		specs             string
 	}
 	seeds := []productSeed{
-		{"ICE-VID-375", "威代尔冰酒", "Vidal Icewine", 2019, 375, "398", "6"},
-		{"ICE-RIE-375", "雷司令冰酒", "Riesling Icewine", 2020, 375, "458", "6"},
-		{"ICE-CAB-200", "品丽珠冰酒", "Cabernet Franc Icewine", 2018, 200, "328", "6"},
-		{"ICE-VID-200", "威代尔冰酒 200ml", "Vidal Icewine Half", 2021, 200, "268", "12"},
+		{"ICE-VID-375", "威代尔冰酒", "Vidal Icewine", 2019, 375, "11.5", "398", "168", "6",
+			"SoulFound", "加拿大 尼亚加拉",
+			"葡萄品种: 维代尔\n甜度: 很甜\n等级: VQA\n适饮温度: 6-8℃\n包装: 单支装"},
+		{"ICE-RIE-375", "雷司令冰酒", "Riesling Icewine", 2020, 375, "10.5", "458", "198", "6",
+			"SoulFound", "加拿大 尼亚加拉",
+			"葡萄品种: 雷司令\n甜度: 很甜\n等级: VQA\n适饮温度: 6-8℃\n包装: 单支装"},
+		{"ICE-CAB-200", "品丽珠冰酒", "Cabernet Franc Icewine", 2018, 200, "11.0", "328", "128", "6",
+			"SoulFound", "加拿大 尼亚加拉",
+			"葡萄品种: 品丽珠\n甜度: 甜\n等级: VQA\n包装: 单支装"},
+		{"ICE-VID-200", "威代尔冰酒 200ml", "Vidal Icewine Half", 2021, 200, "11.5", "268", "108", "12",
+			"SoulFound", "加拿大 尼亚加拉",
+			"葡萄品种: 维代尔\n甜度: 很甜\n等级: VQA\n包装: 半瓶装"},
 	}
 	productIDs := make([]int64, 0, len(seeds))
 	for _, sd := range seeds {
 		id, err := s.Store.CreateProduct(ctx, &model.Product{
 			SKU: sd.sku, Name: sd.name, NameEn: sd.nameEn, Category: "冰酒",
-			Vintage: sd.vintage, VolumeML: sd.volume, Unit: "瓶", BottlesPerCase: 6,
-			SalePrice: model.MustMoney(sd.price), LowStockQty: model.MustQty(sd.lowStock),
+			Brand: sd.brand, Origin: sd.origin,
+			Vintage: sd.vintage, VolumeML: sd.volume, ABV: parseABVSeed(sd.abv),
+			Unit: "瓶", BottlesPerCase: 6,
+			SalePrice: model.MustMoney(sd.price), CostPrice: model.MustMoney(sd.cost),
+			Specs: sd.specs, LowStockQty: model.MustQty(sd.lowStock),
 			SupplierID: &supplier1, IsActive: true,
 			Notes: "尼亚加拉半岛 VQA 认证",
 		})
@@ -552,4 +568,13 @@ func (s *Service) seedDemo(ctx context.Context, admin *model.User) error {
 		return err
 	}
 	return nil
+}
+
+// parseABVSeed 演示数据里的酒精度（"11.5" → 1150）。
+func parseABVSeed(raw string) int {
+	f, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	if err != nil {
+		return 0
+	}
+	return int(f*100 + 0.5)
 }

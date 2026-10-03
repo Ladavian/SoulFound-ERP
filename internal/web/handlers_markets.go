@@ -410,3 +410,27 @@ func (s *Server) handleMarketDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	s.ok(w, r, "/markets", "市集已删除")
 }
+
+// handleMarketItemsCopyLast 一键沿用上一场市集的产品清单。
+func (s *Server) handleMarketItemsCopyLast(w http.ResponseWriter, r *http.Request) {
+	marketID := pathID(r, "id")
+	n, err := s.svc.CopyLastMarketItems(r.Context(), marketID, userFrom(r))
+	if err != nil {
+		s.failPartial(w, r, "markets/detail", "market_panel", nil, err)
+		return
+	}
+	s.setFlash(w, "success", fmt.Sprintf("已沿用上一场的 %d 个产品，记得核对带去数量", n))
+	s.renderMarketPanel(w, r, marketID)
+}
+
+// handleMarketItemsAddAll 把全部在售产品加入本场。
+func (s *Server) handleMarketItemsAddAll(w http.ResponseWriter, r *http.Request) {
+	marketID := pathID(r, "id")
+	n, err := s.svc.AddAllActiveProducts(r.Context(), marketID, userFrom(r))
+	if err != nil {
+		s.failPartial(w, r, "markets/detail", "market_panel", nil, err)
+		return
+	}
+	s.setFlash(w, "success", fmt.Sprintf("已加入 %d 个在售产品", n))
+	s.renderMarketPanel(w, r, marketID)
+}

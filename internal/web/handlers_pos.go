@@ -3,6 +3,7 @@ package web
 import (
 	"encoding/json"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -15,14 +16,19 @@ import (
 func oneBottle() model.Qty { return model.MustQty("1") }
 
 // posTile 收银台上的一个产品按钮块。
+//
+// Item 可能为空：市集现场不必提前"上架"，任何在售产品都能直接记账，
+// 记完会自动补进本场明细。Item 非空表示这场提前计划过（填了带去数量或售价）。
 type posTile struct {
 	Product  *model.Product
 	Item     *model.MarketItem
 	Out      model.Qty // 已出库（销售+试饮+赠送+损耗）
-	Sold     model.Qty
+	Sold     model.Qty // 已售出
 	Left     model.Qty // 带去数量 - 已出库
 	Warning  string
 	OnMarket bool
+	// Search 供前端即时过滤：名称 + 编码 + 条码
+	Search string
 }
 
 // posPanelData 组装收银台数据。
@@ -41,33 +47,51 @@ func (s *Server) posPanelData(r *http.Request, marketID int64, view map[string]a
 
 	summary := service.SummarizeMarketRecords(m.Records)
 
-	// 每个产品一块：已出库数量与超量提示
 	byProduct := map[int64]service.MarketRecordSummaryLine{}
 	for _, line := range summary.ByProduct {
 		byProduct[line.ProductID] = line
 	}
-	tiles := make([]posTile, 0, len(m.Items))
+	// 本场明细：用于标记"本场"与计算超量提示
+	itemOf := map[int64]*model.MarketItem{}
 	for i := range m.Items {
-		it := m.Items[i]
-		p, err := s.svc.Store.ProductByID(ctx, it.ProductID)
-		if err != nil {
-			return nil, err
-		}
-		if p == nil {
+		itemOf[m.Items[i].ProductID] = &m.Items[i]
+	}
+
+	// 列出全部在用产品：现场不必提前上架，扫到/点到谁就记谁。
+	// 已在本场明细里的排前面，方便按计划卖。
+	all, err := s.svc.Store.ListProducts(ctx, store.ProductFilter{Sort: "name"})
+	if err != nil {
+		return nil, err
+	}
+	tiles := make([]posTile, 0, len(all))
+	for _, p := range all {
+		if !p.IsActive {
 			continue
 		}
-		out := service.OutQtyOf(m.Records, it.ProductID)
-		left := it.CarriedQty - out
-		tiles = append(tiles, posTile{
-			Product:  p,
-			Item:     &m.Items[i],
+		product := p
+		it := itemOf[product.ID]
+		out := service.OutQtyOf(m.Records, product.ID)
+		tile := posTile{
+			Product:  &product,
+			Item:     it,
 			Out:      out,
-			Sold:     byProduct[it.ProductID].SoldQty,
-			Left:     left,
-			Warning:  service.StockWarning(it, m.Records),
-			OnMarket: true,
-		})
+			Sold:     byProduct[product.ID].SoldQty,
+			OnMarket: it != nil,
+			Search:   product.Name + " " + product.SKU + " " + product.NameEn + " " + product.Barcode,
+		}
+		if it != nil {
+			tile.Left = it.CarriedQty - out
+			tile.Warning = service.StockWarning(*it, m.Records)
+		}
+		tiles = append(tiles, tile)
 	}
+	// 本场的排前面
+	sort.SliceStable(tiles, func(i, j int) bool {
+		if tiles[i].OnMarket != tiles[j].OnMarket {
+			return tiles[i].OnMarket
+		}
+		return false
+	})
 
 	// 最近流水（默认 30 条，够现场回看）
 	recent := m.Records
@@ -77,21 +101,23 @@ func (s *Server) posPanelData(r *http.Request, marketID int64, view map[string]a
 
 	totals := m.Totals()
 	data := map[string]any{
-		"Market":       m,
-		"Totals":       totals,
-		"GrossProfit":  totals.Revenue - totals.CogsSold,
-		"Summary":      summary,
-		"Tiles":        tiles,
-		"Records":      recent,
-		"RecordKinds":  model.RecordKindOptions,
-		"CanManage":    canEdit(r, PermMarketManage),
-		"CanSettle":    canEdit(r, PermMarketSettle),
-		"ShowCost":     canEdit(r, PermReportView),
-		"ScanNotice":   "",
-		"ScanError":    "",
-		"UnknownCode":  "",
-		"BindProducts": nil,
-		"QtyOne":       oneBottle(),
+		"Market":        m,
+		"Totals":        totals,
+		"GrossProfit":   totals.Revenue - totals.CogsSold,
+		"Summary":       summary,
+		"Tiles":         tiles,
+		"Records":       recent,
+		"RecordKinds":   model.RecordKindOptions,
+		"CanManage":     canEdit(r, PermMarketManage),
+		"CanSettle":     canEdit(r, PermMarketSettle),
+		"ShowCost":      canEdit(r, PermReportView),
+		"OnMarketCount": onMarketCount(tiles),
+		"TotalCount":    len(tiles),
+		"ScanNotice":    "",
+		"ScanError":     "",
+		"UnknownCode":   "",
+		"BindProducts":  nil,
+		"QtyOne":        oneBottle(),
 	}
 	for k, v := range view {
 		data[k] = v
@@ -373,4 +399,31 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+// Price 本场售价：优先用本场明细里的价格，没上架就用产品建议售价。
+func (t posTile) Price() model.Money {
+	if t.Item != nil && t.Item.UnitPrice > 0 {
+		return t.Item.UnitPrice
+	}
+	return t.Product.SalePrice
+}
+
+// CarriedQty 本场计划带去数量，没计划过返回 0。
+func (t posTile) CarriedQty() model.Qty {
+	if t.Item == nil {
+		return 0
+	}
+	return t.Item.CarriedQty
+}
+
+// onMarketCount 已进入本场明细的产品数。
+func onMarketCount(tiles []posTile) int {
+	n := 0
+	for _, t := range tiles {
+		if t.OnMarket {
+			n++
+		}
+	}
+	return n
 }

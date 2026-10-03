@@ -202,6 +202,102 @@ func (s *Service) AddMarketProduct(ctx context.Context, marketID, productID int6
 	return newID, s.RefreshMarketTotals(ctx, marketID)
 }
 
+// CopyLastMarketItems 把最近一场有明细的市集的产品清单复制到本场。
+//
+// 市集往往卖的还是那几款，逐场重新勾选很繁琐。
+// 复制的是"带了哪些产品、计划带多少、卖多少钱"，不含任何销售记录。
+func (s *Service) CopyLastMarketItems(ctx context.Context, marketID int64, user *model.User) (int, error) {
+	m, err := s.Store.MarketByID(ctx, marketID)
+	if err != nil {
+		return 0, err
+	}
+	if m == nil {
+		return 0, UserErrf("市集不存在")
+	}
+	if m.IsSettled() {
+		return 0, UserErrf("已结算的市集不能修改明细")
+	}
+
+	markets, err := s.Store.ListMarkets(ctx, store.MarketFilter{Limit: 30})
+	if err != nil {
+		return 0, err
+	}
+	var src *model.Market
+	for i := range markets {
+		if markets[i].ID == marketID || len(markets[i].Items) == 0 {
+			continue
+		}
+		src = &markets[i]
+		break
+	}
+	if src == nil {
+		return 0, UserErrf("没有找到可沿用的历史市集，先手动添加一次产品即可")
+	}
+
+	have := map[int64]bool{}
+	for _, it := range m.Items {
+		have[it.ProductID] = true
+	}
+	copied := 0
+	for _, it := range src.Items {
+		if have[it.ProductID] {
+			continue
+		}
+		p, err := s.Store.ProductByID(ctx, it.ProductID)
+		if err != nil {
+			return copied, err
+		}
+		if p == nil || !p.IsActive {
+			continue // 已停用或已删除的产品不再带过来
+		}
+		if _, err := s.AddMarketProduct(ctx, marketID, it.ProductID, user); err != nil {
+			return copied, err
+		}
+		copied++
+		have[it.ProductID] = true
+	}
+	if copied == 0 {
+		return 0, UserErrf("「%s」里的产品都已经在本场了", src.Name)
+	}
+	return copied, nil
+}
+
+// AddAllActiveProducts 把全部在售产品加入本场，适合产品不多的情况。
+func (s *Service) AddAllActiveProducts(ctx context.Context, marketID int64, user *model.User) (int, error) {
+	m, err := s.Store.MarketByID(ctx, marketID)
+	if err != nil {
+		return 0, err
+	}
+	if m == nil {
+		return 0, UserErrf("市集不存在")
+	}
+	if m.IsSettled() {
+		return 0, UserErrf("已结算的市集不能修改明细")
+	}
+	all, err := s.Store.ListProducts(ctx, store.ProductFilter{})
+	if err != nil {
+		return 0, err
+	}
+	have := map[int64]bool{}
+	for _, it := range m.Items {
+		have[it.ProductID] = true
+	}
+	added := 0
+	for _, p := range all {
+		if !p.IsActive || have[p.ID] {
+			continue
+		}
+		if _, err := s.AddMarketProduct(ctx, marketID, p.ID, user); err != nil {
+			return added, err
+		}
+		added++
+	}
+	if added == 0 {
+		return 0, UserErrf("全部在售产品都已经在本场了")
+	}
+	return added, nil
+}
+
 // MarketItemUpdate 单行明细的修改内容。
 type MarketItemUpdate struct {
 	CarriedQty  model.Qty

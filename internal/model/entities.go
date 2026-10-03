@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -138,16 +139,24 @@ type Customer struct {
 
 // Product 产品档案，含库存与移动加权平均成本的冗余缓存。
 type Product struct {
-	ID             int64
-	SKU            string
-	Name           string
-	NameEn         string
-	Category       string
-	Vintage        int
-	VolumeML       int
+	ID       int64
+	SKU      string
+	Name     string
+	NameEn   string
+	Category string
+	Brand    string // 品牌，非酒类也适用
+	Origin   string // 产地 / 产区
+
+	// 以下三项是酒类常用规格，其它品类留空即可
+	Vintage  int // 年份 / 批次
+	VolumeML int // 容量（毫升）
+	ABV      int // 酒精度，单位百分之一：11.5% 存 1150
+
 	Unit           string
 	BottlesPerCase int
 	SalePrice      Money
+	CostPrice      Money  // 参考成本价：采购预填与参考；真实成本以移动加权平均为准
+	Specs          string // 规格参数，每行一条「名称: 值」
 	Barcode        string
 	LowStockQty    Qty
 	SupplierID     *int64
@@ -173,6 +182,65 @@ func (p Product) Label() string {
 }
 
 // IsLowStock 是否低于预警线。
+// DefaultCategory 未选择品类时的归类。
+//
+// 系统不只服务冰酒，所以默认值保持中性。
+const DefaultCategory = "未分类"
+
+// DefaultUnits 计量单位的常见取值（表单里可自由输入其它值）。
+var DefaultUnits = []string{"瓶", "支", "罐", "盒", "袋", "套", "礼盒", "箱", "公斤", "克"}
+
+// ABVText 酒精度文本，未填返回空字符串。
+func (p Product) ABVText() string {
+	if p.ABV <= 0 {
+		return ""
+	}
+	v := float64(p.ABV) / 100
+	return strconv.FormatFloat(v, 'f', -1, 64) + "%"
+}
+
+// SpecItem 规格参数的一行。
+type SpecItem struct {
+	Label string
+	Value string
+}
+
+// SpecList 把规格参数文本解析成键值对。
+//
+// 每行一条，支持中英文冒号：`酒精度: 11.5%`；
+// 没有冒号的行整行当作值（例如 `375ml 礼盒装`）。
+func (p Product) SpecList() []SpecItem {
+	out := make([]SpecItem, 0, 8)
+	for _, raw := range strings.Split(p.Specs, "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			continue
+		}
+		label, value := "", ""
+		for _, sep := range []string{"：", ":"} {
+			if i := strings.Index(line, sep); i > 0 {
+				label = strings.TrimSpace(line[:i])
+				value = strings.TrimSpace(line[i+len(sep):])
+				break
+			}
+		}
+		if label == "" {
+			out = append(out, SpecItem{Value: line})
+			continue
+		}
+		out = append(out, SpecItem{Label: label, Value: value})
+	}
+	return out
+}
+
+// CostPriceOrAvg 参考成本价，没填时退回系统算出的平均成本。
+func (p Product) CostPriceOrAvg() Money {
+	if p.CostPrice > 0 {
+		return p.CostPrice
+	}
+	return p.AvgCost
+}
+
 // StockLevel 库存相对预警线的百分比，用于列表里的迷你数据条。
 //
 // 预警线的 3 倍算满格：低于预警线显示橙/红，充足时是蓝绿色。

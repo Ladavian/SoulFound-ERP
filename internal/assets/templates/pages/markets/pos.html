@@ -16,9 +16,26 @@
   </div>
 </div>
 
-{{/* 所有操作都只换这一块，现场点一下立刻看到数字变化 */}}
-<div id="pos-panel">
-  {{template "pos_panel" .}}
+{{/* 搜索框放在面板外面：HTMX 局部刷新时输入内容不会丢 */}}
+<div x-data="posFilter()">
+  <div class="pos-search">
+    <div class="pos-search__box">
+      {{template "icon" "search"}}
+      <input class="pos-search__input" type="search" x-model="q" @input="count()"
+             placeholder="搜索产品名、编码或条码；扫码也可以直接出库" aria-label="搜索产品">
+      <button class="pos-search__clear" type="button" x-show="q" x-cloak @click="q = ''; count()">清空</button>
+    </div>
+    <div class="pos-search__meta">
+      <span>显示 <b x-text="visible">{{.TotalCount}}</b> / {{.TotalCount}} 个在售产品</span>
+      {{if .OnMarketCount}}<span>本场已计划 {{.OnMarketCount}} 个</span>{{end}}
+      <span class="muted">不需要提前选产品，直接卖即可</span>
+    </div>
+  </div>
+
+  {{/* 所有操作都只换这一块，现场点一下立刻看到数字变化 */}}
+  <div id="pos-panel">
+    {{template "pos_panel" .}}
+  </div>
 </div>
 {{end}}
 
@@ -124,8 +141,8 @@
 {{if .Tiles}}
 <div class="pos-grid">
   {{range .Tiles}}
-  {{$it := .Item}}
-  <div class="pos-tile{{if .Warning}} pos-tile--warn{{end}}">
+  <div class="pos-tile{{if .Warning}} pos-tile--warn{{end}}" data-search="{{.Search}}"
+       x-show="match($el.dataset.search)">
     <div class="pos-tile__head">
       {{if .Product.ImageURL}}
       <img class="pos-tile__img" src="{{.Product.ImageURL}}" alt="{{.Product.Name}}" loading="lazy">
@@ -135,14 +152,17 @@
       <div class="pos-tile__info">
         <div class="pos-tile__name">{{.Product.Name}}</div>
         <div class="pos-tile__meta">
+          {{if .OnMarket}}<span class="pos-tile__flag">{{template "icon" "check"}} 本场</span>{{end}}
           <span class="mono">{{.Product.SKU}}</span>
+          {{if .Product.Vintage}}<span>{{.Product.Vintage}} 年</span>{{end}}
           {{if .Product.VolumeML}}<span>{{.Product.VolumeML}}ml</span>{{end}}
-          <span>带去 {{$it.CarriedQty}}</span>
-          <span>已出 {{.Out}}</span>
+          {{if .Product.ABVText}}<span>{{.Product.ABVText}}</span>{{end}}
+          {{if .OnMarket}}<span>带去 {{.CarriedQty}}</span>{{end}}
+          {{if .Out}}<span>已出 {{.Out}}</span>{{end}}
           {{if $showCost}}<span>库存 {{.Product.StockQty}}</span>{{end}}
         </div>
       </div>
-      <div class="pos-tile__price">{{money $it.UnitPrice}}</div>
+      <div class="pos-tile__price">{{money .Price}}</div>
     </div>
     {{if .Warning}}<div class="pos-tile__warn">{{template "icon" "alert"}} {{.Warning}}</div>{{end}}
     <div class="pos-actions">
@@ -183,9 +203,9 @@
   <div class="card__body">
     <div class="empty">
       {{template "icon" "box"}}
-      <div class="empty__title">本场还没有上架产品</div>
-      <div class="empty__hint">先去市集详情里把这次要带的产品加进来，然后回到收银台记账。</div>
-      <a class="btn btn--primary" href="/markets/{{$m.ID}}">{{template "icon" "plus"}}<span>去添加产品</span></a>
+      <div class="empty__title">还没有在售产品</div>
+      <div class="empty__hint">先到产品档案里建档，之后在市集现场直接扫码或点按就能记账，不用提前选产品。</div>
+      <a class="btn btn--primary" href="/products/new">{{template "icon" "plus"}}<span>新建产品</span></a>
     </div>
   </div>
 </div>

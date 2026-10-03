@@ -1489,3 +1489,83 @@ body.scan-open { overflow: hidden; }
 .backup-row__name { font-size: 12.5px; overflow-wrap: anywhere; }
 .backup-row__meta { font-size: 11.5px; color: var(--text-3); }
 .backup-row__actions { flex: 0 0 auto; display: flex; gap: 6px; }
+
+/* 产品规格参数区块（详情页） */
+.spec-block {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--line);
+}
+.spec-block__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 650;
+  margin-bottom: 8px;
+}
+.spec-block__title svg { width: 15px; height: 15px; color: var(--brand-600); }
+
+/* 收银台搜索：面板外，HTMX 刷新不会丢输入 */
+.pos-search { margin-bottom: 10px; }
+.pos-search__box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  padding: 0 12px;
+  min-height: 46px;
+}
+.pos-search__box svg { width: 17px; height: 17px; flex: 0 0 17px; color: var(--text-3); }
+.pos-search__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 16px;
+  color: var(--text);
+  padding: 10px 0;
+}
+.pos-search__clear {
+  flex: 0 0 auto;
+  border: 0;
+  background: none;
+  color: var(--brand-600);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  padding: 6px 2px;
+}
+.pos-search__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 11.5px;
+  color: var(--text-3);
+  margin-top: 6px;
+}
+.pos-search__meta b { color: var(--text-2); }
+.pos-tile__flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--ok-bg);
+  color: var(--ok);
+  font-weight: 600;
+  font-size: 11px;
+}
+.pos-tile__flag svg { width: 11px; height: 11px; }
+
+/* 市集计划产品的快捷操作 */
+.plan-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}

@@ -192,18 +192,42 @@
       <div class="card__body">
         <dl class="kv">
           <dt>产品编码</dt><dd><span class="mono">{{$p.SKU}}</span></dd>
-          <dt>英文名</dt><dd>{{if $p.NameEn}}{{$p.NameEn}}{{else}}<span class="muted">—</span>{{end}}</dd>
+          <dt>英文名 / 别名</dt><dd>{{if $p.NameEn}}{{$p.NameEn}}{{else}}<span class="muted">—</span>{{end}}</dd>
+          <dt>品牌</dt><dd>{{if $p.Brand}}{{$p.Brand}}{{else}}<span class="muted">—</span>{{end}}</dd>
           <dt>品类</dt><dd>{{if $p.Category}}{{$p.Category}}{{else}}<span class="muted">—</span>{{end}}</dd>
-          <dt>年份</dt><dd>{{if $p.Vintage}}{{$p.Vintage}}{{else}}<span class="muted">—</span>{{end}}</dd>
+          <dt>产地 / 产区</dt><dd>{{if $p.Origin}}{{$p.Origin}}{{else}}<span class="muted">—</span>{{end}}</dd>
+          <dt>年份 / 批次</dt><dd>{{if $p.Vintage}}{{$p.Vintage}}{{else}}<span class="muted">—</span>{{end}}</dd>
           <dt>容量</dt><dd>{{if $p.VolumeML}}{{$p.VolumeML}} ml{{else}}<span class="muted">—</span>{{end}}</dd>
+          <dt>酒精度</dt><dd>{{if $p.ABVText}}{{$p.ABVText}}{{else}}<span class="muted">—</span>{{end}}</dd>
           <dt>计量单位</dt><dd>{{if $p.Unit}}{{$p.Unit}}{{else}}<span class="muted">—</span>{{end}}</dd>
-          <dt>每箱瓶数</dt><dd>{{$p.BottlesPerCase}}</dd>
+          <dt>每箱数量</dt><dd>{{$p.BottlesPerCase}}</dd>
+          {{if $showCost}}
+          <dt>参考成本价</dt>
+          <dd>
+            {{if $p.CostPrice}}{{money $p.CostPrice}}{{else}}<span class="muted">—</span>{{end}}
+            {{if $p.AvgCost}}<div class="tiny muted">当前平均成本 {{money4 $p.AvgCost}}（系统按入库自动计算）</div>{{end}}
+          </dd>
+          {{end}}
+          <dt>条形码</dt><dd><span class="mono">{{if $p.Barcode}}{{$p.Barcode}}{{else}}<span class="muted">—</span>{{end}}</span></dd>
           <dt>供应商</dt><dd>{{if $p.SupplierName}}{{$p.SupplierName}}{{else}}<span class="muted">—</span>{{end}}</dd>
           <dt>库存预警线</dt><dd>{{$p.LowStockQty}}</dd>
           <dt>创建时间</dt><dd class="small">{{datetime $p.CreatedAt}}</dd>
           <dt>更新时间</dt><dd class="small">{{datetime $p.UpdatedAt}}</dd>
           <dt>备注</dt><dd style="text-align:left;white-space:pre-wrap">{{if $p.Notes}}{{$p.Notes}}{{else}}<span class="muted">—</span>{{end}}</dd>
         </dl>
+
+        {{/* 规格参数：任意品类的自定义字段，按「名称：内容」展示 */}}
+        {{if $p.SpecList}}
+        <div class="spec-block">
+          <div class="spec-block__title">{{template "icon" "list"}} 规格参数</div>
+          <dl class="kv">
+            {{range $p.SpecList}}
+            <dt>{{if .Label}}{{.Label}}{{else}}规格{{end}}</dt>
+            <dd style="text-align:left">{{.Value}}</dd>
+            {{end}}
+          </dl>
+        </div>
+        {{end}}
         {{if $p.ImageURL}}
         <div style="margin-top:12px">
           <img src="{{$p.ImageURL}}" alt="{{$p.Name}}" style="width:100%;border-radius:10px;border:1px solid var(--line)">
