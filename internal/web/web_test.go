@@ -3122,63 +3122,39 @@ func TestAllAccountsActionsAreLogged(t *testing.T) {
 	}
 }
 
-// TestThemeAndProductImages 主题切换与产品图。
+// TestProductImagesEverywhere 产品图该显示的地方都要显示，并且能悬停放大。
 //
-// 用户要求：白天/夜间/跟随系统三态主题；产品档案鼠标悬停能放大图片；
-// 该显示产品图的地方都要显示。
-func TestThemeAndProductImages(t *testing.T) {
+// （主题切换功能按用户要求已撤掉，相关断言一并移除。）
+func TestProductImagesEverywhere(t *testing.T) {
 	h, svc, cfg := testApp(t)
 	ctx := context.Background()
 	cookie := doLogin(t, h, cfg, "admin", "admin123")
 
-	// 主题：首屏脚本、切换按钮、三态选项都要有
-	code, page := get(t, h, "/", cookie)
-	if code != http.StatusOK {
-		t.Fatalf("看板应可访问，实际 %d", code)
-	}
-	if !strings.Contains(page, `data-theme`) {
-		t.Error("html 上要有 data-theme，供样式与脚本使用")
-	}
-	if !strings.Contains(page, "erp_theme") {
-		t.Error("首屏脚本要读取保存的主题，避免深色下先闪白")
-	}
-	if !strings.Contains(page, "erpCycleTheme") {
-		t.Error("顶栏应有主题切换按钮")
-	}
-
-	code, profile := get(t, h, "/profile", cookie)
-	if code != http.StatusOK {
-		t.Fatalf("我的账号应可访问，实际 %d", code)
-	}
-	for _, v := range []string{`value="light"`, `value="dark"`, `value="system"`} {
-		if !strings.Contains(profile, v) {
-			t.Errorf("我的账号缺少主题选项 %s", v)
-		}
-	}
-
-	// 深色主题的样式要真的存在（而不是只有一个开关）
-	css, err := os.ReadFile("../assets/static/css/app.css")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, need := range []string{`[data-theme="dark"]`, "color-scheme: dark", "#img-zoom"} {
-		if !strings.Contains(string(css), need) {
-			t.Errorf("样式里缺少 %s", need)
-		}
-	}
-
-	// 悬停放大的脚本与属性
+	// 悬停放大的脚本与属性要在
 	js, err := os.ReadFile("../assets/static/js/app.js")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, need := range []string{"erpApplyTheme", "erpCycleTheme", "img-zoom", "data-zoom"} {
+	for _, need := range []string{"img-zoom", "data-zoom"} {
 		if !strings.Contains(string(js), need) {
 			t.Errorf("app.js 缺少 %s", need)
 		}
 	}
+	css, err := os.ReadFile("../assets/static/css/app.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(css), "#img-zoom") {
+		t.Error("样式里缺少放大浮层")
+	}
+	// 主题功能已撤掉，不应该再有残留
+	for _, gone := range []string{`data-theme="dark"`, "erpApplyTheme", "theme-choice"} {
+		if strings.Contains(string(css), gone) || strings.Contains(string(js), gone) {
+			t.Errorf("主题功能应已撤掉，但仍残留 %s", gone)
+		}
+	}
 
-	// 有图的产品：产品档案列表、库存查询、市集明细都要带出图片并能放大
+	// 给一个产品配上图片
 	p, _ := svc.Store.ProductBySKU(ctx, "ICE-VID-375")
 	if p == nil {
 		products, _ := svc.Store.ListProducts(ctx, store.ProductFilter{})
@@ -3202,14 +3178,11 @@ func TestThemeAndProductImages(t *testing.T) {
 		}
 	}
 
-	// 市集明细也要有图
+	// 市集明细也要有缩略图
 	markets, _ := svc.Store.ListMarkets(ctx, store.MarketFilter{})
 	for _, m := range markets {
 		if len(m.Items) == 0 {
 			continue
-		}
-		if _, err := svc.AddMarketProduct(ctx, m.ID, p.ID, mustUser(t, svc, "admin")); err != nil {
-			t.Logf("加入市集明细跳过：%v", err)
 		}
 		_, body := get(t, h, "/markets/"+strconv.FormatInt(m.ID, 10), cookie)
 		if !strings.Contains(body, "prod-thumb") {

@@ -1,11 +1,11 @@
 {{define "layout"}}<!DOCTYPE html>
-<html lang="zh-CN" data-theme="light" data-theme-mode="system">
+<html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>{{.Title}} · {{.Cfg.AppName}}</title>
-<meta name="theme-color" content="#14171C" id="meta-theme-color">
-<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#14171C">
+<meta name="color-scheme" content="light">
 <meta name="description" content="进销存与市集利润管理">
 <link rel="manifest" href="/static/manifest.webmanifest">
 <link rel="icon" href="/static/icons/icon-192.png" sizes="192x192">
@@ -16,18 +16,7 @@
 <meta name="apple-mobile-web-app-title" content="{{.Settings.CompanyName}}">
 <meta name="format-detection" content="telephone=no">
 <link rel="stylesheet" href="/static/css/app.css?v={{.Cfg.Version}}">
-{{/* 必须在样式之前决定主题，否则深色下会先闪一下白底 */}}
-<script>
-(function () {
-  try {
-    var saved = localStorage.getItem('erp_theme') || 'system';
-    var dark = saved === 'dark' ||
-      (saved === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
-    document.documentElement.setAttribute('data-theme-mode', saved);
-  } catch (e) { /* 隐私模式下 localStorage 不可用，按浅色显示 */ }
-})();
-</script>
+
 <script src="/static/vendor/htmx.min.js" defer></script>
 <script src="/static/vendor/alpine.min.js" defer></script>
 {{/* 扫码库有 328KB，只有收银台与产品表单需要，按需加载 */}}
@@ -122,13 +111,6 @@
       </div>
       <div class="topbar__actions">
         {{block "topbar_actions" .}}{{end}}
-        {{/* 主题切换：浅色 → 深色 → 跟随系统 循环，选择记在浏览器里 */}}
-        <button class="btn btn--ghost btn--icon theme-toggle" type="button"
-                onclick="erpCycleTheme()" title="切换主题：浅色 / 深色 / 跟随系统"
-                aria-label="切换主题">
-          <span id="theme-icon">{{template "icon" "monitor"}}</span>
-          <span class="theme-toggle__label" id="theme-label">跟随系统</span>
-        </button>
         <a class="btn btn--ghost btn--icon" href="/profile" title="我的账号">{{template "icon" "user"}}</a>
       </div>
     </header>
