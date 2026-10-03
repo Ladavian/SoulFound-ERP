@@ -128,6 +128,17 @@ ALTER TABLE market_expenses ADD COLUMN calc TEXT NOT NULL DEFAULT 'fixed';
 ALTER TABLE market_expenses ADD COLUMN rate INTEGER NOT NULL DEFAULT 0;
 `
 
+// migrationV7 支持"销售出库"。
+//
+// 市集之外的销售（直销、批发、熟人拿货）以前完全没法记：
+// 出入库登记没有销售类型，市集收银台又只服务市集。
+// sale_price 记成交单价，customer_id 记卖给谁，用于统计直销收入。
+const migrationV7 = `
+ALTER TABLE stock_movements ADD COLUMN sale_price INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE stock_movements ADD COLUMN customer_id INTEGER;
+CREATE INDEX IF NOT EXISTS idx_mov_reason ON stock_movements(reason, occurred_on);
+`
+
 // migrations 按顺序执行的迁移脚本。新增结构或数据变更时在末尾追加一段 SQL，
 // 已执行过的版本不会重复执行（版本号记录在 schema_meta 表）。
 var migrations = []string{
@@ -137,4 +148,5 @@ var migrations = []string{
 	migrationV4,
 	migrationV5,
 	migrationV6,
+	migrationV7,
 }

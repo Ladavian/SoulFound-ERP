@@ -6,6 +6,7 @@
       {{if .Perms.Has "report.view"}}<span>库存与平均成本按采购入库自动加权平均</span>
       {{else}}<span>库存按销售、试饮、赠送与损耗实时扣减</span>{{end}}
       <span>共 {{.Count}} 个产品</span>
+      <span>进货走采购单 · 市集走收银台 · 其它走<a href="/inventory/adjust">出入库登记</a></span>
     </div>
   </div>
   <div class="page-head__actions">
@@ -37,6 +38,13 @@
     <div class="stat__value">{{.LowCount}}</div>
     <div class="stat__meta">低于预警线或已无库存</div>
   </div>
+  {{if .DirectSales.Count}}
+  <div class="stat stat--gold">
+    <div class="stat__label">{{template "icon" "cart"}}本月直销出库</div>
+    <div class="stat__value">{{money .DirectSales.Amount}}</div>
+    <div class="stat__meta">{{.DirectSales.Count}} 笔 · 共 {{.DirectSales.Qty}} 件（市集之外）</div>
+  </div>
+  {{end}}
 </div>
 
 <div class="grid grid--sidebar">

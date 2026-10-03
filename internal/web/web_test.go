@@ -2063,3 +2063,137 @@ func TestAllInteractiveElementsResolve(t *testing.T) {
 	t.Logf("已体检 %d 个提交/请求地址、%d 个 hx-target、%d 个站内链接",
 		checkedRoutes, checkedTargets, checkedLinks)
 }
+
+// TestDirectSaleOutbound 销售出库：市集之外的销售也能记，并统计出收入。
+func TestDirectSaleOutbound(t *testing.T) {
+	h, svc, cfg := testApp(t)
+	ctx := context.Background()
+	cookie := doLogin(t, h, cfg, "admin", "admin123")
+	admin := mustUser(t, svc, "admin")
+
+	// 建产品并入库 10 瓶，成本 50
+	post(t, h, "/products/new", url.Values{
+		"sku": {"DS-001"}, "name": {"直销测试酒"}, "unit": {"瓶"},
+		"sale_price": {"398"}, "is_active": {"1"},
+	}, cookie)
+	p, _ := svc.Store.ProductBySKU(ctx, "DS-001")
+	if err := svc.AdjustStock(ctx, service.AdjustInput{
+		ProductID: p.ID, Qty: model.MustQty("10"), UnitCost: model.MustMoney("50"),
+		Reason: model.ReasonOpening, OccurredOn: "2025-06-01",
+	}, admin); err != nil {
+		t.Fatal(err)
+	}
+
+	// 建一个客户
+	post(t, h, "/customers/new", url.Values{
+		"name": {"张先生"}, "phone": {"13800000000"}, "is_active": {"1"},
+	}, cookie)
+	customers, _ := svc.Store.ListCustomers(ctx, "张先生", false)
+	if len(customers) == 0 {
+		t.Fatal("客户未创建")
+	}
+
+	// 出入库登记页应当出现「销售出库」这个类型
+	code, page := get(t, h, "/inventory/adjust", cookie)
+	if code != http.StatusOK {
+		t.Fatalf("出入库登记应可访问，实际 %d", code)
+	}
+	if !strings.Contains(page, "销售出库") {
+		t.Fatal("出库类型里应当有「销售出库」")
+	}
+	if !strings.Contains(page, "销售出库（卖给了客户）") {
+		t.Error("销售出库应出现在可选类型里")
+	}
+	if !strings.Contains(page, "库存变动有三个入口") {
+		t.Error("页面上应说明采购入库/市集收银台/本页登记的关系")
+	}
+	if !strings.Contains(page, "name=\"sale_price\"") || !strings.Contains(page, "name=\"customer_id\"") {
+		t.Error("销售出库应有售价与客户输入")
+	}
+
+	// 登记一笔销售出库：出库 2 瓶，售价 398，客户张先生
+	today := store.Today()
+	code, _ = post(t, h, "/inventory/adjust", url.Values{
+		"product_id":  {strconv.FormatInt(p.ID, 10)},
+		"direction":   {model.DirectionOut},
+		"qty":         {"2"},
+		"reason":      {model.ReasonDirectSale},
+		"sale_price":  {"398"},
+		"customer_id": {strconv.FormatInt(customers[0].ID, 10)},
+		"occurred_on": {today},
+		"note":        {"朋友介绍"},
+	}, cookie)
+	if code != http.StatusSeeOther {
+		t.Fatalf("销售出库应 303，实际 %d", code)
+	}
+
+	// 库存减少 2
+	after, _ := svc.Store.ProductByID(ctx, p.ID)
+	if after.StockQty != model.MustQty("8") {
+		t.Errorf("销售出库后库存应为 8，实际 %s", after.StockQty)
+	}
+
+	// 流水里应当带上单价、客户与销售额
+	movements, err := svc.Store.ListMovements(ctx, store.MovementFilter{ProductID: p.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sale *model.StockMovement
+	for i := range movements {
+		if movements[i].Reason == model.ReasonDirectSale {
+			sale = &movements[i]
+		}
+	}
+	if sale == nil {
+		t.Fatal("应写入一条销售出库流水")
+	}
+	if sale.SalePrice != model.MustMoney("398") {
+		t.Errorf("销售单价应为 398，实际 %s", sale.SalePrice)
+	}
+	if sale.CustomerName != "张先生" {
+		t.Errorf("客户应为张先生，实际 %q", sale.CustomerName)
+	}
+	// 销售额 = 2 × 398 = 796
+	if got := sale.SaleAmount(); got != model.MustMoney("796") {
+		t.Errorf("销售额应为 796，实际 %s", got)
+	}
+
+	// 库存页的直销汇总应统计到这笔
+	code, page = get(t, h, "/inventory", cookie)
+	if code != http.StatusOK {
+		t.Fatalf("库存页应可访问，实际 %d", code)
+	}
+	if !strings.Contains(page, "本月直销出库") || !strings.Contains(page, "¥796.00") {
+		t.Errorf("库存页应显示本月直销出库 ¥796.00")
+	}
+
+	// 流水页显示销售额
+	_, movesPage := get(t, h, "/inventory/movements", cookie)
+	if !strings.Contains(movesPage, "¥796.00") {
+		t.Error("库存流水里应显示销售额")
+	}
+
+	// 非销售类型的出库不应带上售价（避免误统计）
+	post(t, h, "/inventory/adjust", url.Values{
+		"product_id": {strconv.FormatInt(p.ID, 10)},
+		"direction":  {model.DirectionOut},
+		"qty":        {"1"},
+		"reason":     {model.ReasonMarketLoss},
+		"sale_price": {"999"},
+	}, cookie)
+	movements, _ = svc.Store.ListMovements(ctx, store.MovementFilter{ProductID: p.ID})
+	for _, m := range movements {
+		if m.Reason == model.ReasonMarketLoss && m.SalePrice != 0 {
+			t.Errorf("非销售出库不应记录售价，实际 %s", m.SalePrice)
+		}
+	}
+
+	// 汇总只应包含销售出库那 2 笔数量的金额
+	summary, err := svc.Store.DirectSaleSummaryBetween(ctx, "2000-01-01", today)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Count != 1 || summary.Amount != model.MustMoney("796") {
+		t.Errorf("直销汇总应为 1 笔 796，实际 %d 笔 %s", summary.Count, summary.Amount)
+	}
+}

@@ -2,25 +2,37 @@
 <div class="page-head">
   <div class="page-head__main">
     <div class="page-head__title">出入库登记</div>
-    <div class="page-head__meta"><span>手工登记会立即更新库存与加权平均成本</span></div>
+    <div class="page-head__meta">
+      <span>期初建账、盘点、销售出库、退货、破损等手工变动</span>
+    </div>
   </div>
   <div class="page-head__actions">
-    <a class="btn" href="/inventory">{{template "icon" "box"}}<span>库存查询</span></a>
-    <a class="btn" href="/inventory/movements">{{template "icon" "layers"}}<span>库存流水</span></a>
+    <a class="btn" href="/inventory/movements">{{template "icon" "layers"}}<span>查看全部流水</span></a>
   </div>
 </div>
 
+{{/* 很多人会疑惑"为什么采购入库不在这里"，这里一次讲清三个入口 */}}
 <div class="alert alert--info">
   {{template "icon" "info"}}
   <div class="alert__body">
-    <div class="alert__title">什么时候用这张单？</div>
-    <ul style="margin:6px 0 0;padding-left:20px">
-      <li><strong>操作方式</strong>：先选「入库 / 出库」，再填数量——数量一律填正数，不用管正负号。</li>
-      <li><strong>期初建账</strong>：刚开始用系统时，选「入库」，把仓库里实际现有的库存一次性录进来，并填单位成本。</li>
-      <li><strong>盘点</strong>：实物比账面多 → 选「入库」+ 盘点调增；实物比账面少 → 选「出库」+ 盘点调减。</li>
-      <li><strong>破损 / 损耗、赠送</strong>：选「出库」，库存会相应减少，不用填成本。</li>
-      <li><strong>退货入库</strong>：客户退回的酒，选「入库」并填写单位成本。</li>
+    <div class="alert__title">库存变动有三个入口，流水是同一本账</div>
+    <ul class="entry-paths">
+      <li>
+        <strong>采购进货</strong> → 用 <a href="/purchases/new">采购单</a> 录入。
+        采购单支持多行产品、把运费与关税分摊进到岸成本、先存草稿再确认入库，
+        普通登记表表达不了这些，所以单独成页；确认后一样会出现在库存流水里。
+      </li>
+      <li>
+        <strong>市集上的销售 / 试饮 / 赠送 / 损耗</strong> → 用 <a href="/markets">市集收银台</a> 逐笔记。
+        那里能按场次算清成本与利润，结算时自动扣库存。
+      </li>
+      <li>
+        <strong>其它变动</strong>（期初、盘点、<em>市集之外的销售</em>、退货、破损）→ 就在本页登记。
+      </li>
     </ul>
+    <div class="tiny muted" style="margin-top:6px">
+      三个入口写的是同一张库存流水表，去 <a href="/inventory/movements">库存流水</a> 能看到全部来源与单号。
+    </div>
   </div>
 </div>
 
@@ -64,13 +76,29 @@
                   <span>{{template "icon" "upload"}} 出库</span>
                 </label>
               </div>
-              <div class="field__hint">选方向就行，数量一律填正数。</div>
+              <div class="field__hint">选方向就行，数量一律填正数；出库若选「销售出库」，记得填售价。</div>
             </div>
 
             <div class="field">
               <label class="field__label" for="qty">数量<span class="req">*</span></label>
               <input class="input input--num" id="qty" name="qty" type="text" inputmode="decimal" value="" placeholder="例如 12" required>
               <div class="field__hint" x-text="dir === 'out' ? '填正数即可，系统按出库扣减库存' : '填正数即可，系统按入库增加库存'">填正数即可，系统按入库增加库存</div>
+            </div>
+
+            {{/* 销售出库：记下成交单价与客户，才能统计市集之外的销售收入 */}}
+            <div class="field" x-show="dir === 'out' && reason === 'direct_sale'" x-cloak>
+              <label class="field__label" for="sale_price">售价（单价）</label>
+              <input class="input input--num" id="sale_price" name="sale_price" type="text"
+                     inputmode="decimal" value="" placeholder="例如：398">
+              <div class="field__hint">卖出的单价；销售额 = 数量 × 售价，会显示在库存流水与导出里。</div>
+            </div>
+            <div class="field" x-show="dir === 'out' && reason === 'direct_sale'" x-cloak>
+              <label class="field__label" for="customer_id">客户</label>
+              <select class="select" id="customer_id" name="customer_id">
+                <option value="">— 不指定 —</option>
+                {{range .Customers}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+              </select>
+              <div class="field__hint">可以先到<a href="/customers">客户</a>里建档；留空也能记。</div>
             </div>
 
             <div class="field">

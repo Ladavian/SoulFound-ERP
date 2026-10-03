@@ -460,6 +460,7 @@ func (s *Service) ExportInventory(ctx context.Context, includeMovements bool) ([
 		moveCols := []Column{
 			{"日期", 12, false}, {"产品编码", 14, false}, {"产品名称", 26, false},
 			{"类型", 12, false}, {"方向", 7, false}, {"数量", 10, false},
+			{"销售单价", 11, true}, {"销售额", 12, true}, {"客户", 14, false},
 			{"单位成本", 12, true}, {"金额", 13, true}, {"结存数量", 11, false},
 			{"结存均价", 12, true}, {"结存金额", 13, true}, {"来源单号", 18, false},
 			{"备注", 26, false}, {"操作人", 12, false},
@@ -468,7 +469,8 @@ func (s *Service) ExportInventory(ctx context.Context, includeMovements bool) ([
 		for _, m := range movements {
 			moveRows = append(moveRows, []any{
 				m.OccurredOn, m.ProductSKU, m.ProductName, m.ReasonLabel(), m.DirectionLabel(),
-				m.AbsQty(), m.UnitCost, m.TotalCost, m.QtyAfter, m.AvgCostAfter, m.ValueAfter,
+				m.AbsQty(), m.SalePrice, m.SaleAmount(), m.CustomerName,
+				m.UnitCost, m.TotalCost, m.QtyAfter, m.AvgCostAfter, m.ValueAfter,
 				m.RefCode, m.Note, m.CreatedByName,
 			})
 		}

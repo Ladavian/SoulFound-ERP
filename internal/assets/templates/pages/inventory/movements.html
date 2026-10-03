@@ -104,6 +104,10 @@
             <div class="tiny muted">{{.DirectionLabel}}</div>
           </td>
           <td class="num {{if not .IsIn}}neg{{end}}" data-label="数量">{{if .IsIn}}+{{end}}{{.Qty}}</td>
+          <td class="num" data-label="销售额">
+            {{if .IsSale}}{{money .SaleAmount}}{{if .CustomerName}}<div class="tiny muted">{{.CustomerName}}</div>{{end}}
+            {{else if .SalePrice}}{{money .SalePrice}}{{else}}<span class="muted">—</span>{{end}}
+          </td>
           {{if $.Perms.Has "report.view"}}
           <td class="num muted" data-label="单位成本">{{money4 .UnitCost}}</td>
           <td class="num" data-label="金额">{{money .TotalCost}}</td>

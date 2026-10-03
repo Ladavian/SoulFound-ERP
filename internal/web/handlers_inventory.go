@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"time"
 
 	"icewine-erp/internal/model"
 	"icewine-erp/internal/service"
@@ -58,6 +59,11 @@ func (s *Server) handleInventory(w http.ResponseWriter, r *http.Request) {
 	page["LowCount"] = lowCount
 	page["Count"] = len(products)
 	page["CanAdjust"] = canEdit(r, PermInventoryAdjust)
+	// 本月"销售出库"（市集之外的直销）汇总
+	firstOfMonth := time.Now().Format("2006-01") + "-01"
+	if summary, err := s.svc.Store.DirectSaleSummaryBetween(ctx, firstOfMonth, store.Today()); err == nil {
+		page["DirectSales"] = summary
+	}
 	if err := s.rnd.Render(w, "inventory/index", page); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
@@ -174,6 +180,12 @@ func (s *Server) handleAdjustForm(w http.ResponseWriter, r *http.Request) {
 		{Label: "出库", Options: model.DirectionOutReasons},
 	}
 	page["RecentMovements"] = movements
+	customers, _ := s.svc.Store.ListCustomers(r.Context(), "", false)
+	custOpts := make([]CustomerOption, 0, len(customers))
+	for _, c := range customers {
+		custOpts = append(custOpts, CustomerOption{ID: c.ID, Name: c.Name})
+	}
+	page["Customers"] = custOpts
 	page["Today"] = store.Today()
 	page["Preselect"] = preselect
 	// 选择产品时左侧弹出图片，方便核对拿到的是不是同一款酒
@@ -227,6 +239,8 @@ func (s *Server) handleAdjustSave(w http.ResponseWriter, r *http.Request) {
 		OccurredOn: f.Str("occurred_on"),
 		Reason:     f.Str("reason"),
 		Note:       f.Str("note"),
+		SalePrice:  f.Money("sale_price", "售价"),
+		CustomerID: f.OptionalID("customer_id"),
 	}
 
 	if in.ProductID <= 0 {
@@ -280,4 +294,10 @@ func (s *Server) handleAdjustSave(w http.ResponseWriter, r *http.Request) {
 type ReasonGroup struct {
 	Label   string
 	Options []model.Option
+}
+
+// CustomerOption 下拉用的客户精简数据。
+type CustomerOption struct {
+	ID   int64
+	Name string
 }

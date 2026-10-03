@@ -10,18 +10,21 @@ import (
 const movementCols = `m.id, m.product_id, p.name, p.sku, m.occurred_on, m.qty,
 	m.unit_cost, m.total_cost, m.qty_after, m.avg_cost_after, m.value_after,
 	m.reason, m.ref_type, m.ref_id, m.ref_code, m.note, m.created_by,
-	COALESCE(NULLIF(u.full_name, ''), u.username, ''), m.created_at`
+	COALESCE(NULLIF(u.full_name, ''), u.username, ''), m.created_at,
+	m.sale_price, m.customer_id, COALESCE(NULLIF(c.name, ''), '')`
 
 const movementFrom = ` FROM stock_movements m
 	JOIN products p ON p.id = m.product_id
-	LEFT JOIN users u ON u.id = m.created_by`
+	LEFT JOIN users u ON u.id = m.created_by
+	LEFT JOIN customers c ON c.id = m.customer_id`
 
 func scanMovement(row interface{ Scan(...any) error }) (*model.StockMovement, error) {
 	var mv model.StockMovement
 	if err := row.Scan(&mv.ID, &mv.ProductID, &mv.ProductName, &mv.ProductSKU, &mv.OccurredOn,
 		&mv.Qty, &mv.UnitCost, &mv.TotalCost, &mv.QtyAfter, &mv.AvgCostAfter, &mv.ValueAfter,
 		&mv.Reason, &mv.RefType, &mv.RefID, &mv.RefCode, &mv.Note, &mv.CreatedBy,
-		&mv.CreatedByName, &mv.CreatedAt); err != nil {
+		&mv.CreatedByName, &mv.CreatedAt,
+		&mv.SalePrice, &mv.CustomerID, &mv.CustomerName); err != nil {
 		return nil, err
 	}
 	return &mv, nil
@@ -125,11 +128,12 @@ func (s *Store) InsertMovement(ctx context.Context, tx DBTX, m *model.StockMovem
 	res, err := tx.ExecContext(ctx,
 		`INSERT INTO stock_movements(product_id, occurred_on, qty, unit_cost, total_cost,
 		        qty_after, avg_cost_after, value_after, reason, ref_type, ref_id, ref_code,
-		        note, created_by, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		        note, created_by, created_at, sale_price, customer_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		m.ProductID, m.OccurredOn, int64(m.Qty), int64(m.UnitCost), int64(m.TotalCost),
 		int64(m.QtyAfter), int64(m.AvgCostAfter), int64(m.ValueAfter), m.Reason, m.RefType,
-		m.RefID, m.RefCode, m.Note, m.CreatedBy, Now())
+		m.RefID, m.RefCode, m.Note, m.CreatedBy, Now(),
+		int64(m.SalePrice), m.CustomerID)
 	if err != nil {
 		return 0, err
 	}
@@ -265,4 +269,28 @@ func (s *Store) StockByCategory(ctx context.Context) ([]CategoryStock, error) {
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+// DirectSaleSummary 一段时间内"销售出库"（市集之外的直销）的汇总。
+type DirectSaleSummary struct {
+	Count  int
+	Qty    model.Qty
+	Amount model.Money
+}
+
+// DirectSaleSummaryBetween 按发生日期统计直销出库。
+//
+// 数量存的是 1/1000、单价存的是 1/10000，所以金额要整体除以 1000
+// 才是 1/10000 为单位的 Money，避免逐行取整丢精度。
+func (s *Store) DirectSaleSummaryBetween(ctx context.Context, from, to string) (DirectSaleSummary, error) {
+	var out DirectSaleSummary
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*),
+		       COALESCE(SUM(-qty), 0),
+		       COALESCE(SUM(-qty * sale_price) / 1000, 0)
+		  FROM stock_movements
+		 WHERE reason = ? AND occurred_on >= ? AND occurred_on <= ?`,
+		model.ReasonDirectSale, from, to).
+		Scan(&out.Count, &out.Qty, &out.Amount)
+	return out, err
 }

@@ -21,6 +21,10 @@ type PostRequest struct {
 	RefCode    string
 	Note       string
 	UserID     *int64
+
+	// 销售出库专用
+	SalePrice  model.Money
+	CustomerID *int64
 }
 
 // Poster 在单个事务内批量过账。
@@ -113,6 +117,8 @@ func (p *Poster) Post(req PostRequest) (*model.StockMovement, error) {
 		RefCode:      req.RefCode,
 		Note:         req.Note,
 		CreatedBy:    req.UserID,
+		SalePrice:    req.SalePrice,
+		CustomerID:   req.CustomerID,
 	}
 	if _, err := p.svc.Store.InsertMovement(p.ctx, p.tx, mv); err != nil {
 		return nil, err
@@ -194,6 +200,10 @@ type AdjustInput struct {
 	OccurredOn string
 	Reason     string
 	Note       string
+
+	// 销售出库专用：成交单价与客户
+	SalePrice  model.Money
+	CustomerID *int64
 }
 
 var manualReasons = map[string]bool{
@@ -203,6 +213,7 @@ var manualReasons = map[string]bool{
 	model.ReasonReturnIn:   true,
 	model.ReasonMarketGift: true,
 	model.ReasonMarketLoss: true,
+	model.ReasonDirectSale: true,
 }
 
 // AdjustStock 手工登记一笔出入库（期初建账、盘点、损耗、退货等）。
@@ -235,6 +246,18 @@ func (s *Service) AdjustStock(ctx context.Context, in AdjustInput, user *model.U
 	if in.Qty > 0 && in.Reason == model.ReasonAdjustOut {
 		return UserErrf("「盘点调减」只允许负数数量")
 	}
+	// 销售出库必须填售价，否则统计不出直销收入
+	if in.Reason == model.ReasonDirectSale {
+		if in.Qty > 0 {
+			return UserErrf("「销售出库」的数量应为出库（请选择出库方向）")
+		}
+		if in.SalePrice < 0 {
+			return UserErrf("售价不能为负数")
+		}
+	} else {
+		in.SalePrice = 0
+		in.CustomerID = nil
+	}
 
 	cfg, err := s.Store.Settings(ctx)
 	if err != nil {
@@ -259,6 +282,8 @@ func (s *Service) AdjustStock(ctx context.Context, in AdjustInput, user *model.U
 			RefCode:    "手工登记",
 			Note:       in.Note,
 			UserID:     userID,
+			SalePrice:  in.SalePrice,
+			CustomerID: in.CustomerID,
 		}); err != nil {
 			return err
 		}

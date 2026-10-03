@@ -315,6 +315,7 @@ const (
 	ReasonAdjustIn      = "adjust_in"      // 盘盈/调整增加
 	ReasonAdjustOut     = "adjust_out"     // 盘亏/调整减少
 	ReasonReturnIn      = "return_in"      // 退货入库
+	ReasonDirectSale    = "direct_sale"    // 销售出库（市集之外的直销）
 	ReasonMarketSale    = "market_sale"    // 市集销售
 	ReasonMarketTasting = "market_tasting" // 市集试饮
 	ReasonMarketGift    = "market_gift"    // 市集赠送
@@ -328,6 +329,7 @@ var ReasonLabels = map[string]string{
 	ReasonAdjustIn:      "盘点调增",
 	ReasonAdjustOut:     "盘点调减",
 	ReasonReturnIn:      "退货入库",
+	ReasonDirectSale:    "销售出库",
 	ReasonMarketSale:    "市集销售",
 	ReasonMarketTasting: "市集试饮",
 	ReasonMarketGift:    "市集赠送",
@@ -356,6 +358,7 @@ var (
 		{ReasonReturnIn, "退货入库（客户退回）"},
 	}
 	DirectionOutReasons = []Option{
+		{ReasonDirectSale, "销售出库（卖给了客户）"},
 		{ReasonAdjustOut, "盘点调减（实物比账面少）"},
 		{ReasonMarketLoss, "破损 / 损耗"},
 		{ReasonMarketGift, "赠送 / 公关用酒"},
@@ -425,6 +428,26 @@ type StockMovement struct {
 	CreatedBy     *int64
 	CreatedByName string
 	CreatedAt     string
+
+	// 销售出库专用：成交单价与客户
+	SalePrice    Money
+	CustomerID   *int64
+	CustomerName string
+}
+
+// IsSale 是否销售出库。
+func (m StockMovement) IsSale() bool { return m.Reason == ReasonDirectSale }
+
+// SaleAmount 本次销售金额（销售出库才有值）。
+func (m StockMovement) SaleAmount() Money {
+	if !m.IsSale() || m.SalePrice <= 0 {
+		return 0
+	}
+	q := m.Qty
+	if q < 0 {
+		q = -q
+	}
+	return MulQty(q, m.SalePrice)
 }
 
 // ReasonLabel 原因中文名。

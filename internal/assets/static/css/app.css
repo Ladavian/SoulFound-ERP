@@ -1569,3 +1569,14 @@ body.scan-open { overflow: hidden; }
   gap: 8px;
   margin-bottom: 12px;
 }
+
+/* 库存变动三个入口的说明清单 */
+.entry-paths {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.entry-paths li { line-height: 1.6; }
+.entry-paths em { font-style: normal; font-weight: 600; color: var(--brand-600); }
