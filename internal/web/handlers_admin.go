@@ -247,12 +247,13 @@ func (s *Server) handleSettingsRebuild(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSettingsBackup(w http.ResponseWriter, r *http.Request) {
-	path, err := s.svc.Store.Backup(r.Context(), s.cfg.BackupDir)
+	// 走 service：会一并清理旧备份、写备份记录、更新自动备份的判断依据
+	info, err := s.svc.BackupNow(r.Context(), userFrom(r))
 	if err != nil {
 		s.fail(w, r, "/settings", err)
 		return
 	}
-	s.ok(w, r, "/settings", "备份已生成："+path)
+	s.ok(w, r, "/settings", "备份已生成："+info.Name+"（"+info.SizeText()+"）")
 }
 
 // ---------------------------------------------------------------- 操作日志

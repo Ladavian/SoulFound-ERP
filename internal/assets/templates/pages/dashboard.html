@@ -78,7 +78,7 @@
           <tbody>
           {{range .RecentMarkets}}
             <tr>
-              <td class="row-cell--main"><a href="/markets/{{.ID}}" class="strong">{{.Name}}</a><div class="tiny muted">{{.Venue}}{{if .City}} · {{.City}}{{end}}</div></td>
+              <td class="row-cell--main"><a href="/markets/{{.ID}}" class="strong">{{.Name}}</a><div class="tiny muted">{{if and .Venue (ne .Venue .Name)}}{{.Venue}}{{if .City}} · {{.City}}{{end}}{{end}}{{if and .City (or (not .Venue) (eq .Venue .Name))}}{{.City}}{{end}}</div></td>
               <td class="nowrap small" data-label="日期">{{.DateRange}}</td>
               <td data-label="状态">{{template "market_status" .Status}}</td>
               <td class="num" data-label="试饮">{{.TastingQty}}</td>

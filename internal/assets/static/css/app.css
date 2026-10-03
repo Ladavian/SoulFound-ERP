@@ -317,6 +317,16 @@ table.data tbody tr:hover { background: var(--brand-50); }
 table.data tbody tr:last-child td { border-bottom: 0; }
 table.data tfoot td { background: var(--surface-2); font-weight: 650; border-top: 1px solid var(--line-strong); }
 table.data .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* 首列是名称/标题列，给一个可读下限。
+   否则列多的表格会把首列压到只剩几个字符宽，中文只能逐字换行，
+   看起来就是一列竖排的字（市集列表、产品列表等都有这个问题）。
+   空间确实不够时，.table-wrap 会横向滚动，而不是把内容挤成一坨。 */
+table.data td.row-cell--main { min-width: 190px; }
+/* 单号、编码这类不该断开的短标识 */
+table.data td .mono { white-space: nowrap; }
+/* 首列里的辅助信息（编码、联系人）换行时要自然，不要逐字断 */
+table.data td.row-cell--main > div { overflow-wrap: break-word; }
 table.data .center { text-align: center; }
 table.data .nowrap { white-space: nowrap; }
 table.data--compact th, table.data--compact td { padding: 7px 10px; }
@@ -1237,7 +1247,10 @@ body.scan-open { overflow: hidden; }
     text-align: left;
   }
   /* 标题与操作区横跨整行 */
-  .data--stack td.row-cell--main {
+  /* 卡片模式（手机）：首列变成卡片标题，不需要最小宽度。
+     选择器要与桌面规则同等具体（table.data td.row-cell--main），
+     否则优先级不够、复位不生效。 */
+  table.data td.row-cell--main { min-width: 0; }
     grid-column: 1 / -1;
     order: -2; /* 标题在最前，操作区紧随其后 */
     display: block;

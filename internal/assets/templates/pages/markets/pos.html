@@ -8,7 +8,7 @@
       <span class="mono">{{$m.Code}}</span>
       {{template "market_status" $m.Status}}
       <span>{{template "icon" "calendar"}} {{$m.DateRange}}</span>
-      {{if $m.Venue}}<span>{{template "icon" "pin"}} {{$m.Venue}}</span>{{end}}
+      {{if and $m.Venue (ne $m.Venue $m.Name)}}<span>{{template "icon" "pin"}} {{$m.Venue}}</span>{{end}}
     </div>
   </div>
   <div class="page-head__actions">

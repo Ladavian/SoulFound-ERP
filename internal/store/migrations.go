@@ -180,6 +180,14 @@ CREATE TABLE IF NOT EXISTS group_order_items (
 CREATE INDEX IF NOT EXISTS idx_group_items_order ON group_order_items(order_id, sort_order);
 `
 
+// migrationV9 清掉与市集名重复的场地。
+//
+// 早期从表格导入时把渠道名同时填进了"场地"，列表里就会出现
+// 「金融街 · 金融街」这种重复显示。
+const migrationV9 = `
+UPDATE markets SET venue = '' WHERE venue <> '' AND venue = name;
+`
+
 // migrations 按顺序执行的迁移脚本。新增结构或数据变更时在末尾追加一段 SQL，
 // 已执行过的版本不会重复执行（版本号记录在 schema_meta 表）。
 var migrations = []string{
@@ -191,4 +199,5 @@ var migrations = []string{
 	migrationV6,
 	migrationV7,
 	migrationV8,
+	migrationV9,
 }

@@ -101,7 +101,18 @@ func main() {
 		log.Printf(" %s v%s 已启动", cfg.AppName, cfg.Version)
 		log.Printf(" 监听地址 : http://%s", displayAddr(cfg.Addr))
 		log.Printf(" 数据文件 : %s", cfg.DBPath)
-		log.Printf(" 备份目录 : %s", cfg.BackupDir)
+		// 备份目录写不进去时提前说清楚，别等用户点了备份才失败
+		if err := os.MkdirAll(cfg.BackupDir, 0o755); err != nil {
+			log.Printf(" 备份目录 : %s（无法创建：%v）", cfg.BackupDir, err)
+		} else if f, err := os.CreateTemp(cfg.BackupDir, ".write-test-*"); err != nil {
+			log.Printf(" 备份目录 : %s（不可写，手动备份会失败；"+
+				"容器部署请在宿主机执行 sudo chown -R 1000:1000 ./data）", cfg.BackupDir)
+		} else {
+			name := f.Name()
+			f.Close()
+			os.Remove(name)
+			log.Printf(" 备份目录 : %s（可写）", cfg.BackupDir)
+		}
 		log.Printf(" 时区     : %s", cfg.Location)
 		log.Printf("========================================")
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

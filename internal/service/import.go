@@ -488,9 +488,11 @@ func (s *Service) ensureMarket(ctx context.Context, name, date string, cache map
 			return &list[i], nil
 		}
 	}
+	// 表格里只有渠道名（例如「凤凰汇市集」），并不知道具体场地，
+	// 所以不要把名称当场地填，否则列表里会出现「金融街 · 金融街」这种重复。
 	id, err := s.SaveMarket(ctx, MarketInput{
 		Name: name, StartDate: date, EndDate: date,
-		Venue: name, Notes: "由表格导入",
+		Notes: "由表格导入",
 	}, nil)
 	if err != nil {
 		return nil, err

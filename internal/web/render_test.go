@@ -491,3 +491,100 @@ func TestAlpineTemplatesHaveSingleRoot(t *testing.T) {
 	}
 	t.Logf("已检查 %d 个 Alpine 模板的根元素数量", checked)
 }
+
+// TestTableLayoutContract 表格首列的排版契约（PC 与手机都要成立）。
+//
+// 用户反馈市集列表的"市集"列被挤成一列竖排的字——列多的表格
+// 会把没有宽度下限的首列压到只剩几个字符宽，中文只能逐字换行。
+// 修法是给首列一个最小宽度，并在手机卡片模式下复位。复位规则
+// 必须与桌面规则**同等具体**，否则优先级不够根本不会生效。
+func TestTableLayoutContract(t *testing.T) {
+	raw, err := os.ReadFile("../assets/static/css/app.css")
+	if err != nil {
+		t.Fatalf("读取样式失败: %v", err)
+	}
+	src := regexp.MustCompile(`(?s)/\*.*?\*/`).ReplaceAllString(string(raw), "")
+
+	// 解析 CSS：需要识别媒体查询的嵌套，简单正则做不到
+	type cssRule struct {
+		selector string
+		body     string
+		medias   []string
+	}
+	var rules []cssRule
+	var mediaStack []string
+	var pending *cssRule
+	var buf strings.Builder
+
+	for i := 0; i < len(src); i++ {
+		switch src[i] {
+		case '{':
+			head := strings.TrimSpace(buf.String())
+			buf.Reset()
+			if strings.HasPrefix(head, "@media") {
+				mediaStack = append(mediaStack, head)
+				continue
+			}
+			pending = &cssRule{selector: head, medias: append([]string{}, mediaStack...)}
+		case '}':
+			if pending != nil {
+				pending.body = buf.String()
+				rules = append(rules, *pending)
+				pending = nil
+			} else if len(mediaStack) > 0 {
+				mediaStack = mediaStack[:len(mediaStack)-1]
+			}
+			buf.Reset()
+		default:
+			buf.WriteByte(src[i])
+		}
+	}
+
+	isMobile := func(r cssRule) bool {
+		for _, m := range r.medias {
+			if strings.Contains(m, "max-width") {
+				return true
+			}
+		}
+		return false
+	}
+	// specificity 计算类/属性/伪类个数与元素个数（比较用，够精确）
+	specificity := func(sel string) (int, int) {
+		classes := len(regexp.MustCompile(`\.[a-zA-Z_-][\w-]*`).FindAllString(sel, -1)) +
+			len(regexp.MustCompile(`\[[^\]]*\]`).FindAllString(sel, -1)) +
+			len(regexp.MustCompile(`:[a-z-]+`).FindAllString(sel, -1))
+		elems := len(regexp.MustCompile(`(^|[\s>+~])[a-zA-Z][\w-]*`).FindAllString(sel, -1))
+		return classes, elems
+	}
+
+	const target = "table.data td.row-cell--main"
+	var desktop, mobile []cssRule
+	for _, r := range rules {
+		if strings.Join(strings.Fields(r.selector), " ") != target {
+			continue
+		}
+		if isMobile(r) {
+			mobile = append(mobile, r)
+		} else {
+			desktop = append(desktop, r)
+		}
+	}
+	if len(desktop) == 0 || !strings.Contains(desktop[0].body, "min-width") {
+		t.Fatal("首列缺少最小宽度：列多的表格会把首列挤成逐字竖排")
+	}
+	if len(mobile) == 0 || !strings.Contains(mobile[len(mobile)-1].body, "min-width: 0") {
+		t.Fatal("手机卡片模式没有复位首列最小宽度")
+	}
+	dc, de := specificity(desktop[0].selector)
+	mc, me := specificity(mobile[len(mobile)-1].selector)
+	if mc < dc || (mc == dc && me < de) {
+		t.Errorf("手机复位规则优先级不足（%d 类 %d 元素 vs %d 类 %d 元素），不会生效",
+			mc, me, dc, de)
+	}
+
+	// 宽表格必须能横向滚动，而不是把内容压扁
+	if !regexp.MustCompile(`\.table-wrap\s*\{[^}]*overflow-x`).MatchString(src) {
+		t.Error(".table-wrap 需要 overflow-x，列多时应当横向滚动")
+	}
+	t.Logf("已解析 %d 条 CSS 规则", len(rules))
+}

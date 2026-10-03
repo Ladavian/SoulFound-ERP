@@ -111,7 +111,7 @@
             <a class="strong" href="/markets/{{$m.ID}}">{{$m.Name}}</a>
             <div class="tiny muted">
               <span class="mono">{{$m.Code}}</span>
-              {{if $m.Venue}} · {{$m.Venue}}{{end}}
+              {{if and $m.Venue (ne $m.Venue $m.Name)}} · {{$m.Venue}}{{end}}
               {{if $m.Organizer}} · {{$m.Organizer}}{{end}}
             </div>
           </td>

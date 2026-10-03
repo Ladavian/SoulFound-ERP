@@ -9,7 +9,7 @@
       <span class="mono">{{$m.Code}}</span>
       {{template "market_status" $m.Status}}
       <span>{{template "icon" "calendar"}} {{$m.DateRange}} · {{$m.Days}} 天</span>
-      {{if $m.Venue}}<span>{{template "icon" "pin"}} {{$m.Venue}}{{if $m.City}} · {{$m.City}}{{end}}</span>{{end}}
+      {{if and $m.Venue (ne $m.Venue $m.Name)}}<span>{{template "icon" "pin"}} {{$m.Venue}}{{if $m.City}} · {{$m.City}}{{end}}</span>{{else if $m.City}}<span>{{template "icon" "pin"}} {{$m.City}}</span>{{end}}
       {{if $m.Organizer}}<span>{{$m.Organizer}}</span>{{end}}
     </div>
   </div>

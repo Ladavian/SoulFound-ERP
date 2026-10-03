@@ -203,6 +203,14 @@ func (s *Store) Backup(ctx context.Context, dir string) (string, error) {
 		return "", fmt.Errorf("备份失败：同名备份文件过多，请稍后重试")
 	}
 	if _, err := s.db.ExecContext(ctx, `VACUUM INTO ?`, target); err != nil {
+		// SQLite 对写不进去的文件只会回一句 "unable to open database file"，
+		// 看不出是权限问题，这里补一句人能看懂的说明与处理办法。
+		if !dirWritable(dir) {
+			return "", fmt.Errorf("备份目录不可写：%s。"+
+				"容器部署时通常是宿主机挂载目录属主不对，"+
+				"在宿主机执行 sudo chown -R 1000:1000 ./data 后重启即可（原始错误: %w）",
+				dir, err)
+		}
 		return "", fmt.Errorf("备份失败: %w", err)
 	}
 	return target, nil
@@ -637,3 +645,15 @@ func (s *Store) ListLogs(ctx context.Context, limit int) ([]model.ActivityLog, e
 
 // ErrNotFound 目标记录不存在。
 var ErrNotFound = errors.New("记录不存在")
+
+// dirWritable 通过实际写一个临时文件判断目录是否可写。
+func dirWritable(dir string) bool {
+	f, err := os.CreateTemp(dir, ".write-test-*")
+	if err != nil {
+		return false
+	}
+	name := f.Name()
+	f.Close()
+	_ = os.Remove(name)
+	return true
+}
