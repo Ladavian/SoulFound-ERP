@@ -56,7 +56,27 @@ type User struct {
 	IsActive     bool
 	LastLoginAt  string
 	CreatedAt    string
+
+	// Permissions 自定义权限点。
+	//
+	// 为空表示沿用角色的默认权限（老账号与默认行为不变）；
+	// 非空则完全以它为准，角色只作为勾选时的预设模板。
+	Permissions []string
 }
+
+// PermissionNone 表示"一项权限都不给"的显式标记。
+//
+// 空列表在存储上等于"沿用角色默认"，所以要用一个标记把
+// "用户明确选择了不给任何权限"表达出来。
+const PermissionNone = "none"
+
+// PermissionsText 自定义权限的存储文本（逗号分隔）。
+func (u User) PermissionsText() string {
+	return strings.Join(u.Permissions, ",")
+}
+
+// HasCustomPermissions 是否单独指定过权限。
+func (u User) HasCustomPermissions() bool { return len(u.Permissions) > 0 }
 
 // DisplayName 展示名，优先真实姓名。
 func (u User) DisplayName() string {
@@ -986,6 +1006,42 @@ type Settings struct {
 	DefaultBoothFee Money
 	AllowNegative   bool
 	UpdatedAt       string
+
+	// 自动备份策略：有数据变化时按 BackupActiveHours 备，
+	// 一直没变化就拉长到 BackupIdleDays，只保留最近 BackupKeep 份。
+	AutoBackup        bool
+	BackupKeep        int
+	BackupActiveHours int
+	BackupIdleDays    int
+}
+
+// BackupActiveInterval 有数据变化时的备份间隔。
+func (s Settings) BackupActiveInterval() time.Duration {
+	h := s.BackupActiveHours
+	if h <= 0 {
+		h = 24
+	}
+	return time.Duration(h) * time.Hour
+}
+
+// BackupIdleInterval 没有数据变化时的备份间隔。
+func (s Settings) BackupIdleInterval() time.Duration {
+	d := s.BackupIdleDays
+	if d <= 0 {
+		d = 7
+	}
+	return time.Duration(d) * 24 * time.Hour
+}
+
+// BackupKeepCount 保留的备份份数。
+func (s Settings) BackupKeepCount() int {
+	if s.BackupKeep <= 0 {
+		return 30
+	}
+	if s.BackupKeep > 365 {
+		return 365
+	}
+	return s.BackupKeep
 }
 
 // ActivityLog 操作日志。

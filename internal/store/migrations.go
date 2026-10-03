@@ -91,10 +91,27 @@ SELECT mi.market_id, mi.product_id, 'loss', mi.loss_qty, 0, 0,
  WHERE mi.loss_qty <> 0;
 `
 
+// migrationV4 权限按功能细分。
+//
+// 以前权限完全由角色决定，粒度太粗。现在每个用户可以单独指定权限点：
+// permissions 为空表示沿用角色默认值（保持老账号行为不变），
+// 有值就完全按它来，角色退化成"预设模板 + 快速勾选"。
+const migrationV4 = `
+ALTER TABLE users ADD COLUMN permissions TEXT NOT NULL DEFAULT '';
+
+ALTER TABLE settings ADD COLUMN auto_backup INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE settings ADD COLUMN backup_keep INTEGER NOT NULL DEFAULT 30;
+ALTER TABLE settings ADD COLUMN backup_active_hours INTEGER NOT NULL DEFAULT 24;
+ALTER TABLE settings ADD COLUMN backup_idle_days INTEGER NOT NULL DEFAULT 7;
+
+CREATE INDEX IF NOT EXISTS idx_market_records_occurred ON market_records(occurred_at);
+`
+
 // migrations 按顺序执行的迁移脚本。新增结构或数据变更时在末尾追加一段 SQL，
 // 已执行过的版本不会重复执行（版本号记录在 schema_meta 表）。
 var migrations = []string{
 	schemaV1,
 	migrationV2,
 	migrationV3,
+	migrationV4,
 }

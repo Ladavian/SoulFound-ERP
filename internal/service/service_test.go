@@ -427,3 +427,132 @@ func TestReportAggregates(t *testing.T) {
 		t.Error("首页应统计到产品数")
 	}
 }
+
+// TestAutoBackupPolicy 自动备份策略：有变化就勤备、没变化就懒备。
+func TestAutoBackupPolicy(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+	admin := adminUser(t, svc)
+	now := time.Now()
+
+	// 1) 一份备份都没有 → 应该立刻备
+	d, err := svc.DecideAutoBackup(ctx, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !d.Should {
+		t.Fatalf("还没有备份时应当备份，实际: %s", d.Reason)
+	}
+	info, err := svc.MaybeAutoBackup(ctx, now)
+	if err != nil {
+		t.Fatalf("首次自动备份失败: %v", err)
+	}
+	if info == nil {
+		t.Fatal("首次自动备份应当生成文件")
+	}
+
+	// 2) 刚备份完、数据没变 → 不该重复备份
+	d, _ = svc.DecideAutoBackup(ctx, now.Add(time.Minute))
+	if d.Should {
+		t.Errorf("刚备份完不应重复备份，实际: %s", d.Reason)
+	}
+	if d.Changed {
+		t.Error("数据没变时 Changed 应为 false")
+	}
+	if d.Interval != 7*24*time.Hour {
+		t.Errorf("无变化时应使用「无变化间隔」7 天，实际 %s", d.Interval)
+	}
+
+	// 3) 超过「无变化间隔」→ 兜底备一次
+	d, _ = svc.DecideAutoBackup(ctx, now.Add(8*24*time.Hour))
+	if !d.Should {
+		t.Errorf("超过无变化间隔应兜底备份，实际: %s", d.Reason)
+	}
+
+	// 4) 数据发生变化 → 改用「有变化间隔」，默认每天
+	time.Sleep(25 * time.Millisecond)
+	st, _ := svc.Store.Settings(ctx)
+	if err := svc.Store.SaveSettings(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	d, _ = svc.DecideAutoBackup(ctx, now.Add(time.Hour))
+	if !d.Changed {
+		t.Fatal("刚写过数据，Changed 应为 true")
+	}
+	if d.Interval != 24*time.Hour {
+		t.Errorf("有变化时应使用「有变化间隔」24 小时，实际 %s", d.Interval)
+	}
+	if d.Should {
+		t.Errorf("只过了 1 小时，还不该备份，实际: %s", d.Reason)
+	}
+
+	// 5) 过了 25 小时 → 该备了
+	d, _ = svc.DecideAutoBackup(ctx, now.Add(25*time.Hour))
+	if !d.Should {
+		t.Errorf("有变化且超过 24 小时应当备份，实际: %s", d.Reason)
+	}
+
+	// 6) 关闭自动备份后就完全不备
+	st.AutoBackup = false
+	if err := svc.Store.SaveSettings(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	d, _ = svc.DecideAutoBackup(ctx, now.Add(100*24*time.Hour))
+	if d.Should {
+		t.Error("关闭自动备份后不应再备份")
+	}
+
+	// 手动备份始终可用，并且会记一条日志
+	st.AutoBackup = true
+	_ = svc.Store.SaveSettings(ctx, st)
+	if _, err := svc.BackupNow(ctx, admin); err != nil {
+		t.Fatalf("手动备份失败: %v", err)
+	}
+}
+
+// TestBackupRetentionAndAccess 备份保留份数与访问安全。
+func TestBackupRetentionAndAccess(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+	admin := adminUser(t, svc)
+
+	// 只保留 2 份
+	st, _ := svc.Store.Settings(ctx)
+	st.BackupKeep = 2
+	if err := svc.Store.SaveSettings(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < 3; i++ {
+		if _, err := svc.BackupNow(ctx, admin); err != nil {
+			t.Fatalf("第 %d 次备份失败: %v", i+1, err)
+		}
+		time.Sleep(5 * time.Millisecond) // 让文件名与 mtime 有区分度
+	}
+	list, err := svc.ListBackups()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("保留份数应为 2，实际 %d 份", len(list))
+	}
+
+	// 能找到并删除
+	name := list[0].Name
+	if _, err := svc.FindBackup(name); err != nil {
+		t.Fatalf("应能按文件名找到备份: %v", err)
+	}
+	if err := svc.DeleteBackup(ctx, name, admin); err != nil {
+		t.Fatalf("删除备份失败: %v", err)
+	}
+	if after, _ := svc.ListBackups(); len(after) != 1 {
+		t.Errorf("删除后应剩 1 份，实际 %d", len(after))
+	}
+
+	// 目录穿越必须被挡住
+	for _, bad := range []string{"../secret.key", "../../etc/passwd", "..", "a/b.sqlite3", "x.txt"} {
+		if _, err := svc.FindBackup(bad); err == nil {
+			t.Errorf("非法备份名 %q 不应被接受", bad)
+		}
+	}
+}

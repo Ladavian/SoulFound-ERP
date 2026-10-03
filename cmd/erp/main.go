@@ -109,9 +109,28 @@ func main() {
 		}
 	}()
 
+	// 自动备份：启动后先检查一次，之后每小时检查一遍。
+	// 策略是"有数据变化就勤备、一直没变化就拉长间隔"，避免堆一堆一样的文件。
+	bgCtx, bgCancel := context.WithCancel(context.Background())
+	defer bgCancel()
+	go func() {
+		runAutoBackup(bgCtx, svc, "启动检查")
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-bgCtx.Done():
+				return
+			case <-ticker.C:
+				runAutoBackup(bgCtx, svc, "定时检查")
+			}
+		}
+	}()
+
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
+	bgCancel()
 
 	log.Println("正在停止服务…")
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -215,4 +234,16 @@ func displayAddr(addr string) string {
 		return "127.0.0.1" + addr
 	}
 	return addr
+}
+
+// runAutoBackup 执行一次自动备份判断，失败只记日志、不影响服务运行。
+func runAutoBackup(ctx context.Context, svc *service.Service, why string) {
+	info, err := svc.MaybeAutoBackup(ctx, time.Now())
+	if err != nil {
+		log.Printf("自动备份检查失败（%s）: %v", why, err)
+		return
+	}
+	if info != nil {
+		log.Printf("已自动备份: %s（%s）", info.Name, info.SizeText())
+	}
 }

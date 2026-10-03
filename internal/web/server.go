@@ -40,6 +40,9 @@ type Server struct {
 
 // New 构造 HTTP 服务。
 func New(cfg *config.Config, svc *service.Service) (*Server, error) {
+	// 把权限清单交给服务层做合法性校验（service 不反向依赖 web）
+	service.RegisterPermissions(AllPermissions())
+
 	// Go 内置的 MIME 表里没有 .webmanifest，不注册的话会以 text/plain 返回，
 	// 部分浏览器会因此忽略 PWA manifest。
 	if err := mime.AddExtensionType(".webmanifest", "application/manifest+json"); err != nil {
@@ -249,7 +252,7 @@ func (s *Server) guard(perm string, h http.HandlerFunc) http.Handler {
 			http.Redirect(w, r, "/login?next="+url.QueryEscape(r.URL.RequestURI()), http.StatusSeeOther)
 			return
 		}
-		if perm != "" && !hasPerm(user.Role, perm) {
+		if perm != "" && !permsForUser(user).Has(perm) {
 			s.forbidden(w, r, perm)
 			return
 		}
@@ -404,6 +407,8 @@ func (s *Server) routes() {
 	m.Handle("POST /settings", s.guard(PermSettingManage, s.handleSettingsSave))
 	m.Handle("POST /settings/rebuild", s.guard(PermSettingManage, s.handleSettingsRebuild))
 	m.Handle("POST /settings/backup", s.guard(PermSettingManage, s.handleSettingsBackup))
+	m.Handle("GET /settings/backup/{name}", s.guard(PermSettingManage, s.handleBackupDownload))
+	m.Handle("POST /settings/backup/{name}/delete", s.guard(PermSettingManage, s.handleBackupDelete))
 	m.Handle("GET /logs", s.guard(PermUserManage, s.handleLogs))
 
 	// 兜底 404

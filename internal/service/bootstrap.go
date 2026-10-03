@@ -18,6 +18,11 @@ func (s *Service) Bootstrap(ctx context.Context) error {
 		Currency:       s.Cfg.Currency,
 		CurrencySymbol: s.Cfg.CurrencySymbol,
 		DefaultLowQty:  s.Cfg.DefaultLowQty,
+		// 默认开启自动备份：有数据变化每天一份，一直没变化每周兜底一份
+		AutoBackup:        true,
+		BackupKeep:        30,
+		BackupActiveHours: 24,
+		BackupIdleDays:    7,
 	}); err != nil {
 		return fmt.Errorf("初始化设置失败: %w", err)
 	}
@@ -75,8 +80,64 @@ func validRole(role string) bool {
 	return false
 }
 
+// 权限点清单由 web 层维护在 perm.go，这里只需要校验合法性，
+// 因此通过注册进来的方式读取，避免 service 依赖 web。
+var (
+	knownPermissions  = map[string]bool{}
+	PermUserManageKey = "user.manage"
+)
+
+// RegisterPermissions 由 web 层在启动时注册全部权限点，用于校验。
+func RegisterPermissions(list []string) {
+	for _, p := range list {
+		knownPermissions[p] = true
+	}
+}
+
+// NormalizePermissions 去重并校验权限点。
+func NormalizePermissions(in []string) ([]string, error) {
+	if len(in) == 0 {
+		return nil, nil
+	}
+	out := make([]string, 0, len(in))
+	seen := map[string]bool{}
+	for _, p := range in {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if p == model.PermissionNone {
+			// 明确表示"不给任何权限"，其余勾选一律忽略
+			return []string{model.PermissionNone}, nil
+		}
+		if len(knownPermissions) > 0 && !knownPermissions[p] && p != "*" {
+			return nil, UserErrf("未知的权限项：%s", p)
+		}
+		if seen[p] {
+			continue
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
+}
+
+func containsPerm(list []string, perm string) bool {
+	for _, p := range list {
+		if p == perm || p == "*" {
+			return true
+		}
+	}
+	return false
+}
+
 // CreateUser 新建用户。
-func (s *Service) CreateUser(ctx context.Context, username, password, fullName, role string, actor *model.User) (int64, error) {
+//
+// permissions 非空时表示单独指定权限点；为空则沿用角色默认权限。
+func (s *Service) CreateUser(ctx context.Context, username, password, fullName, role string, permissions []string, actor *model.User) (int64, error) {
 	username = strings.TrimSpace(username)
 	if !usernamePattern.MatchString(username) {
 		return 0, UserErrf("用户名只能是 3-32 位字母、数字、点、下划线或中划线")
@@ -86,6 +147,10 @@ func (s *Service) CreateUser(ctx context.Context, username, password, fullName, 
 	}
 	if !validRole(role) {
 		return 0, UserErrf("请选择有效的角色")
+	}
+	permissions, err := NormalizePermissions(permissions)
+	if err != nil {
+		return 0, err
 	}
 	if existing, err := s.Store.UserByUsername(ctx, username); err != nil {
 		return 0, err
@@ -104,6 +169,7 @@ func (s *Service) CreateUser(ctx context.Context, username, password, fullName, 
 			FullName:     strings.TrimSpace(fullName),
 			Role:         role,
 			IsActive:     true,
+			Permissions:  permissions,
 		})
 		if err != nil {
 			return err
@@ -115,9 +181,17 @@ func (s *Service) CreateUser(ctx context.Context, username, password, fullName, 
 }
 
 // UpdateUser 修改用户资料、角色与启用状态。
-func (s *Service) UpdateUser(ctx context.Context, id int64, fullName, role string, isActive bool, actor *model.User) error {
+func (s *Service) UpdateUser(ctx context.Context, id int64, username, fullName, role string, isActive bool, permissions []string, actor *model.User) error {
 	if !validRole(role) {
 		return UserErrf("请选择有效的角色")
+	}
+	username = strings.TrimSpace(username)
+	if !usernamePattern.MatchString(username) {
+		return UserErrf("用户名只能是 3-32 位字母、数字、点、下划线或中划线")
+	}
+	permissions, err := NormalizePermissions(permissions)
+	if err != nil {
+		return err
 	}
 	target, err := s.Store.UserByID(ctx, id)
 	if err != nil {
@@ -126,12 +200,28 @@ func (s *Service) UpdateUser(ctx context.Context, id int64, fullName, role strin
 	if target == nil {
 		return UserErrf("用户不存在")
 	}
+
+	// 改账号名要保证唯一
+	if username != target.Username {
+		existing, err := s.Store.UserByUsername(ctx, username)
+		if err != nil {
+			return err
+		}
+		if existing != nil && existing.ID != id {
+			return UserErrf("用户名「%s」已被占用", username)
+		}
+	}
+
 	if actor != nil && actor.ID == id {
 		if !isActive {
 			return UserErrf("不能停用当前登录的账号")
 		}
 		if target.Role == model.RoleAdmin && role != model.RoleAdmin {
 			return UserErrf("不能修改自己的管理员角色")
+		}
+		// 自锁保护：把自己改到无法再进用户管理，就再也改不回来了
+		if len(permissions) > 0 && !containsPerm(permissions, PermUserManageKey) {
+			return UserErrf("不能移除自己的「用户管理」权限，否则将无法再调整权限")
 		}
 	}
 	// 防止把最后一个管理员降级或停用
@@ -146,14 +236,20 @@ func (s *Service) UpdateUser(ctx context.Context, id int64, fullName, role strin
 	}
 	return s.Store.Tx(ctx, func(tx *sql.Tx) error {
 		if err := s.Store.UpdateUserTx(ctx, tx, &model.User{
-			ID:       id,
-			FullName: strings.TrimSpace(fullName),
-			Role:     role,
-			IsActive: isActive,
+			ID:          id,
+			Username:    username,
+			FullName:    strings.TrimSpace(fullName),
+			Role:        role,
+			IsActive:    isActive,
+			Permissions: permissions,
 		}); err != nil {
 			return err
 		}
-		return s.Store.Log(ctx, tx, actor, "修改用户", "user", &id, target.Username)
+		detail := target.Username
+		if username != target.Username {
+			detail = target.Username + " → " + username
+		}
+		return s.Store.Log(ctx, tx, actor, "修改用户", "user", &id, detail)
 	})
 }
 

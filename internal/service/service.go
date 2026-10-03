@@ -13,11 +13,14 @@ import (
 type Service struct {
 	Store *store.Store
 	Cfg   *config.Config
+
+	// bootID 本次进程启动标识：total_changes 会随重启归零，需要它来识别
+	bootID string
 }
 
 // New 构造 Service。
 func New(st *store.Store, cfg *config.Config) *Service {
-	return &Service{Store: st, Cfg: cfg}
+	return &Service{Store: st, Cfg: cfg, bootID: newBootID()}
 }
 
 // UserError 可以直接展示给用户的业务错误（区别于程序错误）。

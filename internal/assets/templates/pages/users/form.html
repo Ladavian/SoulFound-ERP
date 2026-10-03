@@ -22,22 +22,25 @@
 </div>
 {{end}}
 
-<form method="post" action="{{.FormAction}}" x-data="{ role: '{{$u.Role}}' }">
+<form method="post" action="{{.FormAction}}"
+      x-data="permEditor({
+        role: '{{$u.Role}}',
+        current: {{json .CurrentPermList}},
+        defaults: {{.RoleDefaultsJSON}}
+      })">
   <div class="card">
     <div class="card__head"><div class="card__title">账号信息</div></div>
     <div class="card__body">
       <div class="form-grid">
         <div class="field">
-          <label class="field__label" for="username">用户名<span class="req">*</span></label>
-          {{if .IsNew}}
-          <input class="input" id="username" name="username" type="text" value="{{$u.Username}}" required autofocus
-                 autocomplete="off" placeholder="例如：amy">
-          <div class="field__hint">登录时使用，建议用英文或拼音，不要有空格。</div>
-          {{else}}
-          <input class="input mono" id="username" name="username" type="text" value="{{$u.Username}}" readonly
-                 autocomplete="off">
-          <div class="field__hint">用户名创建后不可修改。</div>
-          {{end}}
+          <label class="field__label" for="username">账号名<span class="req">*</span></label>
+          <input class="input mono" id="username" name="username" type="text" value="{{$u.Username}}" required
+                 autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="例如：amy"
+                 {{if .IsNew}}autofocus{{end}}>
+          <div class="field__hint">
+            登录时使用，3-32 位字母、数字、点、下划线或中划线，不能有空格。
+            {{if not .IsNew}}改完立即生效，该账号已登录的会话不受影响。{{end}}
+          </div>
         </div>
 
         {{if .IsNew}}
@@ -63,12 +66,56 @@
             <option value="{{.Value}}"{{if eq .Value $u.Role}} selected{{end}}>{{.Label}}</option>
             {{end}}
           </select>
-          <div class="field__hint">角色决定这个账号能看到什么、能改什么。</div>
+          <div class="field__hint">
+            角色只是<strong>预设模板</strong>：切换角色会把下面的权限按该角色的默认值重新勾选，
+            你也可以在下面逐项增减，最终以勾选结果为准。
+          </div>
           <div class="small text-2" style="margin-top:6px;padding:9px 11px;background:var(--surface-2);border:1px solid var(--line);border-radius:9px">
             <div x-show="role === 'manager'">{{index .RoleDescriptions "manager"}}</div>
             <div x-show="role === 'staff'">{{index .RoleDescriptions "staff"}}</div>
             <div x-show="role === 'viewer'">{{index .RoleDescriptions "viewer"}}</div>
             <div x-show="role === 'admin'">管理员拥有全部权限：业务操作、用户管理与系统设置。</div>
+          </div>
+        </div>
+
+        <div class="field span-2">
+          <div class="perm-head">
+            <label class="field__label" style="margin:0">功能权限<span class="req">*</span></label>
+            <div class="perm-head__actions">
+              <span class="badge badge--muted">已选 <b x-text="checkedCount()">{{.CurrentPerms.Count}}</b> / {{.AllPermCount}}</span>
+              <button class="btn btn--sm" type="button" @click="selectAll()">全选</button>
+              <button class="btn btn--sm" type="button" @click="clearAll()">全不选</button>
+              <button class="btn btn--sm" type="button" @click="applyRole()">按角色重置</button>
+            </div>
+          </div>
+          {{/* 全不选时提交一个显式标记，否则空列表会被当成"沿用角色默认" */}}
+          <template x-if="perms.length === 0">
+            <input type="hidden" name="permissions" value="none">
+          </template>
+          <div class="perm-groups">
+            {{range .PermissionGroups}}
+            <div class="perm-group">
+              <div class="perm-group__head">
+                <span class="perm-group__name">{{.Label}}</span>
+                <button class="perm-group__toggle" type="button"
+                        @click="toggleGroup({{range $i, $it := .Items}}{{if $i}},{{end}}'{{$it.Key}}'{{end}})">全选本组</button>
+              </div>
+              <div class="perm-group__items">
+                {{range .Items}}
+                <label class="perm-item">
+                  <input type="checkbox" name="permissions" value="{{.Key}}" x-model="perms">
+                  <span class="perm-item__body">
+                    <span class="perm-item__label">{{.Label}}</span>
+                    <span class="perm-item__desc">{{.Desc}}</span>
+                  </span>
+                </label>
+                {{end}}
+              </div>
+            </div>
+            {{end}}
+          </div>
+          <div class="field__hint">
+            取消勾选「用户与权限」后，该账号就再也改不了任何权限；系统也不允许你移除自己的这项权限，避免把自己锁在外面。
           </div>
         </div>
 

@@ -260,7 +260,7 @@ func TestStaffCannotSeeCostsOrSettle(t *testing.T) {
 	admin := doLogin(t, h, cfg, "admin", "admin123")
 	ctx := context.Background()
 
-	if _, err := svc.CreateUser(ctx, "staff1", "staff123", "店员小王", model.RoleStaff, nil); err != nil {
+	if _, err := svc.CreateUser(ctx, "staff1", "staff123", "店员小王", model.RoleStaff, nil, mustUser(t, svc, "admin")); err != nil {
 		t.Fatalf("创建店员失败: %v", err)
 	}
 	staff := doLogin(t, h, cfg, "staff1", "staff123")
@@ -697,8 +697,9 @@ func TestUserManagementFlows(t *testing.T) {
 		t.Errorf("角色应为 staff，实际 %s", u.Role)
 	}
 
-	// 修改角色与状态
+	// 改账号名 + 角色 + 状态（账号名以前是只读的，现在允许修改）
 	code, _ = post(t, h, "/users/"+strconv.FormatInt(u.ID, 10)+"/edit", url.Values{
+		"username":  {"xiaoli2"},
 		"full_name": {"小李（升职）"},
 		"role":      {model.RoleManager},
 		"is_active": {"1"},
@@ -707,8 +708,108 @@ func TestUserManagementFlows(t *testing.T) {
 		t.Fatalf("修改用户应 303，实际 %d", code)
 	}
 	u, _ = svc.Store.UserByID(ctx, u.ID)
-	if u.Role != model.RoleManager || u.FullName != "小李（升职）" {
+	if u.Role != model.RoleManager || u.FullName != "小李（升职）" || u.Username != "xiaoli2" {
 		t.Errorf("用户未被正确更新: %+v", u)
+	}
+	// 旧账号名应已释放，新账号名可以登录
+	if old, _ := svc.Store.UserByUsername(ctx, "xiaoli"); old != nil {
+		t.Error("改名后旧账号名不应还能查到")
+	}
+	if renamed, _ := svc.Store.UserByUsername(ctx, "xiaoli2"); renamed == nil {
+		t.Error("改名后应能用新账号名查到")
+	}
+
+	// 账号名不能与别人重复
+	code, _ = post(t, h, "/users/new", url.Values{
+		"username": {"other"}, "password": {"initpass1"}, "role": {model.RoleStaff},
+	}, cookie)
+	if code != http.StatusSeeOther {
+		t.Fatalf("新建第二个用户应 303，实际 %d", code)
+	}
+	other, _ := svc.Store.UserByUsername(ctx, "other")
+	code, _ = post(t, h, "/users/"+strconv.FormatInt(other.ID, 10)+"/edit", url.Values{
+		"username": {"xiaoli2"}, "full_name": {"重名"}, "role": {model.RoleStaff}, "is_active": {"1"},
+	}, cookie)
+	if code != http.StatusSeeOther {
+		t.Fatalf("重名提交应 303（带错误提示），实际 %d", code)
+	}
+	if again, _ := svc.Store.UserByID(ctx, other.ID); again.Username != "other" {
+		t.Errorf("账号名冲突时不应被改写，实际 %q", again.Username)
+	}
+
+	// 按功能分配权限：只给「查看市集」，不给任何产品权限
+	code, _ = post(t, h, "/users/"+strconv.FormatInt(u.ID, 10)+"/edit", url.Values{
+		"username":    {"xiaoli2"},
+		"full_name":   {"小李（升职）"},
+		"role":        {model.RoleStaff},
+		"is_active":   {"1"},
+		"permissions": {PermMarketView, PermMarketManage},
+	}, cookie)
+	if code != http.StatusSeeOther {
+		t.Fatalf("保存权限应 303，实际 %d", code)
+	}
+	u, _ = svc.Store.UserByID(ctx, u.ID)
+	if len(u.Permissions) != 2 {
+		t.Fatalf("应保存 2 个权限点，实际 %v", u.Permissions)
+	}
+
+	// 自定义权限必须真的生效：能进市集，进不了产品
+	staffCookie := doLogin(t, h, cfg, "xiaoli2", "initpass1")
+	if code, _ := get(t, h, "/markets", staffCookie); code != http.StatusOK {
+		t.Errorf("有 market.view 应能访问市集，实际 %d", code)
+	}
+	if code, _ := get(t, h, "/products", staffCookie); code != http.StatusForbidden {
+		t.Errorf("没有 product.view 应被拒绝，实际 %d", code)
+	}
+	if code, _ := get(t, h, "/reports/markets", staffCookie); code != http.StatusForbidden {
+		t.Errorf("没有 report.view 应被拒绝，实际 %d", code)
+	}
+	// 结算权限没给，收银台的结算入口也不该出现
+	if _, body := get(t, h, "/markets", staffCookie); strings.Contains(body, "结算") &&
+		strings.Contains(body, "撤销结算") {
+		t.Error("未授予 market.settle 时不应出现结算操作")
+	}
+
+	// 非法权限点应被拒绝
+	code, _ = post(t, h, "/users/"+strconv.FormatInt(u.ID, 10)+"/edit", url.Values{
+		"username": {"xiaoli2"}, "role": {model.RoleStaff}, "is_active": {"1"},
+		"permissions": {"not.a.real.permission"},
+	}, cookie)
+	if code != http.StatusSeeOther {
+		t.Fatalf("非法权限应 303（带错误提示），实际 %d", code)
+	}
+	if after, _ := svc.Store.UserByID(ctx, u.ID); len(after.Permissions) != 2 {
+		t.Errorf("非法权限不应写入，实际 %v", after.Permissions)
+	}
+
+	// 全不选：存成显式标记，而不是回退到角色默认
+	code, _ = post(t, h, "/users/"+strconv.FormatInt(u.ID, 10)+"/edit", url.Values{
+		"username": {"xiaoli2"}, "role": {model.RoleStaff}, "is_active": {"1"},
+		"permissions": {model.PermissionNone},
+	}, cookie)
+	if code != http.StatusSeeOther {
+		t.Fatalf("全不选应 303，实际 %d", code)
+	}
+	u, _ = svc.Store.UserByID(ctx, u.ID)
+	if len(u.Permissions) != 1 || u.Permissions[0] != model.PermissionNone {
+		t.Fatalf("全不选应存成 none 标记，实际 %v", u.Permissions)
+	}
+	staffCookie = doLogin(t, h, cfg, "xiaoli2", "initpass1")
+	if code, _ := get(t, h, "/markets", staffCookie); code != http.StatusForbidden {
+		t.Errorf("无任何权限时应被拒绝，实际 %d", code)
+	}
+
+	// 管理员不能移除自己的用户管理权限，否则会把自己锁在外面
+	adminUser := mustUser(t, svc, "admin")
+	code, _ = post(t, h, "/users/"+strconv.FormatInt(adminUser.ID, 10)+"/edit", url.Values{
+		"username": {"admin"}, "role": {model.RoleAdmin}, "is_active": {"1"},
+		"permissions": {PermMarketView},
+	}, cookie)
+	if code != http.StatusSeeOther {
+		t.Fatalf("应 303，实际 %d", code)
+	}
+	if after, _ := svc.Store.UserByID(ctx, adminUser.ID); len(after.Permissions) != 0 {
+		t.Errorf("不应允许移除自己的用户管理权限，实际 %v", after.Permissions)
 	}
 
 	// 重置密码后应能用新密码登录
@@ -719,7 +820,8 @@ func TestUserManagementFlows(t *testing.T) {
 	if code != http.StatusSeeOther {
 		t.Fatalf("重置密码应 303，实际 %d", code)
 	}
-	doLogin(t, h, cfg, "xiaoli", "newpass99")
+	// 该账号已被改名成 xiaoli2，这里必须用新账号名登录
+	doLogin(t, h, cfg, "xiaoli2", "newpass99")
 
 	// 不能删除自己
 	code, _ = post(t, h, "/users/1/delete", url.Values{}, cookie)
@@ -1407,5 +1509,83 @@ func TestAppBrandingAndInstallPrompt(t *testing.T) {
 	// 宽屏下隐藏安装引导
 	if !strings.Contains(css, ".install-bar.is-visible { display: none !important; }") {
 		t.Error("PC 端应隐藏安装引导")
+	}
+}
+
+// TestBackupRoutes 手动备份、下载与删除。
+func TestBackupRoutes(t *testing.T) {
+	h, svc, cfg := testApp(t)
+	cookie := doLogin(t, h, cfg, "admin", "admin123")
+
+	// 设置页应显示自动备份状态与备份列表
+	code, page := get(t, h, "/settings", cookie)
+	if code != http.StatusOK {
+		t.Fatalf("设置页应可访问，实际 %d", code)
+	}
+	for _, want := range []string{"自动备份", "有变化时的间隔", "最多保留几份", "立即备份"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("设置页应包含 %q", want)
+		}
+	}
+
+	// 立即备份
+	code, _ = post(t, h, "/settings/backup", url.Values{}, cookie)
+	if code != http.StatusSeeOther {
+		t.Fatalf("手动备份应 303，实际 %d", code)
+	}
+	list, err := svc.ListBackups()
+	if err != nil || len(list) == 0 {
+		t.Fatalf("备份未生成: %v", err)
+	}
+	name := list[0].Name
+
+	// 设置页能看到这份备份，并能下载
+	_, page = get(t, h, "/settings", cookie)
+	if !strings.Contains(page, name) {
+		t.Errorf("设置页应列出备份 %s", name)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/settings/backup/"+name, nil)
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("下载备份应 200，实际 %d", rec.Code)
+	}
+	if rec.Body.Len() == 0 {
+		t.Error("下载的备份内容不应为空")
+	}
+	if cd := rec.Header().Get("Content-Disposition"); !strings.Contains(cd, "attachment") {
+		t.Errorf("应作为附件下载，实际 %q", cd)
+	}
+
+	// 目录穿越必须被挡住
+	for _, bad := range []string{"..%2Fsecret.key", "x.txt"} {
+		req := httptest.NewRequest(http.MethodGet, "/settings/backup/"+bad, nil)
+		req.AddCookie(cookie)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code == http.StatusOK {
+			t.Errorf("非法备份名 %s 不应返回 200", bad)
+		}
+	}
+
+	// 删除备份
+	code, _ = post(t, h, "/settings/backup/"+name+"/delete", url.Values{}, cookie)
+	if code != http.StatusSeeOther {
+		t.Fatalf("删除备份应 303，实际 %d", code)
+	}
+	if after, _ := svc.ListBackups(); len(after) != 0 {
+		t.Errorf("删除后应没有备份，实际 %d 份", len(after))
+	}
+
+	// 没有 system 权限的人不能碰备份
+	staffID, err := svc.CreateUser(context.Background(), "nosys", "staffpass1", "无权限",
+		model.RoleStaff, []string{PermMarketView}, mustUser(t, svc, "admin"))
+	if err != nil || staffID == 0 {
+		t.Fatalf("创建测试用户失败: %v", err)
+	}
+	staff := doLogin(t, h, cfg, "nosys", "staffpass1")
+	if code, _ := post(t, h, "/settings/backup", url.Values{}, staff); code != http.StatusForbidden {
+		t.Errorf("没有设置权限不应能备份，实际 %d", code)
 	}
 }

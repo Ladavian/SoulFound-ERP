@@ -330,7 +330,7 @@ table.data--compact th, table.data--compact td { padding: 7px 10px; }
 /* ---------------------------------------------------------------- 表单 */
 .form-grid { display: grid; gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .form-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.form-grid--1 { grid-template-columns: 1fr; }
+.form-grid--1 { grid-template-columns: minmax(0, 1fr); }
 .span-2 { grid-column: span 2; }
 .span-3 { grid-column: span 3; }
 .field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
@@ -391,7 +391,7 @@ table.data--compact th, table.data--compact td { padding: 7px 10px; }
 .empty__hint { font-size: 12.5px; max-width: 380px; margin: 0 auto 14px; }
 
 /* ---------------------------------------------------------------- 明细块 */
-.kv { display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; font-size: 13.5px; }
+.kv { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 14px; font-size: 13.5px; }
 .kv dt { color: var(--text-3); font-size: 12.5px; }
 .kv dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; font-weight: 550; }
 
@@ -544,7 +544,7 @@ table.data--compact th, table.data--compact td { padding: 7px 10px; }
 
 /* ---------------------------------------------------------------- 响应式 */
 @media (max-width: 1180px) {
-  .grid--sidebar { grid-template-columns: 1fr; }
+  .grid--sidebar { grid-template-columns: minmax(0, 1fr); }
   .stat-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
@@ -594,8 +594,10 @@ table.data--compact th, table.data--compact td { padding: 7px 10px; }
   .stat { padding: 12px 13px; }
   .stat__value { font-size: 19px; }
 
-  .grid--2, .grid--3, .grid--4 { grid-template-columns: 1fr; }
-  .form-grid, .form-grid--3 { grid-template-columns: 1fr; }
+  .grid--2, .grid--3, .grid--4 { grid-template-columns: minmax(0, 1fr); }
+  .hero { padding: 16px; gap: 12px; }
+  .hero__stats { margin-left: 0; width: 100%; gap: 12px 18px; }
+  .form-grid, .form-grid--3 { grid-template-columns: minmax(0, 1fr); }
   .span-2, .span-3 { grid-column: auto; }
 
   .page-head__title { font-size: 18px; }
@@ -639,8 +641,15 @@ table.data--compact th, table.data--compact td { padding: 7px 10px; }
 }
 
 @media (max-width: 560px) {
-  .stat-grid { grid-template-columns: 1fr 1fr; }
-  .hero__stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hero__stats {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    /* 手机上必须整行铺开：margin-left:auto 会把 4 项挤到超出屏幕 */
+    margin-left: 0;
+    width: 100%;
+  }
   table.data { font-size: 13px; }
   table.data th, table.data td { padding: 9px 10px; }
   .auth__card { padding: 24px 18px; }
@@ -707,6 +716,7 @@ svg { width: 1em; height: 1em; flex-shrink: 0; }
 .page-head__title,
 .card__sub,
 .stat__value,
+.hero__stat-value,
 .mono,
 .bar-item__name,
 table.data td:not(.num),
@@ -719,6 +729,13 @@ table.data td:not(.num),
 .sticky-bar { flex-wrap: wrap; }
 .segmented { flex-wrap: wrap; max-width: 100%; }
 .tabs { max-width: 100%; }
+
+/* 栅格/弹性子项默认不会收缩到内容宽度以下，一个宽表格就能把整页撑出横向滚动 */
+.grid > *, .stat-grid > *, .form-grid > *, .hero__stats > *, .card, .card__body, .table-wrap {
+  min-width: 0;
+}
+/* overflow-x: clip 不像 hidden 那样创建滚动容器，sticky 顶栏仍然正常 */
+.main, .content { max-width: 100%; overflow-x: clip; }
 
 /* 图片与画布不超出容器 */
 img { max-width: 100%; height: auto; }
@@ -1224,3 +1241,80 @@ body.scan-open { overflow: hidden; }
   .image-edit__preview { flex: 0 0 96px; width: 96px; height: 96px; }
   .pos-tile__img { flex: 0 0 46px; width: 46px; height: 46px; }
 }
+
+/* ==========================================================================
+   用户权限勾选（按功能模块）
+   ========================================================================== */
+.perm-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 9px;
+}
+.perm-head__actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.perm-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(238px, 1fr));
+  gap: 10px;
+}
+.perm-group {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  padding: 10px 12px;
+  min-width: 0;
+}
+.perm-group__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+.perm-group__name { font-size: 13px; font-weight: 650; }
+.perm-group__toggle {
+  background: none;
+  border: 0;
+  padding: 2px 4px;
+  color: var(--brand-600);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.perm-group__toggle:hover { text-decoration: underline; }
+.perm-group__items { display: flex; flex-direction: column; gap: 4px; }
+.perm-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.perm-item:hover { background: var(--surface); }
+.perm-item input { flex: 0 0 auto; margin-top: 2px; }
+.perm-item__body { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.perm-item__label { font-size: 13px; }
+.perm-item__desc { font-size: 11.5px; color: var(--text-3); overflow-wrap: anywhere; }
+
+/* ==========================================================================
+   自动备份
+   ========================================================================== */
+.backup-list { display: flex; flex-direction: column; gap: 6px; }
+.backup-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  min-width: 0;
+}
+.backup-row__main { flex: 1 1 auto; min-width: 0; }
+.backup-row__name { font-size: 12.5px; overflow-wrap: anywhere; }
+.backup-row__meta { font-size: 11.5px; color: var(--text-3); }
+.backup-row__actions { flex: 0 0 auto; display: flex; gap: 6px; }

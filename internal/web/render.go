@@ -287,7 +287,7 @@ func (s *Server) newPage(r *http.Request, title, nav string) map[string]any {
 		"Cfg":      s.cfg,
 		"Settings": settingsFrom(r),
 		"Flash":    flashFrom(r),
-		"Perms":    permSet{role: role},
+		"Perms":    permsForUser(user),
 		"IsAdmin":  role == model.RoleAdmin,
 		"Today":    time.Now().Format("2006-01-02"),
 	}

@@ -65,6 +65,11 @@
     <div class="card__foot" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <div class="small muted">{{if .FormSettings.UpdatedAt}}上次保存：{{datetime .FormSettings.UpdatedAt}}{{else}}尚未保存过设置{{end}}</div>
       <div style="margin-left:auto">
+        {{/* 自动备份的设置在这个表单之外，用隐藏字段带上，避免保存时被重置 */}}
+        <input type="hidden" name="backup_keep" value="{{.FormSettings.BackupKeep}}">
+        <input type="hidden" name="backup_active_hours" value="{{.FormSettings.BackupActiveHours}}">
+        <input type="hidden" name="backup_idle_days" value="{{.FormSettings.BackupIdleDays}}">
+        {{if .FormSettings.AutoBackup}}<input type="hidden" name="auto_backup" value="1">{{end}}
         <button class="btn btn--primary" type="submit">{{template "icon" "save"}}<span>保存设置</span></button>
       </div>
     </div>
@@ -94,14 +99,109 @@
       <div style="flex:1;min-width:230px">
         <div class="strong">立即备份数据库</div>
         <div class="small text-2" style="margin-top:4px">
-          把当前数据完整复制一份到备份目录 <span class="mono">{{.BackupDir}}</span>，文件名为带时间戳的数据库副本。
-          备份可以在服务器文件系统里直接取走，建议在重算库存、批量导入或月末结账前先做一次。
+          把当前数据完整复制一份到 <span class="mono">{{.BackupDir}}</span>，文件名为带时间戳的数据库副本。
+          建议在重算库存、批量导入或月末结账前先手动做一次。
         </div>
       </div>
       <form method="post" action="/settings/backup" onsubmit="return confirm('将在备份目录生成一份数据库副本。确定立即备份？')">
-        <button class="btn btn--primary" type="submit">{{template "icon" "save"}}<span>立即备份数据库</span></button>
+        <button class="btn btn--primary" type="submit">{{template "icon" "save"}}<span>立即备份</span></button>
       </form>
     </div>
+  </div>
+</div>
+
+{{/* ---------------- 自动备份 ---------------- */}}
+<div class="card">
+  <div class="card__head">
+    <div class="card__title">自动备份<span class="card__sub">有数据变化就勤备，没变化就少备</span></div>
+  </div>
+  <form method="post" action="/settings">
+    <div class="card__body">
+      <div class="alert alert--info" style="margin-bottom:14px">
+        {{template "icon" "clock"}}
+        <div class="alert__body">{{.BackupStateText}}</div>
+      </div>
+
+      <div class="form-grid">
+        <div class="field span-2">
+          <label class="checkbox" for="auto_backup">
+            <input id="auto_backup" name="auto_backup" type="checkbox" value="1"{{if .FormSettings.AutoBackup}} checked{{end}}>
+            <span>开启自动备份</span>
+          </label>
+          <div class="field__hint">
+            服务启动时检查一次，之后每小时检查一遍。判断规则：上次备份之后如果<strong>有数据变化</strong>，
+            达到「有变化间隔」就备份；如果一直<strong>没有变化</strong>，就等到「无变化间隔」再备份一次兜底。
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="backup_active_hours">有变化时的间隔（小时）</label>
+          <input class="input input--num" id="backup_active_hours" name="backup_active_hours" type="text"
+                 inputmode="numeric" value="{{.FormSettings.BackupActiveHours}}" placeholder="24">
+          <div class="field__hint">默认 24 小时，也就是每天一次。</div>
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="backup_idle_days">无变化时的间隔（天）</label>
+          <input class="input input--num" id="backup_idle_days" name="backup_idle_days" type="text"
+                 inputmode="numeric" value="{{.FormSettings.BackupIdleDays}}" placeholder="7">
+          <div class="field__hint">默认 7 天，只在一直没动过数据时才用得上。</div>
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="backup_keep">最多保留几份</label>
+          <input class="input input--num" id="backup_keep" name="backup_keep" type="text"
+                 inputmode="numeric" value="{{.FormSettings.BackupKeep}}" placeholder="30">
+          <div class="field__hint">超出份数时会自动删掉最旧的，避免把磁盘占满。</div>
+        </div>
+
+        <div class="field">
+          <label class="field__label">备份目录</label>
+          <input class="input mono" type="text" value="{{.BackupDir}}" readonly>
+          <div class="field__hint">在服务器上直接拷贝这个目录即可异地保存。</div>
+        </div>
+      </div>
+
+      {{/* 其它设置项要一起提交，否则保存这里会把它们清空 */}}
+      <input type="hidden" name="company_name" value="{{.FormSettings.CompanyName}}">
+      <input type="hidden" name="currency" value="{{.FormSettings.Currency}}">
+      <input type="hidden" name="currency_symbol" value="{{.FormSettings.CurrencySymbol}}">
+      <input type="hidden" name="default_low_qty" value="{{qtyInput .FormSettings.DefaultLowQty}}">
+      <input type="hidden" name="default_booth_fee" value="{{moneyInput2 .FormSettings.DefaultBoothFee}}">
+      {{if .FormSettings.AllowNegative}}<input type="hidden" name="allow_negative_stock" value="1">{{end}}
+    </div>
+    <div class="card__foot">
+      <button class="btn btn--primary" type="submit">{{template "icon" "save"}}<span>保存备份设置</span></button>
+    </div>
+  </form>
+
+  <div class="card__body" style="border-top:1px solid var(--line)">
+    <div class="card__title" style="margin-bottom:8px">已有备份 <span class="card__sub">最新 {{.Backups | len}} 份</span></div>
+    {{if .Backups}}
+    <div class="backup-list">
+      {{range .Backups}}
+      <div class="backup-row">
+        <div class="backup-row__main">
+          <div class="backup-row__name mono">{{.Name}}</div>
+          <div class="backup-row__meta">{{.TimeText}} · {{.SizeText}}</div>
+        </div>
+        <div class="backup-row__actions">
+          <a class="btn btn--sm" href="/settings/backup/{{.Name}}" download>{{template "icon" "download"}}<span>下载</span></a>
+          <form method="post" action="/settings/backup/{{.Name}}/delete" class="inline"
+                onsubmit="return confirm('删除这份备份？删除后无法恢复。')">
+            <button class="btn btn--sm btn--danger" type="submit">{{template "icon" "trash"}}</button>
+          </form>
+        </div>
+      </div>
+      {{end}}
+    </div>
+    {{else}}
+    <div class="empty">
+      {{template "icon" "save"}}
+      <div class="empty__title">还没有备份</div>
+      <div class="empty__hint">点上面的「立即备份」生成第一份，之后自动备份会按设置接手。</div>
+    </div>
+    {{end}}
   </div>
 </div>
 

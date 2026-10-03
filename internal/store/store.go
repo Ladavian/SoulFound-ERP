@@ -311,28 +311,36 @@ func nzFloat(v sql.NullFloat64) float64 {
 func (s *Store) EnsureSettings(ctx context.Context, def model.Settings) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO settings(id, company_name, currency, currency_symbol,
-		        default_low_qty, default_booth_fee, allow_negative_stock, updated_at)
-		 VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+		        default_low_qty, default_booth_fee, allow_negative_stock, updated_at,
+		        auto_backup, backup_keep, backup_active_hours, backup_idle_days)
+		 VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(id) DO NOTHING`,
 		def.CompanyName, def.Currency, def.CurrencySymbol,
-		int64(def.DefaultLowQty), int64(def.DefaultBoothFee), b2i(def.AllowNegative), Now())
+		int64(def.DefaultLowQty), int64(def.DefaultBoothFee), b2i(def.AllowNegative), Now(),
+		b2i(def.AutoBackup), def.BackupKeepCount(), activeHours(def), idleDays(def))
 	return err
 }
 
 // Settings 读取全局设置。
 func (s *Store) Settings(ctx context.Context) (*model.Settings, error) {
 	var (
-		out      model.Settings
-		lowQty   int64
-		boothFee int64
-		allowNeg int64
+		out            model.Settings
+		lowQty         int64
+		boothFee       int64
+		allowNeg       int64
+		autoBackup     int64
+		backupKeep     int64
+		backupActiveH  int64
+		backupIdleDays int64
 	)
 	err := s.db.QueryRowContext(ctx,
 		`SELECT company_name, currency, currency_symbol, default_low_qty,
-		        default_booth_fee, allow_negative_stock, updated_at
+		        default_booth_fee, allow_negative_stock, updated_at,
+		        auto_backup, backup_keep, backup_active_hours, backup_idle_days
 		 FROM settings WHERE id = 1`).
 		Scan(&out.CompanyName, &out.Currency, &out.CurrencySymbol, &lowQty,
-			&boothFee, &allowNeg, &out.UpdatedAt)
+			&boothFee, &allowNeg, &out.UpdatedAt,
+			&autoBackup, &backupKeep, &backupActiveH, &backupIdleDays)
 	if errors.Is(err, sql.ErrNoRows) {
 		out = model.Settings{
 			CompanyName:    "SoulFound",
@@ -348,6 +356,10 @@ func (s *Store) Settings(ctx context.Context) (*model.Settings, error) {
 	out.DefaultLowQty = model.Qty(lowQty)
 	out.DefaultBoothFee = model.Money(boothFee)
 	out.AllowNegative = i2b(allowNeg)
+	out.AutoBackup = i2b(autoBackup)
+	out.BackupKeep = int(backupKeep)
+	out.BackupActiveHours = int(backupActiveH)
+	out.BackupIdleDays = int(backupIdleDays)
 	return &out, nil
 }
 
@@ -356,27 +368,31 @@ func (s *Store) SaveSettings(ctx context.Context, in *model.Settings) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE settings SET company_name = ?, currency = ?, currency_symbol = ?,
 		        default_low_qty = ?, default_booth_fee = ?, allow_negative_stock = ?,
-		        updated_at = ?
+		        updated_at = ?,
+		        auto_backup = ?, backup_keep = ?, backup_active_hours = ?, backup_idle_days = ?
 		 WHERE id = 1`,
 		in.CompanyName, in.Currency, in.CurrencySymbol,
-		int64(in.DefaultLowQty), int64(in.DefaultBoothFee), b2i(in.AllowNegative), Now())
+		int64(in.DefaultLowQty), int64(in.DefaultBoothFee), b2i(in.AllowNegative), Now(),
+		b2i(in.AutoBackup), in.BackupKeepCount(), activeHours(*in), idleDays(*in))
 	return err
 }
 
 // ---------------------------------------------------------------- 用户
 
-const userCols = `id, username, password_hash, full_name, role, is_active, last_login_at, created_at`
+const userCols = `id, username, password_hash, full_name, role, is_active, last_login_at, created_at, COALESCE(permissions, '')`
 
 func scanUser(row interface{ Scan(...any) error }) (*model.User, error) {
 	var (
-		u        model.User
-		isActive int64
+		u           model.User
+		isActive    int64
+		permissions string
 	)
 	if err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.FullName, &u.Role,
-		&isActive, &u.LastLoginAt, &u.CreatedAt); err != nil {
+		&isActive, &u.LastLoginAt, &u.CreatedAt, &permissions); err != nil {
 		return nil, err
 	}
 	u.IsActive = i2b(isActive)
+	u.Permissions = ParsePermissions(permissions)
 	return &u, nil
 }
 
@@ -436,9 +452,10 @@ func (s *Store) CreateUserTx(ctx context.Context, tx DBTX, u *model.User) (int64
 
 func createUser(ctx context.Context, q DBTX, u *model.User) (int64, error) {
 	res, err := q.ExecContext(ctx,
-		`INSERT INTO users(username, password_hash, full_name, role, is_active, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		u.Username, u.PasswordHash, u.FullName, u.Role, b2i(u.IsActive), Now())
+		`INSERT INTO users(username, password_hash, full_name, role, is_active, permissions, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		u.Username, u.PasswordHash, u.FullName, u.Role, b2i(u.IsActive),
+		u.PermissionsText(), Now())
 	if err != nil {
 		return 0, err
 	}
@@ -450,6 +467,53 @@ func (s *Store) UpdateUser(ctx context.Context, u *model.User) error {
 	return updateUser(ctx, s.db, u)
 }
 
+func activeHours(in model.Settings) int {
+	if in.BackupActiveHours <= 0 {
+		return 24
+	}
+	return in.BackupActiveHours
+}
+
+func idleDays(in model.Settings) int {
+	if in.BackupIdleDays <= 0 {
+		return 7
+	}
+	return in.BackupIdleDays
+}
+
+// TotalChanges 自本次进程启动以来的行变更总数（SQLite total_changes）。
+//
+// 用来判断"上次备份之后数据有没有变化"：文件 mtime 在 WAL 模式下不可靠
+// （写完 mtime 与大小都可能不动），而这个计数只在真正发生写入时增长。
+func (s *Store) TotalChanges(ctx context.Context) (int64, error) {
+	var n int64
+	err := s.db.QueryRowContext(ctx, `SELECT total_changes()`).Scan(&n)
+	return n, err
+}
+
+// ParsePermissions 解析逗号分隔的权限文本。
+func ParsePermissions(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	seen := map[string]bool{}
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" || seen[p] {
+			continue
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 // UpdateUserTx 在事务内更新用户。
 func (s *Store) UpdateUserTx(ctx context.Context, tx DBTX, u *model.User) error {
 	return updateUser(ctx, tx, u)
@@ -457,8 +521,10 @@ func (s *Store) UpdateUserTx(ctx context.Context, tx DBTX, u *model.User) error 
 
 func updateUser(ctx context.Context, q DBTX, u *model.User) error {
 	_, err := q.ExecContext(ctx,
-		`UPDATE users SET full_name = ?, role = ?, is_active = ? WHERE id = ?`,
-		u.FullName, u.Role, b2i(u.IsActive), u.ID)
+		`UPDATE users SET username = ?, full_name = ?, role = ?, is_active = ?,
+		        permissions = ? WHERE id = ?`,
+		u.Username, u.FullName, u.Role, b2i(u.IsActive),
+		u.PermissionsText(), u.ID)
 	return err
 }
 

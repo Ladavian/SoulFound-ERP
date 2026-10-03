@@ -241,4 +241,42 @@
       window.htmx.trigger(row, 'change');
     }
   });
+
+  /* ------------------------------------------------- 用户权限勾选（用户管理页）
+     role 只是预设模板：切换角色按角色默认值重新勾选，
+     用户也可以逐项增减，最终以勾选结果为准。 */
+  window.permEditor = function (opts) {
+    var defaults = opts.defaults || {};
+    return {
+      role: opts.role,
+      perms: (opts.current && opts.current.length ? opts.current : (defaults[opts.role] || [])).slice(),
+      init: function () {
+        var self = this;
+        this.$watch('role', function () { self.applyRole(); });
+      },
+      allKeys: function () {
+        return Array.prototype.map.call(
+          document.querySelectorAll('input[name="permissions"][type="checkbox"]'),
+          function (el) { return el.value; }
+        );
+      },
+      checkedCount: function () { return this.perms.length; },
+      selectAll: function () { this.perms = this.allKeys(); },
+      clearAll: function () { this.perms = []; },
+      applyRole: function () { this.perms = (defaults[this.role] || []).slice(); },
+      toggleGroup: function () {
+        var keys = Array.prototype.slice.call(arguments);
+        var self = this;
+        var allOn = keys.every(function (k) { return self.perms.indexOf(k) !== -1; });
+        if (allOn) {
+          this.perms = this.perms.filter(function (p) { return keys.indexOf(p) === -1; });
+        } else {
+          keys.forEach(function (k) {
+            if (self.perms.indexOf(k) === -1) self.perms.push(k);
+          });
+        }
+      }
+    };
+  };
+
 })();

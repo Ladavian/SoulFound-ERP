@@ -1,6 +1,7 @@
 package web
 
 import (
+	"html/template"
 	"net/http"
 	"strconv"
 	"time"
@@ -63,6 +64,12 @@ func (s *Server) handleUserForm(w http.ResponseWriter, r *http.Request) {
 	page["Target"] = target
 	page["IsNew"] = isNew
 	page["RoleOptions"] = model.RoleOptions
+	page["PermissionGroups"] = PermissionGroups
+	page["RoleDefaultsJSON"] = template.JS(jsonEncode(RoleDefaultsByRole()))
+	current := permsForUser(target)
+	page["CurrentPerms"] = current
+	page["CurrentPermList"] = current.List()
+	page["AllPermCount"] = len(AllPermissions())
 	page["RoleDescriptions"] = map[string]string{
 		model.RoleManager: roleDescription(model.RoleManager),
 		model.RoleStaff:   roleDescription(model.RoleStaff),
@@ -94,7 +101,7 @@ func (s *Server) handleUserSave(w http.ResponseWriter, r *http.Request) {
 	if id == 0 {
 		_, err := s.svc.CreateUser(r.Context(),
 			f.Required("username", "用户名"), f.Raw("password"),
-			f.Str("full_name"), role, userFrom(r))
+			f.Str("full_name"), role, f.List("permissions"), userFrom(r))
 		if err != nil {
 			s.fail(w, r, fallback, err)
 			return
@@ -102,7 +109,8 @@ func (s *Server) handleUserSave(w http.ResponseWriter, r *http.Request) {
 		s.ok(w, r, "/users", "用户已创建")
 		return
 	}
-	if err := s.svc.UpdateUser(r.Context(), id, f.Str("full_name"), role, isActive, userFrom(r)); err != nil {
+	if err := s.svc.UpdateUser(r.Context(), id, f.Required("username", "用户名"),
+		f.Str("full_name"), role, isActive, f.List("permissions"), userFrom(r)); err != nil {
 		s.fail(w, r, fallback, err)
 		return
 	}
@@ -166,6 +174,8 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	version, _ := s.svc.Store.SchemaVersion(ctx)
 	logs, _ := s.svc.Store.ListLogs(ctx, 30)
+	backups, _ := s.svc.ListBackups()
+	decision, _ := s.svc.DecideAutoBackup(ctx, timeNow())
 
 	noCache(w)
 	page := s.newPage(r, "系统设置", "settings")
@@ -173,7 +183,10 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	page["Version"] = s.cfg.Version
 	page["SchemaVersion"] = version
 	page["DBPath"] = s.cfg.DBPath
-	page["BackupDir"] = s.cfg.BackupDir
+	page["BackupDir"] = s.svc.BackupDir()
+	page["Backups"] = backups
+	page["BackupDecision"] = decision
+	page["BackupStateText"] = backupStateText(decision)
 	page["Logs"] = logs
 	page["SessionHours"] = int(s.svc.SessionMaxAge() / 3600)
 	if err := s.rnd.Render(w, "settings", page); err != nil {
@@ -197,6 +210,11 @@ func (s *Server) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
 		DefaultBoothFee: f.Money("default_booth_fee", "默认摊位费"),
 		AllowNegative:   f.Bool("allow_negative_stock"),
 		UpdatedAt:       current.UpdatedAt,
+
+		AutoBackup:        f.Bool("auto_backup"),
+		BackupKeep:        f.Int("backup_keep", "备份保留份数"),
+		BackupActiveHours: f.Int("backup_active_hours", "有变化时的备份间隔"),
+		BackupIdleDays:    f.Int("backup_idle_days", "无变化时的备份间隔"),
 	}
 	if updated.CompanyName == "" {
 		updated.CompanyName = current.CompanyName
@@ -252,4 +270,45 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	if err := s.rnd.Render(w, "logs", page); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+// handleBackupDownload 下载一份备份文件，方便取到本机或另一块盘保存。
+func (s *Server) handleBackupDownload(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	info, err := s.svc.FindBackup(name)
+	if err != nil {
+		s.notFound(w, r, "备份文件不存在或已被清理")
+		return
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+info.Name+`"`)
+	http.ServeFile(w, r, info.Path)
+}
+
+// handleBackupDelete 删除一份备份。
+func (s *Server) handleBackupDelete(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if err := s.svc.DeleteBackup(r.Context(), name, userFrom(r)); err != nil {
+		s.setFlash(w, "error", userMessage(err))
+		s.redirect(w, r, "/settings")
+		return
+	}
+	s.setFlash(w, "success", "备份已删除")
+	s.redirect(w, r, "/settings")
+}
+
+// backupStateText 把自动备份的判断结果写成一句人话。
+func backupStateText(d service.AutoBackupDecision) string {
+	if d.Reason == "自动备份已关闭" {
+		return d.Reason
+	}
+	last := "还没有备份"
+	if d.HasAny {
+		last = d.LastAt.Format("2006-01-02 15:04")
+	}
+	state := "数据无变化"
+	if d.Changed {
+		state = "数据有变化"
+	}
+	return "上次备份 " + last + " · " + state + " · " + d.Reason
 }
