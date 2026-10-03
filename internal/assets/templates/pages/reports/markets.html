@@ -49,29 +49,36 @@
 <div class="grid grid--sidebar">
   <div>
     <div class="card">
-      <form class="filters" method="get" action="/reports/markets">
+      {{/* 手机上只留搜索 + 筛选按钮，其余条件折叠起来，避免挤成一团 */}}
+      <form class="filters" method="get" action="/reports/markets" x-data="{ more: false }">
         <div class="field field--wide">
-          <label class="field__label" for="q">搜索</label>
-          <input class="input" id="q" name="q" type="search" value="{{.Keyword}}" placeholder="市集名称或单据号">
+          <input class="input" id="q" name="q" type="search" value="{{.Keyword}}"
+                 placeholder="市集名称或单据号" aria-label="搜索市集报表">
         </div>
-        <div class="field">
-          <label class="field__label" for="status">状态</label>
-          <select class="select" id="status" name="status">
-            {{$cur := .Status}}
-            {{range .StatusOptions}}<option value="{{.Value}}"{{if eq .Value $cur}} selected{{end}}>{{.Label}}</option>{{end}}
-          </select>
-        </div>
-        <div class="field">
-          <label class="field__label" for="from">开始日期</label>
-          <input class="input" id="from" name="from" type="date" value="{{.From}}">
-        </div>
-        <div class="field">
-          <label class="field__label" for="to">结束日期</label>
-          <input class="input" id="to" name="to" type="date" value="{{.To}}">
-        </div>
-        <div class="field field--actions">
-          <button class="btn btn--primary" type="submit">{{template "icon" "search"}}<span>筛选</span></button>
-          <a class="btn" href="/reports/markets">重置</a>
+        <button class="btn filters__toggle" type="button" @click="more = !more" :aria-expanded="more">
+          {{template "icon" "filter"}}<span x-text="more ? '收起条件' : '筛选条件'">筛选条件</span>
+        </button>
+        <button class="btn btn--primary filters__submit" type="submit">{{template "icon" "search"}}<span>筛选</span></button>
+
+        <div class="filters__more" :class="more ? 'is-open' : ''">
+          <div class="field">
+            <label class="field__label" for="status">状态</label>
+            <select class="select" id="status" name="status">
+              {{$cur := .Status}}
+              {{range .StatusOptions}}<option value="{{.Value}}"{{if eq .Value $cur}} selected{{end}}>{{.Label}}</option>{{end}}
+            </select>
+          </div>
+          <div class="field">
+            <label class="field__label" for="from">开始日期</label>
+            <input class="input" id="from" name="from" type="date" value="{{.From}}">
+          </div>
+          <div class="field">
+            <label class="field__label" for="to">结束日期</label>
+            <input class="input" id="to" name="to" type="date" value="{{.To}}">
+          </div>
+          <div class="filters__more-actions">
+            <a class="btn" href="/reports/markets">重置条件</a>
+          </div>
         </div>
       </form>
 
@@ -90,7 +97,7 @@
 
       {{if .Rows}}
       <div class="table-wrap">
-        <table class="data">
+        <table class="data data--stack">
           <thead>
             <tr>
               <th>市集</th>
@@ -112,23 +119,23 @@
           <tbody>
             {{range .Rows}}
             <tr>
-              <td>
+              <td class="row-cell--main">
                 <a class="strong" href="/markets/{{.ID}}">{{.Name}}</a>
                 <div class="tiny muted mono">{{.Code}}</div>
               </td>
-              <td class="nowrap small">{{.DateRange}}<div class="tiny muted">{{.Days}} 天</div></td>
-              <td>{{template "market_status" .Status}}</td>
-              <td class="num">{{.TastingQty}}</td>
-              <td class="num">{{.SoldQty}}</td>
-              <td class="num">{{if .TastingQty}}{{fixed 1 .Conversion}} ×{{else}}<span class="muted">—</span>{{end}}</td>
-              <td class="num strong">{{money .Revenue}}</td>
-              <td class="num muted">{{money .CogsSold}}</td>
-              <td class="num muted">{{money .TastingCost}}</td>
-              <td class="num muted">{{money .LossCost}}</td>
-              <td class="num muted">{{money .ExpenseTotal}}</td>
-              <td class="num">{{money .GrossProfit}}</td>
-              <td class="num strong {{if .NetProfit.IsNeg}}neg{{else}}pos{{end}}">{{money .NetProfit}}</td>
-              <td class="num small {{if .NetProfit.IsNeg}}neg{{end}}">{{pct .NetMargin}}</td>
+              <td class="nowrap small" data-label="日期">{{.DateRange}}<div class="tiny muted">{{.Days}} 天</div></td>
+              <td data-label="状态">{{template "market_status" .Status}}</td>
+              <td class="num" data-label="试饮">{{.TastingQty}}</td>
+              <td class="num" data-label="销售">{{.SoldQty}}</td>
+              <td class="num" data-label="带动">{{if .TastingQty}}{{fixed 1 .Conversion}} ×{{else}}<span class="muted">—</span>{{end}}</td>
+              <td class="num strong" data-label="销售额">{{money .Revenue}}</td>
+              <td class="num muted" data-label="售出成本">{{money .CogsSold}}</td>
+              <td class="num muted" data-label="试饮成本">{{money .TastingCost}}</td>
+              <td class="num muted" data-label="赠送损耗">{{money .LossCost}}</td>
+              <td class="num muted" data-label="活动费用">{{money .ExpenseTotal}}</td>
+              <td class="num" data-label="毛利">{{money .GrossProfit}}</td>
+              <td class="num strong {{if .NetProfit.IsNeg}}neg{{else}}pos{{end}}" data-label="净利润">{{money .NetProfit}}</td>
+              <td class="num small {{if .NetProfit.IsNeg}}neg{{end}}" data-label="净利率">{{pct .NetMargin}}</td>
             </tr>
             {{end}}
           </tbody>

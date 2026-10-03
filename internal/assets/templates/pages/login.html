@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>{{.Title}} · {{.Cfg.AppName}}</title>
-<meta name="theme-color" content="#0F2A24">
+<meta name="theme-color" content="#14171C">
 <meta name="color-scheme" content="light">
 <link rel="manifest" href="/static/manifest.webmanifest">
 <link rel="icon" href="/static/icons/favicon-32.png" sizes="32x32">
@@ -19,31 +19,36 @@
 </head>
 <body>
 <div class="auth">
-  <div class="auth__card">
-    <img class="auth__brand" src="/static/icons/logo-dark.png"
-         alt="{{.Settings.CompanyName}}" width="168" height="20">
-    <div class="auth__sub">进销存 · 库存 · 市集利润</div>
-
-    {{if .Error}}<div class="alert alert--error">{{template "icon" "alert"}}<div class="alert__body">{{.Error}}</div></div>{{end}}
-
-    <form method="post" action="/login" autocomplete="on">
-      <input type="hidden" name="next" value="{{.Next}}">
-      <div class="field" style="margin-bottom:12px">
-        <label class="field__label" for="username">账号</label>
-        <input class="input" id="username" name="username" type="text" value="{{.Username}}"
-               autocomplete="username" autocapitalize="none" autocorrect="off" required autofocus>
-      </div>
-      <div class="field" style="margin-bottom:18px">
-        <label class="field__label" for="password">密码</label>
-        <input class="input" id="password" name="password" type="password" autocomplete="current-password" required>
-      </div>
-      <button class="btn btn--primary btn--lg btn--block" type="submit">{{template "icon" "right"}}<span>登录</span></button>
-    </form>
-
-    <div class="auth__hint">
-      用管理员账号登录。忘记密码时，在服务器上执行：<br>
-      <span class="mono">docker compose exec erp /app/erp reset-password admin</span>
+  <div class="auth__inner">
+    <div class="auth__hero">
+      <img class="auth__logo" src="/static/icons/logo-light.png" alt="{{.Cfg.AppName}}">
+      <div class="auth__tagline">进销存 · 库存 · 市集利润</div>
     </div>
+
+    <div class="auth__card">
+      {{if .Error}}<div class="alert alert--error">{{template "icon" "alert"}}<div class="alert__body">{{.Error}}</div></div>{{end}}
+
+      <form method="post" action="/login" autocomplete="on">
+        <input type="hidden" name="next" value="{{.Next}}">
+        <div class="field" style="margin-bottom:12px">
+          <label class="field__label" for="username">账号</label>
+          <input class="input" id="username" name="username" type="text" value="{{.Username}}"
+                 autocomplete="username" autocapitalize="none" autocorrect="off" required autofocus>
+        </div>
+        <div class="field" style="margin-bottom:18px">
+          <label class="field__label" for="password">密码</label>
+          <input class="input" id="password" name="password" type="password" autocomplete="current-password" required>
+        </div>
+        <button class="btn btn--primary btn--lg btn--block" type="submit">{{template "icon" "right"}}<span>登录</span></button>
+      </form>
+
+      <div class="auth__hint">
+        用管理员账号登录。忘记密码时，在服务器上执行：<br>
+        <span class="mono">docker compose exec erp /app/erp reset-password admin</span>
+      </div>
+    </div>
+
+    <div class="auth__foot">数据保存在你自己的服务器上 · 装到手机桌面可离线使用</div>
   </div>
 </div>
 </body>

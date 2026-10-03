@@ -27,54 +27,61 @@
 </div>
 
 <div class="card">
-  <form class="filters" method="get" action="/products">
+  {{/* 手机上只留搜索 + 筛选按钮，其余条件折叠起来，避免挤成一团 */}}
+  <form class="filters" method="get" action="/products" x-data="{ more: false }">
     <div class="field field--wide">
-      <label class="field__label" for="q">搜索</label>
-      <input class="input" id="q" name="q" type="search" value="{{.Keyword}}" placeholder="产品名称、英文名或产品编码">
+      <input class="input" id="q" name="q" type="search" value="{{.Keyword}}"
+             placeholder="产品名称、英文名或产品编码" aria-label="搜索产品">
     </div>
-    <div class="field">
-      <label class="field__label" for="category">品类</label>
-      <select class="select" id="category" name="category">
-        {{$curCat := .Category}}
-        <option value=""{{if eq $curCat ""}} selected{{end}}>全部品类</option>
-        {{range .Categories}}<option value="{{.}}"{{if eq . $curCat}} selected{{end}}>{{.}}</option>{{end}}
-      </select>
-    </div>
-    <div class="field">
-      <label class="field__label" for="supplier">供应商</label>
-      <select class="select" id="supplier" name="supplier">
-        {{$curSup := .SupplierID}}
-        <option value=""{{if eq $curSup 0}} selected{{end}}>全部供应商</option>
-        {{range .Suppliers}}<option value="{{.ID}}"{{if eq .ID $curSup}} selected{{end}}>{{.Name}}</option>{{end}}
-      </select>
-    </div>
-    <div class="field">
-      <label class="field__label" for="sort">排序</label>
-      <select class="select" id="sort" name="sort">
-        {{$curSort := .Sort}}
-        <option value=""{{if eq $curSort ""}} selected{{end}}>默认排序</option>
-        <option value="stock"{{if eq $curSort "stock"}} selected{{end}}>库存多在前</option>
-        <option value="stock_asc"{{if eq $curSort "stock_asc"}} selected{{end}}>库存少在前</option>
-        <option value="value"{{if eq $curSort "value"}} selected{{end}}>库存价值高</option>
-        <option value="price"{{if eq $curSort "price"}} selected{{end}}>售价高在前</option>
-        <option value="sku"{{if eq $curSort "sku"}} selected{{end}}>按产品编码</option>
-        <option value="updated"{{if eq $curSort "updated"}} selected{{end}}>最近更新</option>
-      </select>
-    </div>
-    <div class="field" style="flex:0 1 auto">
-      <span class="field__label">更多筛选项</span>
-      <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;min-height:38px">
-        <label class="checkbox" style="min-height:auto">
-          <input type="checkbox" name="low" value="1"{{if .LowStockOnly}} checked{{end}}><span>只看低库存</span>
-        </label>
-        <label class="checkbox" style="min-height:auto">
-          <input type="checkbox" name="all" value="1"{{if .IncludeInactive}} checked{{end}}><span>包含已停用</span>
-        </label>
+    <button class="btn filters__toggle" type="button" @click="more = !more" :aria-expanded="more">
+      {{template "icon" "filter"}}<span x-text="more ? '收起条件' : '筛选条件'">筛选条件</span>
+    </button>
+    <button class="btn btn--primary filters__submit" type="submit">{{template "icon" "search"}}<span>筛选</span></button>
+
+    <div class="filters__more" :class="more ? 'is-open' : ''">
+      <div class="field">
+        <label class="field__label" for="category">品类</label>
+        <select class="select" id="category" name="category">
+          {{$curCat := .Category}}
+          <option value=""{{if eq $curCat ""}} selected{{end}}>全部品类</option>
+          {{range .Categories}}<option value="{{.}}"{{if eq . $curCat}} selected{{end}}>{{.}}</option>{{end}}
+        </select>
       </div>
-    </div>
-    <div class="field field--actions">
-      <button class="btn btn--primary" type="submit">{{template "icon" "search"}}<span>筛选</span></button>
-      <a class="btn" href="/products">重置</a>
+      <div class="field">
+        <label class="field__label" for="supplier">供应商</label>
+        <select class="select" id="supplier" name="supplier">
+          {{$curSup := .SupplierID}}
+          <option value=""{{if eq $curSup 0}} selected{{end}}>全部供应商</option>
+          {{range .Suppliers}}<option value="{{.ID}}"{{if eq .ID $curSup}} selected{{end}}>{{.Name}}</option>{{end}}
+        </select>
+      </div>
+      <div class="field">
+        <label class="field__label" for="sort">排序</label>
+        <select class="select" id="sort" name="sort">
+          {{$curSort := .Sort}}
+          <option value=""{{if eq $curSort ""}} selected{{end}}>默认排序</option>
+          <option value="stock"{{if eq $curSort "stock"}} selected{{end}}>库存多在前</option>
+          <option value="stock_asc"{{if eq $curSort "stock_asc"}} selected{{end}}>库存少在前</option>
+          <option value="value"{{if eq $curSort "value"}} selected{{end}}>库存价值高</option>
+          <option value="price"{{if eq $curSort "price"}} selected{{end}}>售价高在前</option>
+          <option value="sku"{{if eq $curSort "sku"}} selected{{end}}>按产品编码</option>
+          <option value="updated"{{if eq $curSort "updated"}} selected{{end}}>最近更新</option>
+        </select>
+      </div>
+      <div class="field filters__more-full" style="flex:0 1 auto">
+        <span class="field__label">更多筛选项</span>
+        <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;min-height:38px">
+          <label class="checkbox" style="min-height:auto">
+            <input type="checkbox" name="low" value="1"{{if .LowStockOnly}} checked{{end}}><span>只看低库存</span>
+          </label>
+          <label class="checkbox" style="min-height:auto">
+            <input type="checkbox" name="all" value="1"{{if .IncludeInactive}} checked{{end}}><span>包含已停用</span>
+          </label>
+        </div>
+      </div>
+      <div class="filters__more-actions">
+        <a class="btn" href="/products">重置条件</a>
+      </div>
     </div>
   </form>
 
@@ -87,7 +94,7 @@
 
   {{if .Products}}
   <div class="table-wrap">
-    <table class="data">
+    <table class="data data--stack">
       <thead>
         <tr>
           <th>产品</th>
@@ -103,12 +110,12 @@
       <tbody>
         {{range $p := .Products}}
         <tr>
-          <td>
+          <td class="row-cell--main">
             <div class="prod-cell">
               {{if $p.ImageURL}}
               <img class="prod-thumb" src="{{$p.ImageURL}}" alt="{{$p.Name}}" loading="lazy">
               {{else}}
-              <span class="prod-thumb prod-thumb--empty">{{template "icon" "glass"}}</span>
+              <span class="prod-thumb prod-thumb--empty">{{template "icon" "image"}}</span>
               {{end}}
               <div class="prod-cell__main">
                 <a class="strong" href="/products/{{$p.ID}}">{{$p.Name}}</a>
@@ -121,20 +128,22 @@
               </div>
             </div>
           </td>
-          <td class="small">{{if $p.Category}}{{$p.Category}}{{else}}<span class="muted">—</span>{{end}}</td>
-          <td class="num">
+          <td class="small" data-label="品类">{{if $p.Category}}{{$p.Category}}{{else}}<span class="muted">—</span>{{end}}</td>
+          <td class="num" data-label="库存">
             {{$p.StockQty}}
             {{if $p.IsOutOfStock}} <span class="badge badge--warn">无库存</span>
             {{else if $p.IsLowStock}} <span class="badge badge--danger">低于预警线</span>{{end}}
-            {{if $p.IsLowStock}}<div class="tiny muted">预警线 {{$p.LowStockQty}}</div>{{end}}
+            {{/* 迷你数据条：一眼看出离预警线还有多远 */}}
+            <div class="meter {{$p.StockLevelClass}}" style="--meter: {{$p.StockLevel}}%"><span></span></div>
+            <div class="meter__legend">预警线 {{$p.LowStockQty}}</div>
           </td>
           {{if $showCost}}
-          <td class="num muted">{{money4 $p.AvgCost}}</td>
-          <td class="num">{{money $p.StockValue}}</td>
+          <td class="num muted" data-label="平均成本">{{money4 $p.AvgCost}}</td>
+          <td class="num" data-label="库存成本">{{money $p.StockValue}}</td>
           {{end}}
-          <td class="num">{{money $p.SalePrice}}</td>
-          {{if $showCost}}<td class="num small {{if lt $p.Margin 0.0}}neg{{end}}">{{pct $p.Margin}}</td>{{end}}
-          <td class="small">{{if $p.SupplierName}}{{$p.SupplierName}}{{else}}<span class="muted">—</span>{{end}}</td>
+          <td class="num" data-label="售价">{{money $p.SalePrice}}</td>
+          {{if $showCost}}<td class="num small {{if lt $p.Margin 0.0}}neg{{end}}" data-label="毛利率">{{pct $p.Margin}}</td>{{end}}
+          <td class="small" data-label="供应商">{{if $p.SupplierName}}{{$p.SupplierName}}{{else}}<span class="muted">—</span>{{end}}</td>
           <td class="right">
             <div class="row-actions">
               <a class="btn btn--sm" href="/products/{{$p.ID}}">详情</a>

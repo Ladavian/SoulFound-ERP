@@ -25,7 +25,7 @@
 
       {{if .Users}}
       <div class="table-wrap">
-        <table class="data">
+        <table class="data data--stack">
           <thead>
             <tr>
               <th>用户</th>
@@ -39,7 +39,7 @@
           <tbody>
             {{range $u := .Users}}
             <tr>
-              <td>
+              <td class="row-cell--main">
                 <div class="user-chip" style="background:transparent;padding:0">
                   <div class="user-chip__avatar">{{$u.Initial}}</div>
                   <div style="min-width:0">
@@ -48,18 +48,18 @@
                   </div>
                 </div>
               </td>
-              <td>
+              <td data-label="角色">
                 <span class="badge{{if eq $u.Role "admin"}} badge--warn{{else if eq $u.Role "manager"}} badge--info{{else if eq $u.Role "viewer"}} badge--muted{{end}}">{{$u.RoleLabel}}</span>
                 {{if index $.RoleDescriptionsMap $u.Role}}<div class="tiny muted" style="margin-top:4px;max-width:230px">{{index $.RoleDescriptionsMap $u.Role}}</div>{{end}}
               </td>
-              <td>
+              <td data-label="状态">
                 {{if $u.IsActive}}<span class="badge badge--ok">启用</span>{{else}}<span class="badge badge--muted">停用</span>{{end}}
               </td>
-              <td class="nowrap small">
+              <td class="nowrap small" data-label="最后登录">
                 {{if $u.LastLoginAt}}{{datetime $u.LastLoginAt}}{{else}}<span class="muted">从未登录</span>{{end}}
               </td>
-              <td class="nowrap small muted">{{if $u.CreatedAt}}{{datetime $u.CreatedAt}}{{else}}—{{end}}</td>
-              <td>
+              <td class="nowrap small muted" data-label="创建时间">{{if $u.CreatedAt}}{{datetime $u.CreatedAt}}{{else}}—{{end}}</td>
+              <td class="right">
                 <div class="row-actions">
                   <a class="btn btn--sm" href="/users/{{$u.ID}}/edit">{{template "icon" "edit"}}<span>编辑</span></a>
                   <a class="btn btn--sm" href="/users/{{$u.ID}}/password">{{template "icon" "check"}}<span>重置密码</span></a>

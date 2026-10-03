@@ -14,46 +14,53 @@
 </div>
 
 <div class="card">
-  <form class="filters" method="get" action="/inventory/movements">
+  {{/* 手机上只留搜索 + 筛选按钮，其余条件折叠起来，避免挤成一团 */}}
+  <form class="filters" method="get" action="/inventory/movements" x-data="{ more: false }">
     <div class="field field--wide">
-      <label class="field__label" for="product">产品</label>
-      <select class="select" id="product" name="product">
-        {{$pid := .ProductID}}
-        <option value=""{{if eq $pid 0}} selected{{end}}>全部产品</option>
-        {{range .Products}}<option value="{{.ID}}"{{if eq .ID $pid}} selected{{end}}>{{.Label}}</option>{{end}}
-      </select>
+      <input class="input" id="q" name="q" type="search" value="{{.Keyword}}"
+             placeholder="单据号、备注或产品" aria-label="搜索库存流水">
     </div>
-    <div class="field">
-      <label class="field__label" for="reason">类型</label>
-      <select class="select" id="reason" name="reason">
-        {{$cur := .Reason}}
-        {{range .ReasonOptions}}<option value="{{.Value}}"{{if eq .Value $cur}} selected{{end}}>{{.Label}}</option>{{end}}
-      </select>
-    </div>
-    <div class="field">
-      <label class="field__label" for="direction">方向</label>
-      <select class="select" id="direction" name="direction">
-        {{$d := .Direction}}
-        <option value=""{{if eq $d ""}} selected{{end}}>全部</option>
-        <option value="in"{{if eq $d "in"}} selected{{end}}>仅入库</option>
-        <option value="out"{{if eq $d "out"}} selected{{end}}>仅出库</option>
-      </select>
-    </div>
-    <div class="field">
-      <label class="field__label" for="from">开始日期</label>
-      <input class="input" id="from" name="from" type="date" value="{{.From}}">
-    </div>
-    <div class="field">
-      <label class="field__label" for="to">结束日期</label>
-      <input class="input" id="to" name="to" type="date" value="{{.To}}">
-    </div>
-    <div class="field field--wide">
-      <label class="field__label" for="q">关键词</label>
-      <input class="input" id="q" name="q" type="search" value="{{.Keyword}}" placeholder="单据号、备注或产品">
-    </div>
-    <div class="field field--actions">
-      <button class="btn btn--primary" type="submit">{{template "icon" "search"}}<span>筛选</span></button>
-      <a class="btn" href="/inventory/movements">重置</a>
+    <button class="btn filters__toggle" type="button" @click="more = !more" :aria-expanded="more">
+      {{template "icon" "filter"}}<span x-text="more ? '收起条件' : '筛选条件'">筛选条件</span>
+    </button>
+    <button class="btn btn--primary filters__submit" type="submit">{{template "icon" "search"}}<span>筛选</span></button>
+
+    <div class="filters__more" :class="more ? 'is-open' : ''">
+      <div class="field field--wide">
+        <label class="field__label" for="product">产品</label>
+        <select class="select" id="product" name="product">
+          {{$pid := .ProductID}}
+          <option value=""{{if eq $pid 0}} selected{{end}}>全部产品</option>
+          {{range .Products}}<option value="{{.ID}}"{{if eq .ID $pid}} selected{{end}}>{{.Label}}</option>{{end}}
+        </select>
+      </div>
+      <div class="field">
+        <label class="field__label" for="reason">类型</label>
+        <select class="select" id="reason" name="reason">
+          {{$cur := .Reason}}
+          {{range .ReasonOptions}}<option value="{{.Value}}"{{if eq .Value $cur}} selected{{end}}>{{.Label}}</option>{{end}}
+        </select>
+      </div>
+      <div class="field">
+        <label class="field__label" for="direction">方向</label>
+        <select class="select" id="direction" name="direction">
+          {{$d := .Direction}}
+          <option value=""{{if eq $d ""}} selected{{end}}>全部</option>
+          <option value="in"{{if eq $d "in"}} selected{{end}}>仅入库</option>
+          <option value="out"{{if eq $d "out"}} selected{{end}}>仅出库</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="field__label" for="from">开始日期</label>
+        <input class="input" id="from" name="from" type="date" value="{{.From}}">
+      </div>
+      <div class="field">
+        <label class="field__label" for="to">结束日期</label>
+        <input class="input" id="to" name="to" type="date" value="{{.To}}">
+      </div>
+      <div class="filters__more-actions">
+        <a class="btn" href="/inventory/movements">重置条件</a>
+      </div>
     </div>
   </form>
 
@@ -63,7 +70,7 @@
 
   {{if .Movements}}
   <div class="table-wrap">
-    <table class="data">
+    <table class="data data--stack">
       <thead>
         <tr>
           <th>日期</th>
@@ -87,30 +94,30 @@
       <tbody>
         {{range .Movements}}
         <tr>
-          <td class="nowrap small">{{.OccurredOn}}</td>
-          <td>
+          <td class="nowrap small row-cell--main">{{.OccurredOn}}</td>
+          <td data-label="产品">
             <a class="strong" href="/products/{{.ProductID}}">{{.ProductName}}</a>
             <div class="tiny muted mono">{{.ProductSKU}}</div>
           </td>
-          <td>
+          <td data-label="类型">
             <span class="badge{{if .IsIn}} badge--ok{{else}} badge--muted{{end}}">{{.ReasonLabel}}</span>
             <div class="tiny muted">{{.DirectionLabel}}</div>
           </td>
-          <td class="num {{if not .IsIn}}neg{{end}}">{{if .IsIn}}+{{end}}{{.Qty}}</td>
+          <td class="num {{if not .IsIn}}neg{{end}}" data-label="数量">{{if .IsIn}}+{{end}}{{.Qty}}</td>
           {{if $.Perms.Has "report.view"}}
-          <td class="num muted">{{money4 .UnitCost}}</td>
-          <td class="num">{{money .TotalCost}}</td>
+          <td class="num muted" data-label="单位成本">{{money4 .UnitCost}}</td>
+          <td class="num" data-label="金额">{{money .TotalCost}}</td>
           {{end}}
-          <td class="num">{{.QtyAfter}}</td>
+          <td class="num" data-label="结存数量">{{.QtyAfter}}</td>
           {{if $.Perms.Has "report.view"}}
-          <td class="num muted">{{money4 .AvgCostAfter}}</td>
-          <td class="num muted">{{money .ValueAfter}}</td>
+          <td class="num muted" data-label="结存均价">{{money4 .AvgCostAfter}}</td>
+          <td class="num muted" data-label="结存金额">{{money .ValueAfter}}</td>
           {{end}}
-          <td class="small">
+          <td class="small" data-label="来源单号">
             {{if .RefCode}}<span class="mono">{{.RefCode}}</span>{{else}}<span class="muted">—</span>{{end}}
           </td>
-          <td class="small">{{if .Note}}{{.Note}}{{else}}<span class="muted">—</span>{{end}}</td>
-          <td class="small">{{if .CreatedByName}}{{.CreatedByName}}{{else}}<span class="muted">—</span>{{end}}</td>
+          <td class="small" data-label="备注">{{if .Note}}{{.Note}}{{else}}<span class="muted">—</span>{{end}}</td>
+          <td class="small" data-label="操作人">{{if .CreatedByName}}{{.CreatedByName}}{{else}}<span class="muted">—</span>{{end}}</td>
         </tr>
         {{end}}
       </tbody>

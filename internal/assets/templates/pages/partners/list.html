@@ -20,23 +20,29 @@
 </div>
 
 <div class="card">
-  <form class="filters" method="get" action="{{$base}}">
+  {{/* 手机上只留搜索 + 筛选按钮，其余条件折叠起来，避免挤成一团 */}}
+  <form class="filters" method="get" action="{{$base}}" x-data="{ more: false }">
     <div class="field field--wide">
-      <label class="field__label" for="q">搜索</label>
       <input class="input" id="q" name="q" type="search" value="{{.Keyword}}"
-             placeholder="{{if .IsSupplier}}名称、联系人或电话{{else}}名称、电话或地址{{end}}">
+             placeholder="{{if .IsSupplier}}名称、联系人或电话{{else}}名称、电话或地址{{end}}" aria-label="搜索{{$label}}">
     </div>
-    <div class="field" style="flex:0 1 auto">
-      <span class="field__label">更多筛选项</span>
-      <div style="display:flex;gap:16px;align-items:center;min-height:38px">
-        <label class="checkbox" style="min-height:auto">
-          <input type="checkbox" name="all" value="1"{{if .IncludeInactive}} checked{{end}}><span>包含已停用</span>
-        </label>
+    <button class="btn filters__toggle" type="button" @click="more = !more" :aria-expanded="more">
+      {{template "icon" "filter"}}<span x-text="more ? '收起条件' : '筛选条件'">筛选条件</span>
+    </button>
+    <button class="btn btn--primary filters__submit" type="submit">{{template "icon" "search"}}<span>筛选</span></button>
+
+    <div class="filters__more" :class="more ? 'is-open' : ''">
+      <div class="field filters__more-full" style="flex:0 1 auto">
+        <span class="field__label">更多筛选项</span>
+        <div style="display:flex;gap:16px;align-items:center;min-height:38px">
+          <label class="checkbox" style="min-height:auto">
+            <input type="checkbox" name="all" value="1"{{if .IncludeInactive}} checked{{end}}><span>包含已停用</span>
+          </label>
+        </div>
       </div>
-    </div>
-    <div class="field field--actions">
-      <button class="btn btn--primary" type="submit">{{template "icon" "search"}}<span>筛选</span></button>
-      <a class="btn" href="{{$base}}">重置</a>
+      <div class="filters__more-actions">
+        <a class="btn" href="{{$base}}">重置条件</a>
+      </div>
     </div>
   </form>
 
@@ -49,7 +55,7 @@
 
   {{if .Rows}}
   <div class="table-wrap">
-    <table class="data">
+    <table class="data data--stack">
       <thead>
         <tr>
           <th>名称</th>
@@ -64,18 +70,18 @@
       <tbody>
         {{range $r := .Rows}}
         <tr>
-          <td>
+          <td class="row-cell--main">
             <span class="strong">{{$r.Name}}</span>
             {{if $r.Notes}}<div class="tiny muted">{{truncate 28 $r.Notes}}</div>{{end}}
           </td>
           {{if $.IsSupplier}}
-          <td class="small">{{if $r.ContactName}}{{$r.ContactName}}{{else}}<span class="muted">—</span>{{end}}</td>
-          <td class="small">{{if $r.Country}}{{$r.Country}}{{else}}<span class="muted">—</span>{{end}}</td>
+          <td class="small" data-label="联系人">{{if $r.ContactName}}{{$r.ContactName}}{{else}}<span class="muted">—</span>{{end}}</td>
+          <td class="small" data-label="国家">{{if $r.Country}}{{$r.Country}}{{else}}<span class="muted">—</span>{{end}}</td>
           {{end}}
-          <td class="small nowrap">{{if $r.Phone}}<a href="tel:{{$r.Phone}}">{{$r.Phone}}</a>{{else}}<span class="muted">—</span>{{end}}</td>
-          <td class="small">{{if $r.Email}}<a href="mailto:{{$r.Email}}">{{$r.Email}}</a>{{else}}<span class="muted">—</span>{{end}}</td>
-          <td class="small">{{if $r.Address}}{{$r.Address}}{{else}}<span class="muted">—</span>{{end}}</td>
-          <td>{{if $r.IsActive}}<span class="badge badge--ok">启用</span>{{else}}<span class="badge badge--muted">停用</span>{{end}}</td>
+          <td class="small nowrap" data-label="电话">{{if $r.Phone}}<a href="tel:{{$r.Phone}}">{{$r.Phone}}</a>{{else}}<span class="muted">—</span>{{end}}</td>
+          <td class="small" data-label="邮箱">{{if $r.Email}}<a href="mailto:{{$r.Email}}">{{$r.Email}}</a>{{else}}<span class="muted">—</span>{{end}}</td>
+          <td class="small" data-label="地址">{{if $r.Address}}{{$r.Address}}{{else}}<span class="muted">—</span>{{end}}</td>
+          <td data-label="状态">{{if $r.IsActive}}<span class="badge badge--ok">启用</span>{{else}}<span class="badge badge--muted">停用</span>{{end}}</td>
           <td class="right">
             <div class="row-actions">
               {{if $.CanManage}}

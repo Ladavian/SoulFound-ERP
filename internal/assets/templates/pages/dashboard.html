@@ -102,16 +102,16 @@
       </div>
       {{if .RecentMovements}}
       <div class="table-wrap">
-        <table class="data data--compact">
+        <table class="data data--compact data--stack">
           <thead><tr><th>日期</th><th>产品</th><th>类型</th><th class="num">数量</th><th class="num">结存</th></tr></thead>
           <tbody>
           {{range .RecentMovements}}
             <tr>
-              <td class="nowrap small">{{.OccurredOn}}</td>
-              <td><a href="/products/{{.ProductID}}">{{.ProductName}}</a></td>
-              <td><span class="badge {{if .IsIn}}badge--ok{{else}}badge--muted{{end}}">{{.ReasonLabel}}</span></td>
-              <td class="num {{if .IsIn}}pos{{end}}">{{if .IsIn}}+{{end}}{{.Qty}}</td>
-              <td class="num muted">{{.QtyAfter}}</td>
+              <td class="nowrap small row-cell--main">{{.OccurredOn}}</td>
+              <td data-label="产品"><a href="/products/{{.ProductID}}">{{.ProductName}}</a></td>
+              <td data-label="类型"><span class="badge {{if .IsIn}}badge--ok{{else}}badge--muted{{end}}">{{.ReasonLabel}}</span></td>
+              <td class="num {{if .IsIn}}pos{{end}}" data-label="数量">{{if .IsIn}}+{{end}}{{.Qty}}</td>
+              <td class="num muted" data-label="结存">{{.QtyAfter}}</td>
             </tr>
           {{end}}
           </tbody>
@@ -226,7 +226,7 @@
           {
             label: '销售额',
             data: D.revenue,
-            borderColor: '#2A5F50',
+            borderColor: '#2A5580',
             backgroundColor: 'rgba(42,95,80,.12)',
             fill: true,
             tension: .35,
@@ -277,7 +277,7 @@
         datasets: [{
           label: '净利润',
           data: D.marketProfit,
-          backgroundColor: D.marketProfit.map(function (v) { return v < 0 ? '#D4553F' : '#3B7A67'; }),
+          backgroundColor: D.marketProfit.map(function (v) { return v < 0 ? '#D4553F' : '#37699B'; }),
           borderRadius: 6,
           maxBarThickness: 38
         }]

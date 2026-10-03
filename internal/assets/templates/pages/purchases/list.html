@@ -20,37 +20,44 @@
 </div>
 
 <div class="card">
-  <form class="filters" method="get" action="/purchases">
+  {{/* 手机上只留搜索 + 筛选按钮，其余条件折叠起来，避免挤成一团 */}}
+  <form class="filters" method="get" action="/purchases" x-data="{ more: false }">
     <div class="field field--wide">
-      <label class="field__label" for="q">关键词</label>
-      <input class="input" id="q" name="q" type="search" value="{{.Keyword}}" placeholder="单据号、产品名、供应商">
+      <input class="input" id="q" name="q" type="search" value="{{.Keyword}}"
+             placeholder="单据号、产品名、供应商" aria-label="搜索采购单">
     </div>
-    <div class="field">
-      <label class="field__label" for="status">状态</label>
-      <select class="select" id="status" name="status">
-        {{$cur := .Status}}
-        {{range .StatusOptions}}<option value="{{.Value}}"{{if eq .Value $cur}} selected{{end}}>{{.Label}}</option>{{end}}
-      </select>
-    </div>
-    <div class="field">
-      <label class="field__label" for="supplier">供应商</label>
-      <select class="select" id="supplier" name="supplier">
-        <option value="">全部供应商</option>
-        {{$sid := .SupplierID}}
-        {{range .Suppliers}}<option value="{{.ID}}"{{if eq .ID $sid}} selected{{end}}>{{.Name}}</option>{{end}}
-      </select>
-    </div>
-    <div class="field">
-      <label class="field__label" for="from">开始日期</label>
-      <input class="input" id="from" name="from" type="date" value="{{.From}}">
-    </div>
-    <div class="field">
-      <label class="field__label" for="to">结束日期</label>
-      <input class="input" id="to" name="to" type="date" value="{{.To}}">
-    </div>
-    <div class="field field--actions">
-      <button class="btn btn--primary" type="submit">{{template "icon" "search"}}<span>筛选</span></button>
-      <a class="btn" href="/purchases">重置</a>
+    <button class="btn filters__toggle" type="button" @click="more = !more" :aria-expanded="more">
+      {{template "icon" "filter"}}<span x-text="more ? '收起条件' : '筛选条件'">筛选条件</span>
+    </button>
+    <button class="btn btn--primary filters__submit" type="submit">{{template "icon" "search"}}<span>筛选</span></button>
+
+    <div class="filters__more" :class="more ? 'is-open' : ''">
+      <div class="field">
+        <label class="field__label" for="status">状态</label>
+        <select class="select" id="status" name="status">
+          {{$cur := .Status}}
+          {{range .StatusOptions}}<option value="{{.Value}}"{{if eq .Value $cur}} selected{{end}}>{{.Label}}</option>{{end}}
+        </select>
+      </div>
+      <div class="field">
+        <label class="field__label" for="supplier">供应商</label>
+        <select class="select" id="supplier" name="supplier">
+          <option value="">全部供应商</option>
+          {{$sid := .SupplierID}}
+          {{range .Suppliers}}<option value="{{.ID}}"{{if eq .ID $sid}} selected{{end}}>{{.Name}}</option>{{end}}
+        </select>
+      </div>
+      <div class="field">
+        <label class="field__label" for="from">开始日期</label>
+        <input class="input" id="from" name="from" type="date" value="{{.From}}">
+      </div>
+      <div class="field">
+        <label class="field__label" for="to">结束日期</label>
+        <input class="input" id="to" name="to" type="date" value="{{.To}}">
+      </div>
+      <div class="filters__more-actions">
+        <a class="btn" href="/purchases">重置条件</a>
+      </div>
     </div>
   </form>
 
@@ -63,7 +70,7 @@
 
   {{if .Purchases}}
   <div class="table-wrap">
-    <table class="data">
+    <table class="data data--stack">
       <thead>
         <tr>
           <th>单据号</th>
@@ -82,18 +89,18 @@
       <tbody>
         {{range $p := .Purchases}}
         <tr>
-          <td>
+          <td class="row-cell--main">
             <a class="strong mono" href="/purchases/{{$p.ID}}">{{$p.Code}}</a>
             {{if $p.CreatedByName}}<div class="tiny muted">{{$p.CreatedByName}} 录入</div>{{end}}
           </td>
-          <td>{{if $p.SupplierName}}{{$p.SupplierName}}{{else}}<span class="muted">未指定</span>{{end}}</td>
-          <td class="nowrap small">{{date $p.PurchaseDate}}</td>
-          <td>{{template "purchase_status" $p.Status}}</td>
-          <td class="num nowrap">{{$p.ItemCount}} 行<div class="tiny muted">{{$p.TotalQty}} 瓶</div></td>
+          <td data-label="供应商">{{if $p.SupplierName}}{{$p.SupplierName}}{{else}}<span class="muted">未指定</span>{{end}}</td>
+          <td class="nowrap small" data-label="采购日期">{{date $p.PurchaseDate}}</td>
+          <td data-label="状态">{{template "purchase_status" $p.Status}}</td>
+          <td class="num nowrap" data-label="明细">{{$p.ItemCount}} 行<div class="tiny muted">{{$p.TotalQty}} 瓶</div></td>
           {{if $.Perms.Has "report.view"}}
-          <td class="num">{{money $p.GoodsAmount}}</td>
-          <td class="num muted">{{money $p.ExtraCost}}</td>
-          <td class="num strong">{{money $p.TotalCost}}</td>
+          <td class="num" data-label="货款">{{money $p.GoodsAmount}}</td>
+          <td class="num muted" data-label="附加费用">{{money $p.ExtraCost}}</td>
+          <td class="num strong" data-label="合计">{{money $p.TotalCost}}</td>
           {{end}}
           <td class="right">
             <div class="row-actions">

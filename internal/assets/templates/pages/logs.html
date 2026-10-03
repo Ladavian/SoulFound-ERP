@@ -20,7 +20,7 @@
 
   {{if .Logs}}
   <div class="table-wrap">
-    <table class="data">
+    <table class="data data--stack">
       <thead>
         <tr>
           <th>时间</th>
@@ -33,13 +33,13 @@
       <tbody>
         {{range $l := .Logs}}
         <tr>
-          <td class="nowrap small muted">{{datetime $l.CreatedAt}}</td>
-          <td class="nowrap small">{{default "系统" $l.Username}}</td>
-          <td><span class="badge badge--muted">{{$l.Action}}</span></td>
-          <td class="nowrap small text-2">
+          <td class="nowrap small muted row-cell--main">{{datetime $l.CreatedAt}}</td>
+          <td class="nowrap small" data-label="操作人">{{default "系统" $l.Username}}</td>
+          <td data-label="动作"><span class="badge badge--muted">{{$l.Action}}</span></td>
+          <td class="nowrap small text-2" data-label="对象">
             {{if $l.Entity}}{{$l.Entity}}{{with $l.EntityID}} #{{.}}{{end}}{{else}}<span class="muted">—</span>{{end}}
           </td>
-          <td class="small text-2">{{if $l.Detail}}{{$l.Detail}}{{else}}<span class="muted">—</span>{{end}}</td>
+          <td class="small text-2" data-label="详情">{{if $l.Detail}}{{$l.Detail}}{{else}}<span class="muted">—</span>{{end}}</td>
         </tr>
         {{end}}
       </tbody>

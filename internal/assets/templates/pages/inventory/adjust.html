@@ -118,7 +118,7 @@
       </div>
       {{if .RecentMovements}}
       <div class="table-wrap">
-        <table class="data data--compact">
+        <table class="data data--compact data--stack">
           <thead>
             <tr>
               <th>日期</th>
@@ -132,15 +132,15 @@
           <tbody>
             {{range .RecentMovements}}
             <tr>
-              <td class="nowrap small">{{.OccurredOn}}</td>
-              <td>
+              <td class="nowrap small row-cell--main">{{.OccurredOn}}</td>
+              <td data-label="产品">
                 <a href="/products/{{.ProductID}}">{{.ProductName}}</a>
                 <div class="tiny muted mono">{{.ProductSKU}}</div>
               </td>
-              <td><span class="badge{{if .IsIn}} badge--ok{{else}} badge--muted{{end}}">{{.ReasonLabel}}</span></td>
-              <td class="num {{if not .IsIn}}neg{{end}}">{{if .IsIn}}+{{end}}{{.Qty}}</td>
-              <td class="num muted">{{money4 .UnitCost}}</td>
-              <td class="small">{{if .Note}}{{.Note}}{{else}}<span class="muted">—</span>{{end}}</td>
+              <td data-label="类型"><span class="badge{{if .IsIn}} badge--ok{{else}} badge--muted{{end}}">{{.ReasonLabel}}</span></td>
+              <td class="num {{if not .IsIn}}neg{{end}}" data-label="数量">{{if .IsIn}}+{{end}}{{.Qty}}</td>
+              <td class="num muted" data-label="单位成本">{{money4 .UnitCost}}</td>
+              <td class="small" data-label="备注">{{if .Note}}{{.Note}}{{else}}<span class="muted">—</span>{{end}}</td>
             </tr>
             {{end}}
           </tbody>

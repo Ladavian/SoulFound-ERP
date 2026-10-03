@@ -35,7 +35,7 @@
     <div class="stat__meta">毛利 ÷ 销售额</div>
   </div>
   <div class="stat stat--gold">
-    <div class="stat__label">{{template "icon" "glass"}}售出瓶数</div>
+    <div class="stat__label">{{template "icon" "cart"}}售出瓶数</div>
     <div class="stat__value">{{.TotalSold}}</div>
     <div class="stat__meta">试饮 {{.TotalTasting}} 瓶</div>
   </div>
@@ -47,18 +47,25 @@
 </div>
 
 <div class="card">
-  <form class="filters" method="get" action="/reports/products">
+  {{/* 无搜索框，第一个条件（开始日期）留在外面；手机上只留它 + 两个按钮 */}}
+  <form class="filters" method="get" action="/reports/products" x-data="{ more: false }">
     <div class="field">
       <label class="field__label" for="from">开始日期</label>
       <input class="input" id="from" name="from" type="date" value="{{.From}}">
     </div>
-    <div class="field">
-      <label class="field__label" for="to">结束日期</label>
-      <input class="input" id="to" name="to" type="date" value="{{.To}}">
-    </div>
-    <div class="field field--actions">
-      <button class="btn btn--primary" type="submit">{{template "icon" "search"}}<span>筛选</span></button>
-      <a class="btn" href="/reports/products">重置</a>
+    <button class="btn filters__toggle" type="button" @click="more = !more" :aria-expanded="more">
+      {{template "icon" "filter"}}<span x-text="more ? '收起条件' : '筛选条件'">筛选条件</span>
+    </button>
+    <button class="btn btn--primary filters__submit" type="submit">{{template "icon" "search"}}<span>筛选</span></button>
+
+    <div class="filters__more" :class="more ? 'is-open' : ''">
+      <div class="field">
+        <label class="field__label" for="to">结束日期</label>
+        <input class="input" id="to" name="to" type="date" value="{{.To}}">
+      </div>
+      <div class="filters__more-actions">
+        <a class="btn" href="/reports/products">重置条件</a>
+      </div>
     </div>
   </form>
 
@@ -77,7 +84,7 @@
 
   {{if .Rows}}
   <div class="table-wrap">
-    <table class="data">
+    <table class="data data--stack">
       <thead>
         <tr>
           <th class="num">排名</th>
@@ -94,18 +101,18 @@
       <tbody>
         {{range $i, $r := .Rows}}
         <tr>
-          <td class="num muted">{{add $i 1}}</td>
-          <td>
+          <td class="num muted" data-label="排名">{{add $i 1}}</td>
+          <td class="row-cell--main">
             <a class="strong" href="/products/{{$r.ProductID}}">{{$r.ProductName}}</a>
             <div class="tiny muted mono">{{$r.ProductSKU}}</div>
           </td>
-          <td class="num">{{$r.TastingQty}}</td>
-          <td class="num">{{$r.SoldQty}}</td>
-          <td class="num">{{if $r.TastingQty}}{{fixed 1 $r.Conversion}} ×{{else}}<span class="muted">—</span>{{end}}</td>
-          <td class="num strong">{{money $r.Revenue}}</td>
-          <td class="num muted">{{money $r.Cogs}}</td>
-          <td class="num {{if $r.Profit.IsNeg}}neg{{else}}pos{{end}}">{{money $r.Profit}}</td>
-          <td class="num small {{if $r.Profit.IsNeg}}neg{{end}}">
+          <td class="num" data-label="试饮">{{$r.TastingQty}}</td>
+          <td class="num" data-label="销售">{{$r.SoldQty}}</td>
+          <td class="num" data-label="带动">{{if $r.TastingQty}}{{fixed 1 $r.Conversion}} ×{{else}}<span class="muted">—</span>{{end}}</td>
+          <td class="num strong" data-label="销售额">{{money $r.Revenue}}</td>
+          <td class="num muted" data-label="售出成本">{{money $r.Cogs}}</td>
+          <td class="num {{if $r.Profit.IsNeg}}neg{{else}}pos{{end}}" data-label="毛利">{{money $r.Profit}}</td>
+          <td class="num small {{if $r.Profit.IsNeg}}neg{{end}}" data-label="毛利率">
             {{if $r.Revenue}}{{pct (mul (div $r.Profit.Float $r.Revenue.Float) 100.0)}}{{else}}<span class="muted">—</span>{{end}}
           </td>
         </tr>

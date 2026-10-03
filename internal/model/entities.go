@@ -173,6 +173,41 @@ func (p Product) Label() string {
 }
 
 // IsLowStock 是否低于预警线。
+// StockLevel 库存相对预警线的百分比，用于列表里的迷你数据条。
+//
+// 预警线的 3 倍算满格：低于预警线显示橙/红，充足时是蓝绿色。
+func (p Product) StockLevel() int {
+	full := float64(p.LowStockQty) * 3
+	if full <= 0 {
+		if p.StockQty > 0 {
+			return 100
+		}
+		return 0
+	}
+	v := float64(p.StockQty) / full * 100
+	if v > 100 {
+		v = 100
+	}
+	if v < 0 {
+		v = 0
+	}
+	return int(v + 0.5)
+}
+
+// StockLevelClass 数据条的颜色档位。
+func (p Product) StockLevelClass() string {
+	switch {
+	case p.LowStockQty <= 0:
+		return "meter--ok"
+	case p.StockQty <= 0:
+		return "meter--danger"
+	case p.IsLowStock():
+		return "meter--warn"
+	default:
+		return "meter--ok"
+	}
+}
+
 func (p Product) IsLowStock() bool {
 	return p.StockQty <= p.LowStockQty
 }

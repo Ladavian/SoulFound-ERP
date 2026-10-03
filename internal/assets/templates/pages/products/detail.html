@@ -9,7 +9,7 @@
       <span class="mono">{{$p.SKU}}</span>
       {{if $p.Category}}<span>{{template "icon" "tag"}} {{$p.Category}}</span>{{end}}
       {{if $p.Vintage}}<span>{{template "icon" "calendar"}} {{$p.Vintage}} 年</span>{{end}}
-      {{if $p.Spec}}<span>{{template "icon" "glass"}} {{$p.Spec}}</span>{{end}}
+      {{if $p.Spec}}<span>{{template "icon" "box"}} {{$p.Spec}}</span>{{end}}
       {{if not $p.IsActive}}<span class="badge badge--muted">已停用</span>{{end}}
     </div>
   </div>
@@ -80,7 +80,7 @@
       </div>
       {{if .MarketStats}}
       <div class="table-wrap">
-        <table class="data">
+        <table class="data data--stack">
           <thead>
             <tr>
               <th>市集</th>
@@ -94,17 +94,17 @@
           <tbody>
             {{range $s := .MarketStats}}
             <tr>
-              <td>
+              <td class="row-cell--main">
                 <a class="strong" href="/markets/{{$s.MarketID}}">{{$s.Name}}</a>
                 <div class="tiny muted mono">{{$s.Code}}</div>
               </td>
-              <td class="nowrap small">{{$s.DateRange}}</td>
-              <td>{{template "market_status" $s.Status}}</td>
-              <td class="num">{{$s.TastingQty}}</td>
-              <td class="num">{{$s.SoldQty}}</td>
+              <td class="nowrap small" data-label="日期">{{$s.DateRange}}</td>
+              <td data-label="状态">{{template "market_status" $s.Status}}</td>
+              <td class="num" data-label="试饮">{{$s.TastingQty}}</td>
+              <td class="num" data-label="销售">{{$s.SoldQty}}</td>
               {{if $showCost}}
-              <td class="num strong">{{money $s.Revenue}}</td>
-              <td class="num {{if $s.Profit.IsNeg}}neg{{else}}pos{{end}}">{{money $s.Profit}}</td>
+              <td class="num strong" data-label="销售额">{{money $s.Revenue}}</td>
+              <td class="num {{if $s.Profit.IsNeg}}neg{{else}}pos{{end}}" data-label="净贡献">{{money $s.Profit}}</td>
               {{end}}
             </tr>
             {{end}}
@@ -145,7 +145,7 @@
       </div>
       {{if .Movements}}
       <div class="table-wrap">
-        <table class="data data--compact">
+        <table class="data data--compact data--stack">
           <thead>
             <tr>
               <th>日期</th>
@@ -160,16 +160,16 @@
           <tbody>
             {{range $mv := .Movements}}
             <tr>
-              <td class="nowrap small">{{date $mv.OccurredOn}}</td>
-              <td class="small">{{$mv.ReasonLabel}}</td>
-              <td class="num {{if $mv.IsIn}}pos{{end}}">{{if $mv.IsIn}}+{{end}}{{$mv.Qty}}</td>
+              <td class="nowrap small row-cell--main">{{date $mv.OccurredOn}}</td>
+              <td class="small" data-label="类型">{{$mv.ReasonLabel}}</td>
+              <td class="num {{if $mv.IsIn}}pos{{end}}" data-label="数量">{{if $mv.IsIn}}+{{end}}{{$mv.Qty}}</td>
               {{if $showCost}}
-              <td class="num muted">{{money4 $mv.UnitCost}}</td>
-              <td class="num">{{money $mv.TotalCost}}</td>
+              <td class="num muted" data-label="单位成本">{{money4 $mv.UnitCost}}</td>
+              <td class="num" data-label="金额">{{money $mv.TotalCost}}</td>
               {{end}}
-              <td class="num">{{$mv.QtyAfter}}</td>
-              <td class="small">{{if $mv.RefCode}}<span class="mono">{{$mv.RefCode}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
-              <td class="small">{{if $mv.CreatedByName}}{{$mv.CreatedByName}}{{else}}<span class="muted">—</span>{{end}}</td>
+              <td class="num" data-label="结存数量">{{$mv.QtyAfter}}</td>
+              <td class="small" data-label="来源单号">{{if $mv.RefCode}}<span class="mono">{{$mv.RefCode}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
+              <td class="small" data-label="操作人">{{if $mv.CreatedByName}}{{$mv.CreatedByName}}{{else}}<span class="muted">—</span>{{end}}</td>
             </tr>
             {{end}}
           </tbody>

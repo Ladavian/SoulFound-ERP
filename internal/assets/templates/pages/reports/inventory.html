@@ -45,7 +45,7 @@
 
       {{if .Products}}
       <div class="table-wrap">
-        <table class="data">
+        <table class="data data--stack">
           <thead>
             <tr>
               <th>产品</th>
@@ -64,7 +64,7 @@
           <tbody>
             {{range .Products}}
             <tr>
-              <td>
+              <td class="row-cell--main">
                 <span class="strong">{{.Name}}</span>
                 <div class="tiny muted">
                   <span class="mono">{{.SKU}}</span>
@@ -72,20 +72,20 @@
                   {{if .Spec}} · {{.Spec}}{{end}}
                 </div>
               </td>
-              <td class="small">{{default "—" .Category}}</td>
-              <td class="num strong">{{.StockQty}} <span class="tiny muted">{{default "瓶" .Unit}}</span></td>
+              <td class="small" data-label="品类">{{default "—" .Category}}</td>
+              <td class="num strong" data-label="库存数量">{{.StockQty}} <span class="tiny muted">{{default "瓶" .Unit}}</span></td>
               {{if $.Perms.Has "report.view"}}
-              <td class="num muted">{{money4 .AvgCost}}</td>
-              <td class="num">{{money .StockValue}}</td>
+              <td class="num muted" data-label="平均成本">{{money4 .AvgCost}}</td>
+              <td class="num" data-label="库存成本">{{money .StockValue}}</td>
               {{end}}
-              <td class="num">{{if .SalePrice}}{{money .SalePrice}}{{else}}<span class="muted">—</span>{{end}}</td>
+              <td class="num" data-label="建议售价">{{if .SalePrice}}{{money .SalePrice}}{{else}}<span class="muted">—</span>{{end}}</td>
               {{if $.Perms.Has "report.view"}}
-              <td class="num small">
+              <td class="num small" data-label="潜在毛利率">
                 {{if .SalePrice}}{{pct .Margin}}{{else}}<span class="muted">—</span>{{end}}
               </td>
               {{end}}
-              <td class="small">{{default "—" .SupplierName}}</td>
-              <td>
+              <td class="small" data-label="供应商">{{default "—" .SupplierName}}</td>
+              <td data-label="状态">
                 {{if .IsActive}}<span class="badge badge--ok">在用</span>{{else}}<span class="badge badge--muted">停用</span>{{end}}
               </td>
             </tr>
@@ -121,7 +121,7 @@
       </div>
       {{if .CategoryStock}}
       <div class="table-wrap">
-        <table class="data data--compact">
+        <table class="data data--compact data--stack">
           <thead>
             <tr>
               <th>品类</th>
@@ -133,10 +133,10 @@
           <tbody>
             {{range .CategoryStock}}
             <tr>
-              <td>{{default "未分类" .Category}}</td>
-              <td class="num">{{.SKUCount}}</td>
-              <td class="num">{{.Qty}}</td>
-              {{if $.Perms.Has "report.view"}}<td class="num">{{money .Value}}</td>{{end}}
+              <td class="row-cell--main">{{default "未分类" .Category}}</td>
+              <td class="num" data-label="SKU">{{.SKUCount}}</td>
+              <td class="num" data-label="数量">{{.Qty}}</td>
+              {{if $.Perms.Has "report.view"}}<td class="num" data-label="成本金额">{{money .Value}}</td>{{end}}
             </tr>
             {{end}}
           </tbody>

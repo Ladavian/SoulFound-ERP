@@ -42,40 +42,47 @@
 <div class="grid grid--sidebar">
   <div>
     <div class="card">
-      <form class="filters" method="get" action="/inventory">
+      {{/* 手机上只留搜索 + 查询按钮，其余条件折叠起来，避免挤成一团 */}}
+      <form class="filters" method="get" action="/inventory" x-data="{ more: false }">
         <div class="field field--wide">
-          <label class="field__label" for="q">搜索</label>
-          <input class="input" id="q" name="q" type="search" value="{{.Keyword}}" placeholder="产品名称、SKU、供应商">
+          <input class="input" id="q" name="q" type="search" value="{{.Keyword}}"
+                 placeholder="产品名称、SKU、供应商" aria-label="搜索库存产品">
         </div>
-        <div class="field">
-          <label class="field__label" for="category">品类</label>
-          <select class="select" id="category" name="category">
-            {{$cur := .Category}}
-            <option value=""{{if eq $cur ""}} selected{{end}}>全部品类</option>
-            {{range .Categories}}<option value="{{.}}"{{if eq . $cur}} selected{{end}}>{{.}}</option>{{end}}
-          </select>
-        </div>
-        <div class="field">
-          <label class="field__label" for="sort">排序</label>
-          <select class="select" id="sort" name="sort">
-            {{$s := .Sort}}
-            <option value=""{{if eq $s ""}} selected{{end}}>默认（档案顺序）</option>
-            <option value="stock"{{if eq $s "stock"}} selected{{end}}>库存多在前</option>
-            <option value="stock_asc"{{if eq $s "stock_asc"}} selected{{end}}>库存少在前</option>
-            <option value="value"{{if eq $s "value"}} selected{{end}}>库存价值高在前</option>
-          </select>
-        </div>
-        <div class="field">
-          <span class="field__label">库存筛选</span>
-          <label class="checkbox"><input type="checkbox" name="low" value="1"{{if .LowStockOnly}} checked{{end}}><span>只看低库存</span></label>
-        </div>
-        <div class="field">
-          <span class="field__label">档案状态</span>
-          <label class="checkbox"><input type="checkbox" name="all" value="1"{{if .IncludeInactive}} checked{{end}}><span>含停用产品</span></label>
-        </div>
-        <div class="field field--actions">
-          <button class="btn btn--primary" type="submit">{{template "icon" "search"}}<span>查询</span></button>
-          <a class="btn" href="/inventory">重置</a>
+        <button class="btn filters__toggle" type="button" @click="more = !more" :aria-expanded="more">
+          {{template "icon" "filter"}}<span x-text="more ? '收起条件' : '筛选条件'">筛选条件</span>
+        </button>
+        <button class="btn btn--primary filters__submit" type="submit">{{template "icon" "search"}}<span>查询</span></button>
+
+        <div class="filters__more" :class="more ? 'is-open' : ''">
+          <div class="field">
+            <label class="field__label" for="category">品类</label>
+            <select class="select" id="category" name="category">
+              {{$cur := .Category}}
+              <option value=""{{if eq $cur ""}} selected{{end}}>全部品类</option>
+              {{range .Categories}}<option value="{{.}}"{{if eq . $cur}} selected{{end}}>{{.}}</option>{{end}}
+            </select>
+          </div>
+          <div class="field">
+            <label class="field__label" for="sort">排序</label>
+            <select class="select" id="sort" name="sort">
+              {{$s := .Sort}}
+              <option value=""{{if eq $s ""}} selected{{end}}>默认（档案顺序）</option>
+              <option value="stock"{{if eq $s "stock"}} selected{{end}}>库存多在前</option>
+              <option value="stock_asc"{{if eq $s "stock_asc"}} selected{{end}}>库存少在前</option>
+              <option value="value"{{if eq $s "value"}} selected{{end}}>库存价值高在前</option>
+            </select>
+          </div>
+          <div class="field filters__more-full">
+            <span class="field__label">库存筛选</span>
+            <label class="checkbox"><input type="checkbox" name="low" value="1"{{if .LowStockOnly}} checked{{end}}><span>只看低库存</span></label>
+          </div>
+          <div class="field">
+            <span class="field__label">档案状态</span>
+            <label class="checkbox"><input type="checkbox" name="all" value="1"{{if .IncludeInactive}} checked{{end}}><span>含停用产品</span></label>
+          </div>
+          <div class="filters__more-actions">
+            <a class="btn" href="/inventory">重置条件</a>
+          </div>
         </div>
       </form>
 
@@ -85,7 +92,7 @@
 
       {{if .Products}}
       <div class="table-wrap">
-        <table class="data">
+        <table class="data data--stack">
           <thead>
             <tr>
               <th>产品</th>
@@ -104,7 +111,7 @@
           <tbody>
             {{range .Products}}
             <tr>
-              <td>
+              <td class="row-cell--main">
                 <a class="strong" href="/products/{{.ID}}">{{.Name}}</a>
                 <div class="tiny muted">
                   <span class="mono">{{.SKU}}</span>
@@ -113,21 +120,21 @@
                   {{if not .IsActive}} <span class="badge badge--muted">停用</span>{{end}}
                 </div>
               </td>
-              <td class="small">{{default "—" .Category}}</td>
-              <td class="num">
+              <td class="small" data-label="品类">{{default "—" .Category}}</td>
+              <td class="num" data-label="库存">
                 <span class="strong">{{.StockQty}}</span> <span class="tiny muted">{{default "瓶" .Unit}}</span>
                 {{if .IsLowStock}}{{if not .IsOutOfStock}} <span class="badge badge--danger">低于预警线</span>{{end}}{{end}}
                 {{if .IsOutOfStock}} <span class="badge badge--warn">无库存</span>{{end}}
               </td>
               {{if $.Perms.Has "report.view"}}
-              <td class="num muted">{{money4 .AvgCost}}</td>
-              <td class="num">{{money .StockValue}}</td>
+              <td class="num muted" data-label="平均成本">{{money4 .AvgCost}}</td>
+              <td class="num" data-label="库存成本">{{money .StockValue}}</td>
               {{end}}
-              <td class="num">{{money .SalePrice}}</td>
+              <td class="num" data-label="建议售价">{{money .SalePrice}}</td>
               {{if $.Perms.Has "report.view"}}
-              <td class="num small {{if lt .Margin 0.0}}neg{{end}}">{{pct .Margin}}</td>
+              <td class="num small {{if lt .Margin 0.0}}neg{{end}}" data-label="毛利率">{{pct .Margin}}</td>
               {{end}}
-              <td class="small">{{default "—" .SupplierName}}</td>
+              <td class="small" data-label="供应商">{{default "—" .SupplierName}}</td>
               <td class="right">
                 <div class="row-actions">
                   <a class="btn btn--sm" href="/products/{{.ID}}">详情</a>
@@ -167,7 +174,7 @@
       </div>
       {{if .CategoryStock}}
       <div class="table-wrap">
-        <table class="data data--compact">
+        <table class="data data--compact data--stack">
           <thead>
             <tr>
               <th>品类</th>
@@ -179,10 +186,10 @@
           <tbody>
             {{range .CategoryStock}}
             <tr>
-              <td>{{default "未分类" .Category}}</td>
-              <td class="num">{{.SKUCount}}</td>
-              <td class="num">{{.Qty}}</td>
-              {{if $.Perms.Has "report.view"}}<td class="num">{{money .Value}}</td>{{end}}
+              <td class="row-cell--main">{{default "未分类" .Category}}</td>
+              <td class="num" data-label="SKU">{{.SKUCount}}</td>
+              <td class="num" data-label="数量">{{.Qty}}</td>
+              {{if $.Perms.Has "report.view"}}<td class="num" data-label="成本金额">{{money .Value}}</td>{{end}}
             </tr>
             {{end}}
           </tbody>
