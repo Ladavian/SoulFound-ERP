@@ -260,7 +260,7 @@ func (s *Service) ExportMarketSummary(ctx context.Context, from, to, status, key
 
 	expenseCols := []Column{
 		{"单据号", 16, false}, {"市集名称", 26, false}, {"费用类别", 14, false},
-		{"金额", 12, true}, {"备注", 30, false},
+		{"计算方式", 14, false}, {"比例", 8, false}, {"本场实际", 12, true}, {"备注", 30, false},
 	}
 	var expenseRows [][]any
 	for _, r := range rows {
@@ -272,7 +272,10 @@ func (s *Service) ExportMarketSummary(ctx context.Context, from, to, status, key
 			continue
 		}
 		for _, e := range m.Expenses {
-			expenseRows = append(expenseRows, []any{m.Code, m.Name, e.CategoryLabel(), e.Amount, e.Note})
+			expenseRows = append(expenseRows, []any{
+				m.Code, m.Name, e.CategoryLabel(),
+				e.CalcLabel(), e.RatePercentText(), m.ExpenseActual(e), e.Note,
+			})
 		}
 	}
 
@@ -337,10 +340,16 @@ func (s *Service) ExportMarketDetail(ctx context.Context, marketID int64) ([]byt
 		})
 	}
 
-	expenseCols := []Column{{"费用类别", 14, false}, {"金额", 12, true}, {"备注", 30, false}}
+	expenseCols := []Column{
+		{"费用类别", 14, false}, {"计算方式", 14, false}, {"比例", 8, false},
+		{"本场实际", 12, true}, {"备注", 30, false},
+	}
 	expenseRows := make([][]any, 0, len(m.Expenses))
 	for _, e := range m.Expenses {
-		expenseRows = append(expenseRows, []any{e.CategoryLabel(), e.Amount, e.Note})
+		expenseRows = append(expenseRows, []any{
+			e.CategoryLabel(), e.CalcLabel(), e.RatePercentText(),
+			m.ExpenseActual(e), e.Note,
+		})
 	}
 
 	return WriteXLSX([]Table{

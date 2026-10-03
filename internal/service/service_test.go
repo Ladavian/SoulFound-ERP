@@ -556,3 +556,105 @@ func TestBackupRetentionAndAccess(t *testing.T) {
 		}
 	}
 }
+
+// TestPercentExpense 摊位费支持一口价与按销售额扣点。
+func TestPercentExpense(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+	admin := adminUser(t, svc)
+
+	pid, err := svc.Store.CreateProduct(ctx, &model.Product{
+		SKU: "PCT-001", Name: "扣点测试", Unit: "瓶",
+		SalePrice: model.MustMoney("100"), IsActive: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.AdjustStock(ctx, AdjustInput{
+		ProductID: pid, Qty: model.MustQty("20"), UnitCost: model.MustMoney("40"),
+		Reason: model.ReasonOpening, OccurredOn: "2025-05-01",
+	}, admin); err != nil {
+		t.Fatal(err)
+	}
+
+	marketID, err := svc.SaveMarket(ctx, MarketInput{
+		Name: "扣点测试市集", StartDate: "2025-05-10", EndDate: "2025-05-10",
+	}, admin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.AddMarketProduct(ctx, marketID, pid, admin); err != nil {
+		t.Fatal(err)
+	}
+	// 卖 10 瓶 × 100 = 1000
+	if _, err := svc.AddMarketRecord(ctx, marketID, MarketRecordInput{
+		ProductID: pid, Kind: model.RecordSale, Qty: model.MustQty("10"),
+	}, admin); err != nil {
+		t.Fatal(err)
+	}
+
+	// 摊位费：一口价 300 + 销售额 5% 扣点
+	if err := svc.SaveMarketExpenses(ctx, marketID, []model.MarketExpense{
+		{Category: model.ExpenseBooth, Amount: model.MustMoney("300"), Calc: model.ExpenseCalcFixed, Note: "一口价"},
+		{Category: model.ExpenseOther, Calc: model.ExpenseCalcPercent, Rate: 500, Note: "主办方抽成 5%"},
+	}, admin); err != nil {
+		t.Fatal(err)
+	}
+
+	m, err := svc.Store.MarketByID(ctx, marketID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Expenses) != 2 {
+		t.Fatalf("应有 2 条费用，实际 %d", len(m.Expenses))
+	}
+	// 扣点金额 = 1000 × 5% = 50
+	var pct model.MarketExpense
+	for _, e := range m.Expenses {
+		if e.IsPercent() {
+			pct = e
+		}
+	}
+	if pct.Rate != 500 {
+		t.Errorf("扣点比例应存成万分比 500，实际 %d", pct.Rate)
+	}
+	if got := pct.Actual(model.MustMoney("1000")); got != model.MustMoney("50") {
+		t.Errorf("1000 的 5%% 应为 50，实际 %s", got)
+	}
+	if pct.RatePercentText() != "5%" {
+		t.Errorf("比例文本应为 5%%，实际 %q", pct.RatePercentText())
+	}
+
+	// 损益：销售额 1000 - 售出成本 400 - 费用(300+50) = 250
+	totals := m.Totals()
+	if totals.Revenue != model.MustMoney("1000") {
+		t.Errorf("销售额应为 1000，实际 %s", totals.Revenue)
+	}
+	if totals.ExpenseCost != model.MustMoney("350") {
+		t.Errorf("费用合计应为 350（300 一口价 + 50 扣点），实际 %s", totals.ExpenseCost)
+	}
+	if totals.NetProfit != model.MustMoney("250") {
+		t.Errorf("净利润应为 250，实际 %s", totals.NetProfit)
+	}
+
+	// 销售额变化时扣点金额跟着变
+	if _, err := svc.AddMarketRecord(ctx, marketID, MarketRecordInput{
+		ProductID: pid, Kind: model.RecordSale, Qty: model.MustQty("10"),
+	}, admin); err != nil {
+		t.Fatal(err)
+	}
+	m, _ = svc.Store.MarketByID(ctx, marketID)
+	totals = m.Totals()
+	if totals.ExpenseCost != model.MustMoney("400") {
+		t.Errorf("销售额翻倍后费用应为 400（300 + 2000×5%%），实际 %s", totals.ExpenseCost)
+	}
+
+	// 结算时费用也要按扣点算进去
+	if err := svc.SettleMarket(ctx, marketID, admin); err != nil {
+		t.Fatalf("结算失败: %v", err)
+	}
+	settled, _ := svc.Store.MarketByID(ctx, marketID)
+	if settled.NetProfit != totals.NetProfit {
+		t.Errorf("结算后固化的净利润应与结算前一致：%s vs %s", settled.NetProfit, totals.NetProfit)
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"icewine-erp/internal/model"
 	"icewine-erp/internal/service"
@@ -211,6 +212,7 @@ func (s *Server) marketPanelData(r *http.Request, marketID int64) (map[string]an
 		"AvailableProducts": available,
 		"Shortages":         shortages,
 		"ExpenseCategories": model.ExpenseCategoryOptions,
+		"ExpenseCalcs":      model.ExpenseCalcOptions,
 		"ShowCost":          canEdit(r, PermReportView),
 		"CanManage":         canEdit(r, PermMarketManage),
 		"CanSettle":         canEdit(r, PermMarketSettle),
@@ -354,6 +356,8 @@ func (s *Server) handleMarketExpenses(w http.ResponseWriter, r *http.Request) {
 	f := newFormReader(r)
 	categories := f.List("category")
 	amounts := f.List("amount")
+	calcs := f.List("calc")
+	rates := f.List("rate")
 	notes := f.List("note")
 
 	expenses := make([]model.MarketExpense, 0, len(categories))
@@ -363,9 +367,27 @@ func (s *Server) handleMarketExpenses(w http.ResponseWriter, r *http.Request) {
 			f.AddError("第 %d 行费用金额格式不正确", i+1)
 			continue
 		}
+		calc := at(calcs, i)
+		if calc != model.ExpenseCalcPercent {
+			calc = model.ExpenseCalcFixed
+		}
+		rate := parseRatePercent(at(rates, i))
+		if rate < 0 || rate > 10000 {
+			f.AddError("第 %d 行扣点比例应在 0-100 之间", i+1)
+			continue
+		}
+		if calc == model.ExpenseCalcPercent && rate == 0 {
+			f.AddError("第 %d 行选择了按销售额扣点，请填写比例", i+1)
+			continue
+		}
+		if calc == model.ExpenseCalcFixed {
+			amount, _ = model.ParseMoney(at(amounts, i))
+		}
 		expenses = append(expenses, model.MarketExpense{
 			Category: at(categories, i),
 			Amount:   amount,
+			Calc:     calc,
+			Rate:     rate,
 			Note:     at(notes, i),
 		})
 	}
@@ -433,4 +455,19 @@ func (s *Server) handleMarketItemsAddAll(w http.ResponseWriter, r *http.Request)
 	}
 	s.setFlash(w, "success", fmt.Sprintf("已加入 %d 个在售产品", n))
 	s.renderMarketPanel(w, r, marketID)
+}
+
+// parseRatePercent 把「3」「2.5」「3%」转成万分比（300 / 250）。
+func parseRatePercent(raw string) int {
+	v := strings.TrimSpace(raw)
+	v = strings.TrimSuffix(v, "%")
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return 0
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil || f < 0 {
+		return -1
+	}
+	return int(f*100 + 0.5)
 }

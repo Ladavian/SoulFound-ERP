@@ -647,6 +647,11 @@ func (m Market) Totals() MarketTotals {
 	return ComputeTotals(m.Items, m.Expenses, m.Records)
 }
 
+// ExpenseActual 某条费用在本场的实际金额（扣点类需要销售额）。
+func (m Market) ExpenseActual(e MarketExpense) Money {
+	return e.Actual(m.Totals().Revenue)
+}
+
 // SaleCount 销售笔数（现场收银用）。
 func (m Market) SaleCount() int {
 	n := 0
@@ -945,8 +950,9 @@ func ComputeTotals(items []MarketItem, expenses []MarketExpense, records []Marke
 			t.LossCost += it.LossCost()
 		}
 	}
+	// 费用可能按销售额扣点，必须在算出销售额之后再结算
 	for _, e := range expenses {
-		t.ExpenseCost += e.Amount
+		t.ExpenseCost += e.Actual(t.Revenue)
 	}
 	t.NetProfit = t.Revenue - t.CogsSold - t.TastingCost - t.LossCost - t.ExpenseCost
 	return t
@@ -1083,9 +1089,66 @@ type MarketExpense struct {
 	ID       int64
 	MarketID int64
 	Category string
-	Amount   Money
+	Amount   Money  // 一口价模式下的金额
+	Calc     string // fixed（一口价）/ percent（按销售额扣点）
+	Rate     int    // 万分比：300 = 3%
 	Note     string
 }
+
+// 费用计算方式。
+const (
+	ExpenseCalcFixed   = "fixed"
+	ExpenseCalcPercent = "percent"
+)
+
+// ExpenseCalcOptions 计算方式选项。
+var ExpenseCalcOptions = []Option{
+	{ExpenseCalcFixed, "一口价"},
+	{ExpenseCalcPercent, "按销售额扣点"},
+}
+
+// ExpenseCalcLabel 计算方式中文名。
+func ExpenseCalcLabel(calc string) string {
+	if calc == ExpenseCalcPercent {
+		return "按销售额扣点"
+	}
+	return "一口价"
+}
+
+// IsPercent 是否按销售额比例计算。
+func (e MarketExpense) IsPercent() bool { return e.Calc == ExpenseCalcPercent }
+
+// CalcLabel 计算方式中文名。
+func (e MarketExpense) CalcLabel() string { return ExpenseCalcLabel(e.Calc) }
+
+// RatePercentInput 比例输入框的值，例如 3 / 2.5。
+func (e MarketExpense) RatePercentInput() string {
+	if e.Rate <= 0 {
+		return ""
+	}
+	return strconv.FormatFloat(float64(e.Rate)/100, 'f', -1, 64)
+}
+
+// RatePercentText 比例文本，例如 3% / 2.5%。
+func (e MarketExpense) RatePercentText() string {
+	if e.Rate <= 0 {
+		return "—"
+	}
+	return strconv.FormatFloat(float64(e.Rate)/100, 'f', -1, 64) + "%"
+}
+
+// Actual 该费用在本场实际发生的金额。
+//
+// 一口价直接用填写的金额；按比例则用本场销售额乘扣点比例。
+func (e MarketExpense) Actual(revenue Money) Money {
+	if !e.IsPercent() {
+		return e.Amount
+	}
+	return PctOf(revenue, e.Rate)
+}
+
+// Display 用于列表展示的金额文本依据。
+func (e MarketExpense) BaseAmount(revenue Money) Money { return e.Actual(revenue) }
 
 // CategoryLabel 费用类别中文名。
 func (e MarketExpense) CategoryLabel() string { return ExpenseCategoryLabel(e.Category) }

@@ -522,17 +522,39 @@ func (s *Service) DeleteMarketItemRow(ctx context.Context, marketID, itemID int6
 func (s *Service) SaveMarketExpenses(ctx context.Context, marketID int64, expenses []model.MarketExpense, user *model.User) error {
 	clean := make([]model.MarketExpense, 0, len(expenses))
 	for _, e := range expenses {
-		if e.Amount == 0 && strings.TrimSpace(e.Note) == "" {
+		// 计算方式要先规整：扣点类费用的 Amount 本来就是 0，
+		// 不能因为"金额为 0 且没备注"被当成空行丢掉。
+		calc := model.ExpenseCalcFixed
+		if e.Calc == model.ExpenseCalcPercent {
+			calc = model.ExpenseCalcPercent
+		}
+		if calc == model.ExpenseCalcFixed && e.Amount == 0 && strings.TrimSpace(e.Note) == "" {
 			continue
 		}
 		if e.Amount < 0 {
 			return UserErrf("费用金额不能为负数")
 		}
+		if calc == model.ExpenseCalcPercent {
+			if e.Rate <= 0 || e.Rate > 10000 {
+				return UserErrf("按销售额扣点的比例应在 0-100 之间")
+			}
+		} else if e.Rate < 0 {
+			return UserErrf("费用比例不能为负数")
+		}
 		if _, ok := model.ExpenseCategoryLabels[e.Category]; !ok {
 			e.Category = model.ExpenseOther
 		}
-		e.Note = strings.TrimSpace(e.Note)
-		clean = append(clean, model.MarketExpense{Category: e.Category, Amount: e.Amount, Note: e.Note})
+		amount := e.Amount
+		if calc == model.ExpenseCalcPercent {
+			amount = 0 // 扣点金额由销售额算出，不存固定值
+		}
+		clean = append(clean, model.MarketExpense{
+			Category: e.Category,
+			Amount:   amount,
+			Calc:     calc,
+			Rate:     e.Rate,
+			Note:     strings.TrimSpace(e.Note),
+		})
 	}
 	err := s.Store.Tx(ctx, func(tx *sql.Tx) error {
 		st, err := s.Store.MarketStatusTx(ctx, tx, marketID)

@@ -208,7 +208,7 @@ func (s *Store) attachMarketItems(ctx context.Context, list []model.Market) erro
 // MarketExpenses 查询市集费用。
 func (s *Store) MarketExpenses(ctx context.Context, marketID int64) ([]model.MarketExpense, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, market_id, category, amount, note FROM market_expenses
+		`SELECT id, market_id, category, amount, calc, rate, note FROM market_expenses
 		 WHERE market_id = ? ORDER BY id`, marketID)
 	if err != nil {
 		return nil, err
@@ -218,7 +218,7 @@ func (s *Store) MarketExpenses(ctx context.Context, marketID int64) ([]model.Mar
 	var out []model.MarketExpense
 	for rows.Next() {
 		var e model.MarketExpense
-		if err := rows.Scan(&e.ID, &e.MarketID, &e.Category, &e.Amount, &e.Note); err != nil {
+		if err := rows.Scan(&e.ID, &e.MarketID, &e.Category, &e.Amount, &e.Calc, &e.Rate, &e.Note); err != nil {
 			return nil, err
 		}
 		out = append(out, e)
@@ -237,7 +237,7 @@ func (s *Store) attachMarketExpenses(ctx context.Context, list []model.Market) e
 		index[list[i].ID] = i
 	}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, market_id, category, amount, note FROM market_expenses
+		`SELECT id, market_id, category, amount, calc, rate, note FROM market_expenses
 		 WHERE market_id IN (`+placeholders(len(ids))+`) ORDER BY id`, idArgs(ids)...)
 	if err != nil {
 		return err
@@ -246,7 +246,7 @@ func (s *Store) attachMarketExpenses(ctx context.Context, list []model.Market) e
 
 	for rows.Next() {
 		var e model.MarketExpense
-		if err := rows.Scan(&e.ID, &e.MarketID, &e.Category, &e.Amount, &e.Note); err != nil {
+		if err := rows.Scan(&e.ID, &e.MarketID, &e.Category, &e.Amount, &e.Calc, &e.Rate, &e.Note); err != nil {
 			return err
 		}
 		if i, ok := index[e.MarketID]; ok {
@@ -448,8 +448,9 @@ func (s *Store) ReplaceMarketExpenses(ctx context.Context, tx DBTX, marketID int
 	}
 	for _, e := range list {
 		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO market_expenses(market_id, category, amount, note) VALUES (?, ?, ?, ?)`,
-			marketID, e.Category, int64(e.Amount), e.Note); err != nil {
+			`INSERT INTO market_expenses(market_id, category, amount, calc, rate, note)
+			 VALUES (?, ?, ?, ?, ?, ?)`,
+			marketID, e.Category, int64(e.Amount), calcOrDefault(e.Calc), e.Rate, e.Note); err != nil {
 			return err
 		}
 	}
@@ -471,4 +472,12 @@ func (s *Store) CountMarkets(ctx context.Context) (total int, settled int, err e
 		`SELECT COUNT(*), COALESCE(SUM(CASE WHEN status = ? THEN 1 ELSE 0 END), 0)
 		 FROM markets`, model.MarketSettled).Scan(&total, &settled)
 	return
+}
+
+// calcOrDefault 费用计算方式缺省为一口价。
+func calcOrDefault(calc string) string {
+	if calc == model.ExpenseCalcPercent {
+		return model.ExpenseCalcPercent
+	}
+	return model.ExpenseCalcFixed
 }

@@ -119,6 +119,15 @@ ALTER TABLE products ADD COLUMN origin TEXT NOT NULL DEFAULT '';
 ALTER TABLE products ADD COLUMN specs TEXT NOT NULL DEFAULT '';
 `
 
+// migrationV6 活动费用支持「按销售额比例」计算。
+//
+// 市集摊位的收费方式并不统一：有的收一口价，有的按销售额扣点。
+// calc 记录计算方式，rate 是万分比（300 = 3%）；一口价时用 amount。
+const migrationV6 = `
+ALTER TABLE market_expenses ADD COLUMN calc TEXT NOT NULL DEFAULT 'fixed';
+ALTER TABLE market_expenses ADD COLUMN rate INTEGER NOT NULL DEFAULT 0;
+`
+
 // migrations 按顺序执行的迁移脚本。新增结构或数据变更时在末尾追加一段 SQL，
 // 已执行过的版本不会重复执行（版本号记录在 schema_meta 表）。
 var migrations = []string{
@@ -127,4 +136,5 @@ var migrations = []string{
 	migrationV3,
 	migrationV4,
 	migrationV5,
+	migrationV6,
 }

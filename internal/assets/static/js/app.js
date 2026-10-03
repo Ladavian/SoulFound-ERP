@@ -320,4 +320,41 @@
     }
   });
 
+
+  /* ------------------------------------------------- 侧边栏滚动位置
+     菜单项多的时候要滚动才能看到下面几项；点完会整页刷新，
+     滚动条回到顶部，用户就又得重新往下拉。这里把位置记在 sessionStorage。 */
+  (function restoreNavScroll() {
+    var nav = document.querySelector('.sidebar__nav');
+    if (!nav) return;
+    var KEY = 'erp_nav_scroll';
+    var saved = 0;
+    try { saved = parseInt(sessionStorage.getItem(KEY) || '0', 10) || 0; } catch (e) { saved = 0; }
+
+    function apply() {
+      if (saved > 0) {
+        nav.scrollTop = saved;
+        // 保存的位置可能超出当前可滚动范围（例如换到菜单更少的页面）
+        if (nav.scrollTop > 0) return;
+      }
+      // 没有记录时，至少保证当前选中的那一项可见
+      var active = nav.querySelector('.nav-item.is-active');
+      if (!active) return;
+      var top = active.offsetTop;
+      var bottom = top + active.offsetHeight;
+      if (top < nav.scrollTop || bottom > nav.scrollTop + nav.clientHeight) {
+        nav.scrollTop = Math.max(0, top - nav.clientHeight / 2 + active.offsetHeight / 2);
+      }
+    }
+
+    apply();
+    // 字体与图标加载完布局可能还会变，再补一次
+    window.requestAnimationFrame(apply);
+    window.addEventListener('load', apply);
+
+    nav.addEventListener('scroll', function () {
+      try { sessionStorage.setItem(KEY, String(nav.scrollTop)); } catch (e) { /* 忽略 */ }
+    }, { passive: true });
+  })();
+
 })();

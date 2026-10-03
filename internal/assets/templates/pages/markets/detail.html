@@ -245,18 +245,25 @@
 
     <div class="card">
       <div class="card__head">
-        <div class="card__title">活动费用<span class="card__sub">摊位费、交通、餐饮等</span></div>
+        <div class="card__title">活动费用<span class="card__sub">摊位费可设一口价或按销售额扣点</span></div>
       </div>
       <form hx-post="/markets/{{$m.ID}}/expenses" hx-target="#market-panel" hx-swap="outerHTML">
         <div class="table-wrap">
           <table class="data data--compact entry-table" x-data="{ extra: 0 }">
             <thead>
-              <tr><th style="width:150px">类别</th><th class="num" style="width:120px">金额</th><th>备注</th>
-              {{if and .CanManage (not $m.IsSettled)}}<th style="width:48px"></th>{{end}}</tr>
+              <tr>
+                <th style="width:130px">类别</th>
+                <th style="width:118px">计算方式</th>
+                <th class="num" style="width:96px">金额</th>
+                <th class="num" style="width:92px">比例</th>
+                <th class="num" style="width:110px">本场实际</th>
+                <th>备注</th>
+                {{if and .CanManage (not $m.IsSettled)}}<th style="width:48px"></th>{{end}}
+              </tr>
             </thead>
             <tbody>
               {{range $e := $m.Expenses}}
-              <tr>
+              <tr x-data="{ calc: '{{$e.Calc}}' }">
                 <td data-label="类别">
                   {{if and $.CanManage (not $m.IsSettled)}}
                   <select class="select input--sm" name="category">
@@ -265,11 +272,27 @@
                   </select>
                   {{else}}{{template "icon" "receipt"}} {{$e.CategoryLabel}}{{end}}
                 </td>
+                <td data-label="计算方式">
+                  {{if and $.CanManage (not $m.IsSettled)}}
+                  <select class="select input--sm" name="calc" x-model="calc">
+                    {{$curCalc := $e.Calc}}
+                    {{range $.ExpenseCalcs}}<option value="{{.Value}}"{{if eq .Value $curCalc}} selected{{end}}>{{.Label}}</option>{{end}}
+                  </select>
+                  {{else}}{{$e.CalcLabel}}{{end}}
+                </td>
                 <td class="num" data-label="金额">
                   {{if and $.CanManage (not $m.IsSettled)}}
-                  <input class="input input--sm entry-input" type="text" inputmode="decimal" name="amount" value="{{moneyInput2 $e.Amount}}">
-                  {{else}}{{money $e.Amount}}{{end}}
+                  <input class="input input--sm entry-input" type="text" inputmode="decimal" name="amount"
+                         value="{{moneyInput2 $e.Amount}}" :disabled="calc === 'percent'">
+                  {{else}}{{if $e.IsPercent}}<span class="muted">—</span>{{else}}{{money $e.Amount}}{{end}}{{end}}
                 </td>
+                <td class="num" data-label="比例">
+                  {{if and $.CanManage (not $m.IsSettled)}}
+                  <input class="input input--sm entry-input" type="text" inputmode="decimal" name="rate"
+                         value="{{$e.RatePercentInput}}" placeholder="3" :disabled="calc !== 'percent'">
+                  {{else}}{{$e.RatePercentText}}{{end}}
+                </td>
+                <td class="num strong" data-label="本场实际">{{money ($m.ExpenseActual $e)}}</td>
                 <td data-label="备注">
                   {{if and $.CanManage (not $m.IsSettled)}}
                   <input class="input input--sm" type="text" name="note" value="{{$e.Note}}">
@@ -280,22 +303,33 @@
               {{end}}
               {{if and .CanManage (not $m.IsSettled)}}
               <template x-for="i in extra" :key="i">
-                <tr>
+                <tr x-data="{ calc: 'fixed' }">
                   <td data-label="类别">
                     <select class="select input--sm" name="category">
                       {{range .ExpenseCategories}}<option value="{{.Value}}">{{.Label}}</option>{{end}}
                     </select>
                   </td>
-                  <td class="num" data-label="金额">
-                    <input class="input input--sm entry-input" type="text" inputmode="decimal" name="amount" value="">
+                  <td data-label="计算方式">
+                    <select class="select input--sm" name="calc" x-model="calc">
+                      {{range .ExpenseCalcs}}<option value="{{.Value}}">{{.Label}}</option>{{end}}
+                    </select>
                   </td>
+                  <td class="num" data-label="金额">
+                    <input class="input input--sm entry-input" type="text" inputmode="decimal" name="amount" value=""
+                           :disabled="calc === 'percent'">
+                  </td>
+                  <td class="num" data-label="比例">
+                    <input class="input input--sm entry-input" type="text" inputmode="decimal" name="rate" value=""
+                           placeholder="3" :disabled="calc !== 'percent'">
+                  </td>
+                  <td class="muted center" data-label="本场实际">保存后计算</td>
                   <td data-label="备注"><input class="input input--sm" type="text" name="note" value=""></td>
                   <td></td>
                 </tr>
               </template>
               {{end}}
               {{if not $m.Expenses}}{{if not .CanManage}}
-              <tr><td colspan="3" class="muted center">还没有记录费用</td></tr>
+              <tr><td colspan="6" class="muted center">还没有记录费用</td></tr>
               {{end}}{{end}}
             </tbody>
           </table>

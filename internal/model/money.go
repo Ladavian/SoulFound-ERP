@@ -354,3 +354,11 @@ func (q Qty) Plain() string {
 	s := trimScaled(int64(q), QtyDecimals)
 	return strings.ReplaceAll(s, ",", "")
 }
+
+// PctOf 按万分比取值：rate 300 表示 3%。
+func PctOf(base Money, rate int) Money {
+	if base == 0 || rate == 0 {
+		return 0
+	}
+	return Money(divRound(int64(base)*int64(rate), 10000))
+}
