@@ -76,12 +76,19 @@ type GroupOrderItem struct {
 	Qty         Qty
 	Unit        string
 	UnitPrice   Money
+	UnitCost    Money // 成本单价（团单不动库存，成本在这里单独记）
 	Note        string
 	SortOrder   int
 }
 
-// Amount 该行金额。
+// Amount 该行金额（收入）。
 func (i GroupOrderItem) Amount() Money { return MulQty(i.Qty, i.UnitPrice) }
+
+// CostAmount 该行成本。
+func (i GroupOrderItem) CostAmount() Money { return MulQty(i.Qty, i.UnitCost) }
+
+// Profit 该行毛利。
+func (i GroupOrderItem) Profit() Money { return i.Amount() - i.CostAmount() }
 
 // StatusLabel 状态中文名。
 func (o GroupOrder) StatusLabel() string { return GroupStatusLabel(o.Status) }
@@ -115,6 +122,40 @@ func (o GroupOrder) Total() Money { return o.Subtotal() - o.Discount + o.ExtraFe
 // ItemCount 明细行数。
 func (o GroupOrder) ItemCount() int { return len(o.Items) }
 
+// TotalCost 明细成本合计。
+func (o GroupOrder) TotalCost() Money {
+	var t Money
+	for _, it := range o.Items {
+		t += it.CostAmount()
+	}
+	return t
+}
+
+// Profit 团单毛利 = 订单金额 − 明细成本。
+//
+// 整单优惠已经体现在 Total() 里，所以这里直接相减，
+// 优惠额会自然地减少毛利。
+func (o GroupOrder) Profit() Money { return o.Total() - o.TotalCost() }
+
+// Margin 毛利率（百分比）。
+func (o GroupOrder) Margin() float64 {
+	total := o.Total()
+	if total == 0 {
+		return 0
+	}
+	return float64(o.Profit()) / float64(total) * 100
+}
+
+// HasCost 是否填过成本（没填时毛利没有意义，界面上要区分）。
+func (o GroupOrder) HasCost() bool {
+	for _, it := range o.Items {
+		if it.UnitCost > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // Title 订单标题：客户名，没有就显示单号。
 func (o GroupOrder) Title() string {
 	if strings.TrimSpace(o.CustomerName) != "" {
@@ -128,5 +169,7 @@ type GroupOrderSummary struct {
 	Count    int
 	Qty      Qty
 	Amount   Money
+	Cost     Money
+	Profit   Money
 	ByStatus map[string]int
 }

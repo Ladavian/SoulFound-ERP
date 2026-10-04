@@ -20,14 +20,24 @@
   </div>
   {{if .ShowCost}}
   <div class="stat {{if .Stats.MonthProfit.IsNeg}}stat--danger{{else}}stat--ice{{end}}">
-    <div class="stat__label">{{template "icon" "chart"}}本月净利润</div>
+    <div class="stat__label">{{template "icon" "chart"}}本月净利润<span class="stat__tag">市集</span></div>
     <div class="stat__value {{if .Stats.MonthProfit.IsNeg}}neg{{end}}">{{money .Stats.MonthProfit}}</div>
+    <div class="stat__meta">仅市集口径，不含团单与直销</div>
     <div class="stat__meta">
       {{if .Stats.MonthRevenue.IsZero}}本月还没有市集销售{{else}}净利率 {{pct (ratio .Stats.MonthProfit .Stats.MonthRevenue)}}{{end}}
     </div>
   </div>
   {{else}}
   <div class="stat stat--ice">
+    {{/* 总利润 = 市集净利润 + 团单毛利 + 直销毛利，下面给出分渠道明细 */}}
+    <div class="stat stat--gold">
+      <div class="stat__label">{{template "icon" "coins"}}本月总利润<span class="stat__tag">全渠道</span></div>
+      <div class="stat__value {{if .Stats.TotalProfitMonthly.IsNeg}}neg{{end}}">{{money .Stats.TotalProfitMonthly}}</div>
+      <div class="stat__meta">
+        市集 {{money .Stats.MonthProfit}} · 团单 {{money .Stats.MonthGroupProfit}} · 直销 {{money .Stats.MonthDirectProfit}}
+      </div>
+    </div>
+
     <div class="stat__label">{{template "icon" "market"}}本月市集</div>
     <div class="stat__value">{{.Stats.MonthMarkets}}</div>
     <div class="stat__meta">售出 {{.Stats.MonthSoldQty}} 瓶</div>
@@ -80,7 +90,7 @@
             <tr>
               <td class="row-cell--main"><a href="/markets/{{.ID}}" class="strong">{{.Name}}</a><div class="tiny muted">{{if and .Venue (ne .Venue .Name)}}{{.Venue}}{{if .City}} · {{.City}}{{end}}{{end}}{{if and .City (or (not .Venue) (eq .Venue .Name))}}{{.City}}{{end}}</div></td>
               <td class="nowrap small" data-label="日期">{{.DateRange}}</td>
-              <td data-label="状态">{{template "market_status" .Status}}</td>
+              <td data-label="状态">{{template "market_status" .DisplayStatus}}</td>
               <td class="num" data-label="试饮">{{.TastingQty}}</td>
               <td class="num" data-label="销售">{{.SoldQty}}</td>
               <td class="num" data-label="销售额">{{money .Revenue}}</td>

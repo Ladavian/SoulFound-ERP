@@ -19,6 +19,7 @@ type GroupItemInput struct {
 	Qty         model.Qty
 	Unit        string
 	UnitPrice   model.Money
+	UnitCost    model.Money
 	Note        string
 }
 
@@ -58,6 +59,9 @@ func (in GroupOrderInput) Validate() error {
 		}
 		if it.UnitPrice < 0 {
 			return UserErrf("第 %d 行的单价不能为负数", i+1)
+		}
+		if it.UnitCost < 0 {
+			return UserErrf("第 %d 行的成本单价不能为负数", i+1)
 		}
 	}
 	return nil
@@ -103,7 +107,16 @@ func (s *Service) SaveGroupOrder(ctx context.Context, id int64, in GroupOrderInp
 	}
 
 	items := make([]model.GroupOrderItem, 0, len(in.Items))
-	for _, it := range in.Items {
+	for i, it := range in.Items {
+		// 没填成本时用产品当前平均成本兜底（没有平均成本就用参考成本），
+		// 这样毛利能直接算出来；系统里没有的产品就只能是 0，界面上会提示。
+		cost := it.UnitCost
+		if cost == 0 && it.ProductID != nil {
+			if prod, err := s.Store.ProductByID(ctx, *it.ProductID); err == nil && prod != nil {
+				cost = prod.CostPriceOrAvg()
+			}
+		}
+		_ = i
 		items = append(items, model.GroupOrderItem{
 			ProductID:   it.ProductID,
 			ProductName: strings.TrimSpace(it.ProductName),
@@ -111,6 +124,7 @@ func (s *Service) SaveGroupOrder(ctx context.Context, id int64, in GroupOrderInp
 			Qty:         it.Qty,
 			Unit:        strings.TrimSpace(it.Unit),
 			UnitPrice:   it.UnitPrice,
+			UnitCost:    cost,
 			Note:        strings.TrimSpace(it.Note),
 		})
 	}
@@ -220,6 +234,8 @@ func (s *Service) GroupOrderSummaryBetween(ctx context.Context, from, to string)
 		out.Count++
 		out.Qty += o.TotalQty()
 		out.Amount += o.Total()
+		out.Cost += o.TotalCost()
+		out.Profit += o.Profit()
 	}
 	return out, nil
 }

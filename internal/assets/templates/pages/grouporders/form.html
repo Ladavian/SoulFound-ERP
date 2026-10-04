@@ -79,7 +79,9 @@
             <th class="num" style="width:88px">数量</th>
             <th style="width:74px">单位</th>
             <th class="num" style="width:104px">单价</th>
+            <th class="num" style="width:104px">成本单价</th>
             <th class="num" style="width:104px">金额</th>
+            <th class="num" style="width:100px">毛利</th>
             <th style="min-width:120px">备注</th>
             <th style="width:52px"></th>
           </tr>
@@ -109,7 +111,12 @@
                 <input class="input input--sm entry-input entry-input--price" type="text" inputmode="decimal"
                        name="unit_price" x-model="row.unitPrice">
               </td>
+              <td class="num" data-label="成本单价">
+                <input class="input input--sm entry-input entry-input--price" type="text" inputmode="decimal"
+                       name="item_cost" x-model="row.unitCost" placeholder="自动带出">
+              </td>
               <td class="num strong" data-label="金额" x-text="fmt(lineAmount(row))"></td>
+              <td class="num" data-label="毛利" x-text="fmt(lineProfit(row))"></td>
               <td data-label="备注">
                 <input class="input input--sm" type="text" name="item_note" x-model="row.note">
               </td>
@@ -126,6 +133,8 @@
     <div class="card__foot">
       <div class="entry-summary">
         <span>明细合计 <b x-text="fmt(subtotal())"></b></span>
+        <span>成本合计 <b x-text="fmt(totalCost())"></b></span>
+        <span>毛利 <b class="pos" x-text="fmt(orderProfit())"></b></span>
         <span class="muted">共 <b x-text="rows.length"></b> 行</span>
       </div>
     </div>
@@ -156,6 +165,21 @@
             <span>订单金额</span>
             <strong x-text="fmt(orderTotal())"></strong>
           </div>
+          <div class="order-profit">
+            <div>
+              <span>成本合计</span>
+              <b x-text="fmt(totalCost())"></b>
+            </div>
+            <div>
+              <span>预计毛利</span>
+              <b x-text="fmt(orderProfit())"></b>
+              <em x-text="marginText()"></em>
+            </div>
+          </div>
+          <div class="tiny muted" style="margin-top:6px">
+            成本单价按产品当前平均成本自动带出，可以改成实际进货价；
+            系统里没有的产品（手填名称）需要自己填成本，否则毛利按 0 成本计算。
+          </div>
         </div>
       </div>
     </div>
@@ -184,6 +208,8 @@ window.groupLines = function (products, existing) {
       qty: src.qty !== undefined ? src.qty : (src.Qty !== undefined ? src.Qty : 1),
       unit: src.unit || src.Unit || '瓶',
       unitPrice: src.unitPrice !== undefined ? src.unitPrice : (src.UnitPrice !== undefined ? src.UnitPrice : 0),
+      unitCost: src.unitCost !== undefined ? src.unitCost
+        : (src.UnitCost !== undefined ? src.UnitCost : 0),
       note: src.note || src.Note || ''
     };
   }
@@ -211,9 +237,28 @@ window.groupLines = function (products, existing) {
       row.sku = p.sku;
       if (!row.unit) row.unit = p.unit;
       if (!parseFloat(row.unitPrice)) row.unitPrice = p.price;
+      if (!parseFloat(row.unitCost)) row.unitCost = p.cost;
     },
     lineAmount: function (row) {
       return (parseFloat(row.qty) || 0) * (parseFloat(row.unitPrice) || 0);
+    },
+    lineProfit: function (row) {
+      return this.lineAmount(row) - (parseFloat(row.qty) || 0) * (parseFloat(row.unitCost) || 0);
+    },
+    totalCost: function () {
+      var t = 0, self = this;
+      this.rows.forEach(function (r) {
+        t += (parseFloat(r.qty) || 0) * (parseFloat(r.unitCost) || 0);
+      });
+      return t;
+    },
+    orderProfit: function () {
+      return this.orderTotal() - this.totalCost();
+    },
+    marginText: function () {
+      var total = this.orderTotal();
+      if (!total) return '';
+      return '（' + (Math.round(this.orderProfit() / total * 1000) / 10) + '%）';
     },
     subtotal: function () {
       var t = 0, self = this;

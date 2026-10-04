@@ -85,6 +85,24 @@ func (s *Service) Dashboard(ctx context.Context, months int) (*DashboardData, er
 	}
 	out.Stats.YearMarkets = len(yearMarkets)
 
+	// 团单与直销也要算进来，否则"总利润"只反映市集
+	if g, err := s.GroupOrderSummaryBetween(ctx, monthFrom, todayStr); err == nil {
+		out.Stats.MonthGroupAmount = g.Amount
+		out.Stats.MonthGroupProfit = g.Profit
+	}
+	if g, err := s.GroupOrderSummaryBetween(ctx, yearFrom, todayStr); err == nil {
+		out.Stats.YearGroupAmount = g.Amount
+		out.Stats.YearGroupProfit = g.Profit
+	}
+	if d, err := s.Store.DirectSaleSummaryBetween(ctx, monthFrom, todayStr); err == nil {
+		out.Stats.MonthDirectAmount = d.Amount
+		out.Stats.MonthDirectProfit = d.Profit()
+	}
+	if d, err := s.Store.DirectSaleSummaryBetween(ctx, yearFrom, todayStr); err == nil {
+		out.Stats.YearDirectAmount = d.Amount
+		out.Stats.YearDirectProfit = d.Profit()
+	}
+
 	if out.TopProducts, err = s.ProductSalesRanking(ctx, yearFrom, todayStr, 5); err != nil {
 		return nil, err
 	}

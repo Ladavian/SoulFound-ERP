@@ -122,6 +122,8 @@ func (s *Server) handleMarketForm(w http.ResponseWriter, r *http.Request) {
 	noCache(w)
 	page := s.newPage(r, "市集活动", "markets")
 	page["Market"] = market
+	page["PlannedStatus"] = model.MarketPlanned
+	page["OngoingStatus"] = model.MarketOngoing
 	page["IsNew"] = isNew
 	page["Today"] = store.Today()
 	page["FormAction"] = "/markets/new"

@@ -43,7 +43,9 @@
                 <th class="num">数量</th>
                 <th>单位</th>
                 <th class="num">单价</th>
+                <th class="num">成本单价</th>
                 <th class="num">金额</th>
+                <th class="num">毛利</th>
                 <th>备注</th>
               </tr>
             </thead>
@@ -57,34 +59,49 @@
                 <td class="num" data-label="数量">{{$it.Qty}}</td>
                 <td data-label="单位">{{if $it.Unit}}{{$it.Unit}}{{else}}<span class="muted">—</span>{{end}}</td>
                 <td class="num" data-label="单价">{{money $it.UnitPrice}}</td>
+                <td class="num muted" data-label="成本单价">{{if $it.UnitCost}}{{money $it.UnitCost}}{{else}}<span class="muted">未填</span>{{end}}</td>
                 <td class="num strong" data-label="金额">{{money $it.Amount}}</td>
+                <td class="num {{if $it.Profit.IsNeg}}neg{{else}}pos{{end}}" data-label="毛利">{{money $it.Profit}}</td>
                 <td class="muted" data-label="备注">{{if $it.Note}}{{$it.Note}}{{else}}—{{end}}</td>
               </tr>
               {{end}}
             </tbody>
             <tfoot>
               <tr>
-                <td colspan="4" class="right muted">明细合计</td>
+                <td colspan="5" class="right muted">明细合计</td>
                 <td class="num strong">{{money $o.Subtotal}}</td>
                 <td></td>
               </tr>
               {{if $o.Discount}}
               <tr>
-                <td colspan="4" class="right muted">整单优惠</td>
+                <td colspan="5" class="right muted">整单优惠</td>
                 <td class="num neg">−{{money $o.Discount}}</td>
                 <td></td>
               </tr>
               {{end}}
               {{if $o.ExtraFee}}
               <tr>
-                <td colspan="4" class="right muted">其它费用</td>
+                <td colspan="5" class="right muted">其它费用</td>
                 <td class="num">{{money $o.ExtraFee}}</td>
                 <td></td>
               </tr>
               {{end}}
               <tr>
-                <td colspan="4" class="right strong">订单金额</td>
+                <td colspan="5" class="right strong">订单金额</td>
                 <td class="num strong">{{money $o.Total}}</td>
+                <td class="num"></td>
+                <td></td>
+              </tr>
+              <tr>
+                <td colspan="5" class="right muted">成本合计</td>
+                <td class="num muted">{{money $o.TotalCost}}</td>
+                <td class="num"></td>
+                <td></td>
+              </tr>
+              <tr>
+                <td colspan="5" class="right strong">毛利</td>
+                <td class="num {{if $o.Profit.IsNeg}}neg{{else}}pos{{end}}">{{money $o.Profit}}</td>
+                <td class="num small {{if $o.Profit.IsNeg}}neg{{end}}">{{if $o.Total}}{{pct $o.Margin}}{{end}}</td>
                 <td></td>
               </tr>
             </tfoot>

@@ -611,6 +611,7 @@ func (i PurchaseItem) LandedAmount() Money { return i.Amount + i.ExtraAlloc }
 const (
 	MarketPlanned = "planned" // 计划中
 	MarketOngoing = "ongoing" // 进行中
+	MarketPending = "pending" // 待结算（日期已过但还没结算，提醒去结算）
 	MarketSettled = "settled" // 已结算（已扣库存、锁定利润）
 )
 
@@ -618,6 +619,7 @@ const (
 var MarketStatusLabels = map[string]string{
 	MarketPlanned: "计划中",
 	MarketOngoing: "进行中",
+	MarketPending: "待结算",
 	MarketSettled: "已结算",
 }
 
@@ -782,6 +784,25 @@ func (m Market) ConversionRate() float64 {
 		return 0
 	}
 	return float64(m.SoldQty()) / float64(tasting)
+}
+
+// DisplayStatus 列表与详情上展示的状态。
+//
+// 存在库里的状态只有 计划中/进行中/已结算，用户很难记得手动切换，
+// 所以展示时结合日期推断：结束日期已过但还没结算的，显示「待结算」，
+// 提醒该去结算了——否则市集会一直挂着"进行中"，看着别扭也容易漏结算。
+func (m Market) DisplayStatus() string {
+	if m.Status == MarketSettled {
+		return MarketSettled
+	}
+	if end, err := time.Parse("2006-01-02", m.EndDate); err == nil &&
+		time.Now().After(end.AddDate(0, 0, 1)) {
+		return MarketPending
+	}
+	if m.Status == MarketOngoing {
+		return MarketOngoing
+	}
+	return MarketPlanned
 }
 
 // SalesMultiplier ConversionRate 的同义方法，便于模板表达。
@@ -1312,6 +1333,32 @@ type MarketSummaryTotals struct {
 }
 
 // DashboardStats 首页关键指标。
+// TotalProfitMonthly 本月总利润（模板直接用）。
+func (d DashboardStats) TotalProfitMonthly() Money {
+	return d.MonthProfit + d.MonthGroupProfit + d.MonthDirectProfit
+}
+
+// TotalProfitYear 本年总利润。
+func (d DashboardStats) TotalProfitYear() Money {
+	return d.YearProfit + d.YearGroupProfit + d.YearDirectProfit
+}
+
+// TotalProfit = 市集净利润 + 团单毛利 + 直销毛利。
+func (d DashboardStats) TotalProfit(monthly bool) Money {
+	if monthly {
+		return d.MonthProfit + d.MonthGroupProfit + d.MonthDirectProfit
+	}
+	return d.YearProfit + d.YearGroupProfit + d.YearDirectProfit
+}
+
+// TotalRevenue 全部渠道销售额合计（市集 + 团单 + 直销）。
+func (d DashboardStats) TotalRevenue(monthly bool) Money {
+	if monthly {
+		return d.MonthRevenue + d.MonthGroupAmount + d.MonthDirectAmount
+	}
+	return d.YearRevenue + d.YearGroupAmount + d.YearDirectAmount
+}
+
 type DashboardStats struct {
 	StockValue    Money
 	StockQty      Qty
@@ -1319,13 +1366,24 @@ type DashboardStats struct {
 	LowStockCount int
 
 	MonthRevenue Money
-	MonthProfit  Money
+	MonthProfit  Money // 市集净利润
 	MonthSoldQty Qty
 	MonthMarkets int
+
+	// 其它渠道的销售额与毛利（团单、直销），用于算总利润
+	MonthGroupAmount  Money
+	MonthGroupProfit  Money
+	MonthDirectAmount Money
+	MonthDirectProfit Money
 
 	YearRevenue Money
 	YearProfit  Money
 	YearMarkets int
+
+	YearGroupAmount  Money
+	YearGroupProfit  Money
+	YearDirectAmount Money
+	YearDirectProfit Money
 
 	ActiveMarkets int
 	SupplierCount int

@@ -83,7 +83,7 @@
 
   {{if .Rows}}
   <div class="table-wrap">
-    <table class="data data--stack">
+    <table class="data--wide data--stack">
       <thead>
         <tr>
           <th>市集</th>
@@ -116,7 +116,7 @@
             </div>
           </td>
           <td class="nowrap small" data-label="日期">{{$m.DateRange}}<div class="tiny muted">{{$m.Days}} 天</div></td>
-          <td data-label="状态">{{template "market_status" $m.Status}}</td>
+          <td data-label="状态">{{template "market_status" $m.DisplayStatus}}</td>
           <td class="num" data-label="试饮">{{$m.TastingQty}}</td>
           <td class="num" data-label="销售">{{$m.SoldQty}}</td>
           <td class="num" data-label="转化">{{if $m.TastingQty}}{{fixed 1 $m.SalesMultiplier}}×{{else}}<span class="muted">—</span>{{end}}</td>

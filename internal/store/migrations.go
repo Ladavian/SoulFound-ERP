@@ -188,6 +188,14 @@ const migrationV9 = `
 UPDATE markets SET venue = '' WHERE venue <> '' AND venue = name;
 `
 
+// migrationV10 团单明细支持成本单价，用来算毛利。
+//
+// 团单不动库存（货从大仓发），所以没有现成的成本来源，
+// 只能按行记一个成本单价：建单时默认取产品当前平均成本，也可以手填。
+const migrationV10 = `
+ALTER TABLE group_order_items ADD COLUMN unit_cost INTEGER NOT NULL DEFAULT 0;
+`
+
 // migrations 按顺序执行的迁移脚本。新增结构或数据变更时在末尾追加一段 SQL，
 // 已执行过的版本不会重复执行（版本号记录在 schema_meta 表）。
 var migrations = []string{
@@ -200,4 +208,5 @@ var migrations = []string{
 	migrationV7,
 	migrationV8,
 	migrationV9,
+	migrationV10,
 }

@@ -7,7 +7,7 @@
     <div class="page-head__title">{{$m.Name}}</div>
     <div class="page-head__meta">
       <span class="mono">{{$m.Code}}</span>
-      {{template "market_status" $m.Status}}
+      {{template "market_status" $m.DisplayStatus}}
       <span>{{template "icon" "calendar"}} {{$m.DateRange}} · {{$m.Days}} 天</span>
       {{if and $m.Venue (ne $m.Venue $m.Name)}}<span>{{template "icon" "pin"}} {{$m.Venue}}{{if $m.City}} · {{$m.City}}{{end}}</span>{{else if $m.City}}<span>{{template "icon" "pin"}} {{$m.City}}</span>{{end}}
       {{if $m.Organizer}}<span>{{$m.Organizer}}</span>{{end}}
@@ -60,6 +60,24 @@
       <div class="text-2 small" style="flex:1">撤销结算会删除本场产生的库存流水，并按剩余流水重算受影响产品的加权平均成本。</div>
       {{template "confirm_form" (dict "Action" (printf "/markets/%d/unsettle" $m.ID) "Message" "确定撤销结算？库存将回滚，市集重新变为可编辑状态。" "Class" "" "Icon" "refresh" "Label" "撤销结算")}}
     {{else}}
+      {{/* 计划中 ⇄ 进行中：以前只有接口没有入口，市集会一直挂着状态改不了 */}}
+      <div class="row-gap">
+        <div class="text-2 small" style="flex:1">
+          <strong>现场状态</strong>：
+          {{if eq $m.Status "planned"}}还没开始（计划中）—— 到了现场点右侧按钮切换成「进行中」，收银台才好记单。
+          {{else}}正在现场（进行中）—— 卖完了记得结算，结算后库存才会扣减。{{end}}
+        </div>
+        <form method="post" action="/markets/{{$m.ID}}/status" class="inline">
+          {{if eq $m.Status "planned"}}
+          <input type="hidden" name="status" value="{{.OngoingStatus}}">
+          <button class="btn btn--primary" type="submit">{{template "icon" "play"}}<span>开始（切换为进行中）</span></button>
+          {{else}}
+          <input type="hidden" name="status" value="{{.PlannedStatus}}">
+          <button class="btn" type="submit">{{template "icon" "refresh"}}<span>改回计划中</span></button>
+          {{end}}
+        </form>
+      </div>
+      <div class="divider"></div>
       <div class="text-2 small" style="flex:1">确认数量无误后结算：系统会扣减库存（试饮 + 销售 + 赠送 + 损耗），并把本场利润写入报表。</div>
       <form method="post" action="/markets/{{$m.ID}}/settle" onsubmit="return confirm('确认结算本场市集？结算后库存会立即扣减。')">
         <button class="btn btn--primary btn--lg" type="submit">{{template "icon" "check"}}<span>结算本场市集</span></button>

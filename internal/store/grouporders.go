@@ -158,7 +158,8 @@ func (s *Store) attachGroupItems(ctx context.Context, list []model.GroupOrder) e
 		index[list[i].ID] = i
 	}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, order_id, product_id, product_name, sku, qty, unit, unit_price, note, sort_order
+		`SELECT id, order_id, product_id, product_name, sku, qty, unit, unit_price,
+		        unit_cost, note, sort_order
 		   FROM group_order_items WHERE order_id IN (`+placeholders(len(ids))+`)
 		  ORDER BY sort_order, id`, idArgs(ids)...)
 	if err != nil {
@@ -169,7 +170,7 @@ func (s *Store) attachGroupItems(ctx context.Context, list []model.GroupOrder) e
 	for rows.Next() {
 		var it model.GroupOrderItem
 		if err := rows.Scan(&it.ID, &it.OrderID, &it.ProductID, &it.ProductName, &it.SKU,
-			&it.Qty, &it.Unit, &it.UnitPrice, &it.Note, &it.SortOrder); err != nil {
+			&it.Qty, &it.Unit, &it.UnitPrice, &it.UnitCost, &it.Note, &it.SortOrder); err != nil {
 			return err
 		}
 		if i, ok := index[it.OrderID]; ok {
@@ -223,10 +224,10 @@ func (s *Store) ReplaceGroupItems(ctx context.Context, tx DBTX, orderID int64, i
 	for i, it := range items {
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO group_order_items(order_id, product_id, product_name, sku, qty, unit,
-			        unit_price, note, sort_order)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			        unit_price, unit_cost, note, sort_order)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			orderID, it.ProductID, it.ProductName, it.SKU, int64(it.Qty), it.Unit,
-			int64(it.UnitPrice), it.Note, i+1); err != nil {
+			int64(it.UnitPrice), int64(it.UnitCost), it.Note, i+1); err != nil {
 			return err
 		}
 	}

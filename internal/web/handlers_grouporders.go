@@ -22,6 +22,7 @@ type GroupItemOption struct {
 	SKU   string  `json:"sku"`
 	Unit  string  `json:"unit"`
 	Price float64 `json:"price"`
+	Cost  float64 `json:"cost"`
 }
 
 func (s *Server) groupItemOptions(r *http.Request) ([]GroupItemOption, error) {
@@ -42,6 +43,7 @@ func (s *Server) groupItemOptions(r *http.Request) ([]GroupItemOption, error) {
 			SKU:   p.SKU,
 			Unit:  p.Unit,
 			Price: p.SalePrice.Float(),
+			Cost:  p.CostPriceOrAvg().Float(),
 		})
 	}
 	return out, nil
@@ -86,6 +88,8 @@ func (s *Server) handleGroupOrderList(w http.ResponseWriter, r *http.Request) {
 		summary.Count++
 		summary.Qty += o.TotalQty()
 		summary.Amount += o.Total()
+		summary.Cost += o.TotalCost()
+		summary.Profit += o.Profit()
 	}
 
 	totalPages := (total + groupOrderPageSize - 1) / groupOrderPageSize
@@ -185,6 +189,7 @@ func (s *Server) handleGroupOrderSave(w http.ResponseWriter, r *http.Request) {
 	qtys := f.List("qty")
 	units := f.List("unit")
 	prices := f.List("unit_price")
+	costs := f.List("item_cost")
 	notes := f.List("item_note")
 
 	var items []service.GroupItemInput
@@ -199,6 +204,11 @@ func (s *Server) handleGroupOrderSave(w http.ResponseWriter, r *http.Request) {
 		price, err := model.ParseMoney(at(prices, i))
 		if err != nil {
 			f.AddError("第 %d 行单价格式不正确", i+1)
+			continue
+		}
+		cost, err := model.ParseMoney(at(costs, i))
+		if err != nil {
+			f.AddError("第 %d 行成本单价格式不正确", i+1)
 			continue
 		}
 		// 整行都空的行直接忽略（表单里默认会有一行空行）
@@ -221,6 +231,7 @@ func (s *Server) handleGroupOrderSave(w http.ResponseWriter, r *http.Request) {
 			Qty:         qty,
 			Unit:        strings.TrimSpace(at(units, i)),
 			UnitPrice:   price,
+			UnitCost:    cost,
 			Note:        strings.TrimSpace(at(notes, i)),
 		})
 	}

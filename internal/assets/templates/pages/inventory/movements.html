@@ -70,7 +70,7 @@
 
   {{if .Movements}}
   <div class="table-wrap">
-    <table class="data data--stack">
+    <table class="data--wide data--stack">
       <thead>
         <tr>
           <th>日期</th>
@@ -83,8 +83,7 @@
           {{end}}
           <th class="num">结存数量</th>
           {{if $.Perms.Has "report.view"}}
-          <th class="num">结存均价</th>
-          <th class="num">结存金额</th>
+          <th class="num">结存均价 / 金额</th>
           {{end}}
           <th>来源单号</th>
           <th>备注</th>
@@ -114,8 +113,10 @@
           {{end}}
           <td class="num" data-label="结存数量">{{.QtyAfter}}</td>
           {{if $.Perms.Has "report.view"}}
-          <td class="num muted" data-label="结存均价">{{money4 .AvgCostAfter}}</td>
-          <td class="num muted" data-label="结存金额">{{money .ValueAfter}}</td>
+          <td class="num muted" data-label="结存均价 / 金额">
+            {{money4 .AvgCostAfter}}
+            <div class="tiny muted">{{money .ValueAfter}}</div>
+          </td>
           {{end}}
           <td class="small" data-label="来源单号">
             {{if .RefCode}}<span class="mono">{{.RefCode}}</span>{{else}}<span class="muted">—</span>{{end}}

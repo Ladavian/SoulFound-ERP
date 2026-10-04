@@ -6,7 +6,7 @@
     <div class="page-head__title">收银台 · {{$m.Name}}</div>
     <div class="page-head__meta">
       <span class="mono">{{$m.Code}}</span>
-      {{template "market_status" $m.Status}}
+      {{template "market_status" $m.DisplayStatus}}
       <span>{{template "icon" "calendar"}} {{$m.DateRange}}</span>
       {{if and $m.Venue (ne $m.Venue $m.Name)}}<span>{{template "icon" "pin"}} {{$m.Venue}}</span>{{end}}
     </div>

@@ -276,7 +276,11 @@ type DirectSaleSummary struct {
 	Count  int
 	Qty    model.Qty
 	Amount model.Money
+	Cost   model.Money
 }
+
+// Profit 直销毛利 = 销售额 − 售出成本。
+func (d DirectSaleSummary) Profit() model.Money { return d.Amount - d.Cost }
 
 // DirectSaleSummaryBetween 按发生日期统计直销出库。
 //
@@ -287,11 +291,12 @@ func (s *Store) DirectSaleSummaryBetween(ctx context.Context, from, to string) (
 	err := s.db.QueryRowContext(ctx, `
 		SELECT COUNT(*),
 		       COALESCE(SUM(-qty), 0),
-		       COALESCE(SUM(-qty * sale_price) / 1000, 0)
+		       COALESCE(SUM(-qty * sale_price) / 1000, 0),
+		       COALESCE(SUM(-qty * unit_cost) / 1000, 0)
 		  FROM stock_movements
 		 WHERE reason = ? AND occurred_on >= ? AND occurred_on <= ?`,
 		model.ReasonDirectSale, from, to).
-		Scan(&out.Count, &out.Qty, &out.Amount)
+		Scan(&out.Count, &out.Qty, &out.Amount, &out.Cost)
 	return out, err
 }
 

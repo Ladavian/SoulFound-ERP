@@ -3191,3 +3191,67 @@ func TestProductImagesEverywhere(t *testing.T) {
 		break
 	}
 }
+
+// TestAppIcons 应用图标的基本要求。
+//
+// 用户反馈图标太丑（原来是两行文字，缩到手机桌面 60px 就糊了），
+// 现在换成酒瓶剪影。这里守住几条硬要求，避免以后换图时踩坑：
+// 尺寸正确、maskable 铺满整块（不能有透明边，否则系统裁切后露底色）、
+// iOS 图标不带透明通道。
+func TestAppIcons(t *testing.T) {
+	dir := "../assets/static/icons"
+	cases := []struct {
+		name    string
+		size    int
+		noAlpha bool // 必须是不透明图
+	}{
+		{"icon-192.png", 192, false},
+		{"icon-512.png", 512, false},
+		{"maskable-512.png", 512, true},
+		{"apple-touch-icon.png", 180, true},
+		{"favicon-32.png", 32, false},
+	}
+	for _, c := range cases {
+		path := filepath.Join(dir, c.name)
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Errorf("图标缺失：%s（PWA 与 Service Worker 预缓存都依赖它）", c.name)
+			continue
+		}
+		img, _, err := image.Decode(bytes.NewReader(raw))
+		if err != nil {
+			t.Errorf("%s 不是有效图片: %v", c.name, err)
+			continue
+		}
+		b := img.Bounds()
+		if b.Dx() != c.size || b.Dy() != c.size {
+			t.Errorf("%s 尺寸应为 %d×%d，实际 %d×%d", c.name, c.size, c.size, b.Dx(), b.Dy())
+		}
+		// 取中心像素确认不是空白图
+		if _, _, _, a := img.At(b.Dx()/2, b.Dy()/2).RGBA(); a == 0 {
+			t.Errorf("%s 中心是透明的，图标内容是空的", c.name)
+		}
+		if c.noAlpha {
+			if _, _, _, a := img.At(1, 1).RGBA(); a < 65535 {
+				t.Errorf("%s 不能有透明区域：maskable 与 iOS 图标会被系统裁切，"+
+					"透明处会露出系统底色", c.name)
+			}
+		}
+	}
+
+	// manifest 与页面里引用的图标必须存在（这些文件名不能随意改）
+	mf, err := os.ReadFile("../assets/static/manifest.webmanifest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	re := regexp.MustCompile(`"/static/icons/([a-z0-9-]+\.png)"`)
+	found := re.FindAllStringSubmatch(string(mf), -1)
+	if len(found) == 0 {
+		t.Fatal("manifest 里没有引用任何图标")
+	}
+	for _, m := range found {
+		if _, err := os.Stat(filepath.Join(dir, m[1])); err != nil {
+			t.Errorf("manifest 引用了不存在的图标 %s", m[1])
+		}
+	}
+}
