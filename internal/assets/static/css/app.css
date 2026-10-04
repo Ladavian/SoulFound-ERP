@@ -430,6 +430,28 @@ table.data--compact th, table.data--compact td { padding: 7px 10px; }
 .field__hint { font-size: 11.5px; color: var(--text-3); }
 .field__error { font-size: 12px; color: var(--danger); }
 
+/* 日期类输入框在手机上自带较大的固有宽度，会把容器撑破
+   （截图里"发生日期"的框跑到卡片外面就是这个原因）。
+   强制它跟随容器宽度，允许收缩。 */
+input[type="date"], input[type="time"], input[type="month"],
+input[type="week"], input[type="datetime-local"] {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  -webkit-appearance: none;
+  appearance: none;
+}
+/* 手机上原生日期控件的内部日历图标很容易顶出去，收一点内边距 */
+@media (max-width: 900px) {
+  input[type="date"], input[type="time"], input[type="month"],
+  input[type="week"], input[type="datetime-local"] {
+    padding-left: 10px;
+    padding-right: 8px;
+    font-size: 15px;
+  }
+}
+
 .input, .select, .textarea {
   width: 100%; padding: 9px 11px; min-height: 38px;
   border: 1px solid var(--line-strong); border-radius: 9px;
@@ -1215,12 +1237,24 @@ body.scan-open { overflow: hidden; }
    ========================================================================== */
 @media (max-width: 900px) {
   /* 筛选栏：只留搜索与按钮，「更多条件」展开后两列排布 */
-  .filters { padding: 12px; gap: 8px; align-items: stretch; }
-  .filters .field--wide { flex: 1 1 100%; }
-  .filters__toggle, .filters .btn[type="submit"] { flex: 1 1 0; min-width: 0; }
+  /* 筛选栏改用网格：输入框占整行，两个按钮各占一半。
+     之前是 flex 自动分配，日期输入框的固有宽度会把按钮顶到重叠。 */
+  .filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 12px;
+    align-items: stretch;
+  }
+  .filters .field,
+  .filters .field--wide { grid-column: 1 / -1; }
+  .filters__toggle,
+  .filters .btn[type="submit"],
+  .filters__submit { grid-column: auto; width: 100%; min-width: 0; }
   .filters__more { display: none; }
   .filters__more.is-open {
     display: grid;
+    grid-column: 1 / -1;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
     width: 100%;
@@ -1833,3 +1867,42 @@ tr:nth-child(3) .rank-badge { background: var(--ice-100); border-color: var(--ic
 .scan-pick .btn { flex: 0 0 auto; }
 .scan-pick .pos { color: var(--ok); }
 .scan-pick .neg { color: var(--danger); }
+
+/* 可折叠的说明块：默认收起，标题一行就能看完 */
+.hint-fold {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--info-bg);
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+.hint-fold > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 14px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--info);
+  list-style: none;
+  user-select: none;
+}
+.hint-fold > summary::-webkit-details-marker { display: none; }
+.hint-fold > summary svg { width: 17px; height: 17px; flex: 0 0 17px; }
+.hint-fold__more {
+  margin-left: auto;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+.hint-fold[open] .hint-fold__more { visibility: hidden; }
+.hint-fold[open] > summary { border-bottom: 1px solid var(--line); }
+.hint-fold__body {
+  padding: 11px 14px 13px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-2);
+  background: var(--surface);
+}
+.hint-fold__body a { color: var(--brand-600); }

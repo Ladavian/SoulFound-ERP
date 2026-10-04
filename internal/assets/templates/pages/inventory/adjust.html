@@ -12,10 +12,15 @@
 </div>
 
 {{/* 很多人会疑惑"为什么采购入库不在这里"，这里一次讲清三个入口 */}}
-<div class="alert alert--info">
-  {{template "icon" "info"}}
-  <div class="alert__body">
-    <div class="alert__title">库存变动有三个入口，流水是同一本账</div>
+{{/* 说明默认折叠：手机上这段太占地方，把表单挤到下面去。
+     要看的点一下标题就展开。 */}}
+<details class="hint-fold">
+  <summary>
+    {{template "icon" "info"}}
+    <span>库存变动有三个入口，流水是同一本账</span>
+    <span class="hint-fold__more">点开看说明</span>
+  </summary>
+  <div class="hint-fold__body">
     <ul class="entry-paths">
       <li>
         <strong>采购进货</strong> → 用 <a href="/purchases/new">采购单</a> 录入。
@@ -34,7 +39,7 @@
       三个入口写的是同一张库存流水表，去 <a href="/inventory/movements">库存流水</a> 能看到全部来源与单号。
     </div>
   </div>
-</div>
+</details>
 
 <div class="grid grid--sidebar">
   <div>
