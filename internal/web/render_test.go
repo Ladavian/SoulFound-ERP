@@ -756,3 +756,65 @@ func TestStackTablesInsideWrap(t *testing.T) {
 	}
 	t.Logf("已检查 %d 张自适应表格的容器包裹", checked)
 }
+
+// TestStackTableCellsHaveLabels 卡片模式下每个字段都要有标签。
+//
+// 手机上表格会变成卡片，字段名来自 td 的 data-label。
+// 漏一个 data-label，卡片上就只剩一个孤零零的数字，看不出是什么。
+// 表头/表尾在卡片模式下会隐藏，所以只检查表体。
+func TestStackTableCellsHaveLabels(t *testing.T) {
+	root := "templates"
+	if _, err := os.Stat(root); err != nil {
+		root = "../assets/templates"
+	}
+	tableRe := regexp.MustCompile(`(?s)<table class="([^"]*data--stack[^"]*)"(.*?)</table>`)
+	tbodyRe := regexp.MustCompile(`(?s)<tbody>(.*?)</tbody>`)
+	tdRe := regexp.MustCompile(`<td([^>]*)>`)
+
+	checked := 0
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".html") {
+			return err
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		src := string(raw)
+		if !strings.Contains(src, "data--stack") {
+			return nil
+		}
+		rel := strings.TrimPrefix(path, root+string(filepath.Separator))
+		for _, tm := range tableRe.FindAllStringSubmatchIndex(src, -1) {
+			body := src[tm[4]:tm[5]]
+			tb := tbodyRe.FindStringSubmatchIndex(body)
+			if tb == nil {
+				continue
+			}
+			for _, td := range tdRe.FindAllStringSubmatchIndex(body[tb[2]:tb[3]], -1) {
+				attrs := body[tb[2]:tb[3]][td[2]:td[3]]
+				checked++
+				if strings.Contains(attrs, "data-label") {
+					continue
+				}
+				// 首列（卡片标题）与操作列不需要标签
+				if strings.Contains(attrs, "row-cell--main") ||
+					strings.Contains(attrs, `class="right`) ||
+					strings.Contains(attrs, "actions-col") {
+					continue
+				}
+				line := strings.Count(src[:tm[4]+tb[2]+td[0]], "\n") + 1
+				t.Errorf("%s:%d 的单元格没有 data-label：卡片模式下会只剩一个没有说明的值",
+					rel, line)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("遍历模板失败: %v", err)
+	}
+	if checked < 60 {
+		t.Fatalf("只检查到 %d 个单元格，范围异常", checked)
+	}
+	t.Logf("已检查 %d 个卡片字段的标签", checked)
+}

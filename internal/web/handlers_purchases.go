@@ -35,15 +35,15 @@ func (s *Server) productOptions(r *http.Request) ([]ProductOption, error) {
 		// 标签做成"名称 · 编码"：名称最好认，编码用来区分同名产品。
 		// 容量只在名称里没写的时候才补——产品名通常已经带 375ml，
 		// 之前无条件拼一次会变成"…375ml 375ml"这种啰嗦的重复。
+		// 产品名里已经带品牌与容量（例如"基石庄园品丽珠375ml"），
+		// 同一款酒不同品牌靠名称就能区分，所以标签只用名称；
+		// 容量在名称里没写时才补一次。
 		label := p.Name
 		if p.VolumeML > 0 {
 			volume := strconv.Itoa(p.VolumeML) + "ml"
 			if !strings.Contains(label, volume) {
 				label += " " + volume
 			}
-		}
-		if p.SKU != "" {
-			label += " · " + p.SKU
 		}
 		out = append(out, ProductOption{
 			ID:    p.ID,

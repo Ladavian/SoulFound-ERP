@@ -336,16 +336,16 @@ func (s *Service) seedDemo(ctx context.Context, admin *model.User) error {
 		specs             string
 	}
 	seeds := []productSeed{
-		{"ICE-VID-375", "威代尔冰酒", "Vidal Icewine", 2019, 375, "11.5", "398", "168", "6",
+		{"ICE-VID-375", "云岭酒庄威代尔冰酒375ml", "Vidal Icewine", 2019, 375, "11.5", "398", "168", "6",
 			"SoulFound", "加拿大 尼亚加拉",
 			"葡萄品种: 维代尔\n甜度: 很甜\n等级: VQA\n适饮温度: 6-8℃\n包装: 单支装"},
-		{"ICE-RIE-375", "雷司令冰酒", "Riesling Icewine", 2020, 375, "10.5", "458", "198", "6",
+		{"ICE-RIE-375", "云岭酒庄雷司令冰酒375ml", "Riesling Icewine", 2020, 375, "10.5", "458", "198", "6",
 			"SoulFound", "加拿大 尼亚加拉",
 			"葡萄品种: 雷司令\n甜度: 很甜\n等级: VQA\n适饮温度: 6-8℃\n包装: 单支装"},
-		{"ICE-CAB-200", "品丽珠冰酒", "Cabernet Franc Icewine", 2018, 200, "11.0", "328", "128", "6",
+		{"ICE-CAB-200", "皮勒酒庄品丽珠冰酒200ml", "Cabernet Franc Icewine", 2018, 200, "11.0", "328", "128", "6",
 			"SoulFound", "加拿大 尼亚加拉",
 			"葡萄品种: 品丽珠\n甜度: 甜\n等级: VQA\n包装: 单支装"},
-		{"ICE-VID-200", "威代尔冰酒 200ml", "Vidal Icewine Half", 2021, 200, "11.5", "268", "108", "12",
+		{"ICE-VID-200", "云岭酒庄威代尔冰酒200ml", "Vidal Icewine Half", 2021, 200, "11.5", "268", "108", "12",
 			"SoulFound", "加拿大 尼亚加拉",
 			"葡萄品种: 维代尔\n甜度: 很甜\n等级: VQA\n包装: 半瓶装"},
 	}

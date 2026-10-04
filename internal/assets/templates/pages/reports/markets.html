@@ -138,7 +138,7 @@
                 <span class="cell-num">{{money .GrossProfit}}</span>
                 <div class="cell-sub">毛利率 {{pct .GrossMargin}}</div>
               </td>
-              <td class="num" data-label="成本与费用">
+              <td class="num span-2" data-label="成本与费用">
                 <span class="cell-num">{{money .TotalCost}}</span>
                 <div class="cell-sub">
                   试饮 {{money .TastingCost}}{{if .LossCost}} · 损耗 {{money .LossCost}}{{end}}{{if .ExpenseTotal}} · 摊位等 {{money .ExpenseTotal}}{{end}}

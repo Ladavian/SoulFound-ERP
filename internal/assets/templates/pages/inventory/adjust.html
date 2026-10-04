@@ -53,7 +53,7 @@
                 <select class="select" id="product_id" name="product_id" x-model="pid" required>
                   <option value="">— 选择产品 —</option>
                   {{range .Products}}
-                  <option value="{{.ID}}">{{.Label}} · 库存 {{.Stock}}</option>
+                  <option value="{{.ID}}">{{.Label}}｜库存 {{.Stock}}</option>
                   {{end}}
                 </select>
                 <img class="pick-thumb" x-show="imgs[pid]" :src="imgs[pid] || ''"
