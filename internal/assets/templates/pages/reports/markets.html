@@ -97,23 +97,20 @@
 
       {{if .Rows}}
       <div class="table-wrap">
-        <table class="data--wide data--stack">
+        <table class="data data--stack data--roomy">
+          {{/* 14 列压到 8 列：试饮/销售/带动 合成"现场"，
+               四项成本合成"成本与费用"，毛利率与净利率分别挂到主值下面。
+               剩下 8 列排下来每列都有空间，也能横向对比哪场更赚。 */}}
           <thead>
             <tr>
               <th>市集</th>
               <th>日期</th>
               <th>状态</th>
-              <th class="num">试饮</th>
-              <th class="num">销售</th>
-              <th class="num">带动</th>
+              <th class="num">现场</th>
               <th class="num">销售额</th>
-              <th class="num">售出成本</th>
-              <th class="num">试饮成本</th>
-              <th class="num">赠送损耗</th>
-              <th class="num">活动费用</th>
               <th class="num">毛利</th>
+              <th class="num">成本与费用</th>
               <th class="num">净利润</th>
-              <th class="num">净利率</th>
             </tr>
           </thead>
           <tbody>
@@ -123,38 +120,63 @@
                 <a class="strong" href="/markets/{{.ID}}">{{.Name}}</a>
                 <div class="tiny muted mono">{{.Code}}</div>
               </td>
-              <td class="nowrap small" data-label="日期">{{.DateRange}}<div class="tiny muted">{{.Days}} 天</div></td>
+              <td class="nowrap small text-2" data-label="日期">
+                {{.DateRange}}<div class="cell-sub">{{.Days}} 天</div>
+              </td>
               <td data-label="状态">{{template "market_status" .Status}}</td>
-              <td class="num" data-label="试饮">{{.TastingQty}}</td>
-              <td class="num" data-label="销售">{{.SoldQty}}</td>
-              <td class="num" data-label="带动">{{if .TastingQty}}{{fixed 1 .Conversion}} ×{{else}}<span class="muted">—</span>{{end}}</td>
-              <td class="num strong" data-label="销售额">{{money .Revenue}}</td>
-              <td class="num muted" data-label="售出成本">{{money .CogsSold}}</td>
-              <td class="num muted" data-label="试饮成本">{{money .TastingCost}}</td>
-              <td class="num muted" data-label="赠送损耗">{{money .LossCost}}</td>
-              <td class="num muted" data-label="活动费用">{{money .ExpenseTotal}}</td>
-              <td class="num" data-label="毛利">{{money .GrossProfit}}</td>
-              <td class="num strong {{if .NetProfit.IsNeg}}neg{{else}}pos{{end}}" data-label="净利润">{{money .NetProfit}}</td>
-              <td class="num small {{if .NetProfit.IsNeg}}neg{{end}}" data-label="净利率">{{pct .NetMargin}}</td>
+              <td class="num" data-label="现场">
+                <span class="cell-num">销售 {{.SoldQty}}</span>
+                <div class="cell-sub">
+                  试饮 {{.TastingQty}}{{if .TastingQty}} · 带动 {{fixed 1 .Conversion}}×{{end}}
+                </div>
+              </td>
+              <td class="num" data-label="销售额">
+                <span class="cell-num">{{money .Revenue}}</span>
+                <div class="cell-sub">售出成本 {{money .CogsSold}}</div>
+              </td>
+              <td class="num" data-label="毛利">
+                <span class="cell-num">{{money .GrossProfit}}</span>
+                <div class="cell-sub">毛利率 {{pct .GrossMargin}}</div>
+              </td>
+              <td class="num" data-label="成本与费用">
+                <span class="cell-num">{{money .TotalCost}}</span>
+                <div class="cell-sub">
+                  试饮 {{money .TastingCost}}{{if .LossCost}} · 损耗 {{money .LossCost}}{{end}}{{if .ExpenseTotal}} · 摊位等 {{money .ExpenseTotal}}{{end}}
+                </div>
+              </td>
+              <td class="num" data-label="净利润">
+                <span class="cell-num {{if .NetProfit.IsNeg}}neg{{else}}pos{{end}}">{{money .NetProfit}}</span>
+                <div class="cell-sub">净利率 {{pct .NetMargin}}</div>
+              </td>
             </tr>
             {{end}}
           </tbody>
           <tfoot>
             <tr>
-              <td>合计</td>
-              <td class="small">{{.Totals.Count}} 场</td>
+              <td>合计 {{.Totals.Count}} 场</td>
               <td></td>
-              <td class="num">{{.Totals.TastingQty}}</td>
-              <td class="num">{{.Totals.SoldQty}}</td>
-              <td class="num">{{if .Totals.TastingQty}}{{fixed 1 .Totals.Conversion}} ×{{else}}—{{end}}</td>
+              <td></td>
+              <td class="num">
+                <span class="cell-num">销售 {{.Totals.SoldQty}}</span>
+                <div class="cell-sub">
+                  试饮 {{.Totals.TastingQty}}{{if .Totals.TastingQty}} · 带动 {{fixed 1 .Totals.Conversion}}×{{end}}
+                </div>
+              </td>
               <td class="num">{{money .Totals.Revenue}}</td>
-              <td class="num">{{money .Totals.CogsSold}}</td>
-              <td class="num">{{money .Totals.TastingCost}}</td>
-              <td class="num">{{money .Totals.LossCost}}</td>
-              <td class="num">{{money .Totals.ExpenseTotal}}</td>
-              <td class="num">{{money .Totals.GrossProfit}}</td>
-              <td class="num">{{money .Totals.NetProfit}}</td>
-              <td class="num">{{pct .Totals.NetMargin}}</td>
+              <td class="num">
+                {{money .Totals.GrossProfit}}
+                <div class="cell-sub">毛利率 {{pct .Totals.GrossMargin}}</div>
+              </td>
+              <td class="num">
+                {{money .Totals.TotalCost}}
+                <div class="cell-sub">
+                  试饮 {{money .Totals.TastingCost}}{{if .Totals.LossCost}} · 损耗 {{money .Totals.LossCost}}{{end}}{{if .Totals.ExpenseTotal}} · 摊位等 {{money .Totals.ExpenseTotal}}{{end}}
+                </div>
+              </td>
+              <td class="num">
+                {{money .Totals.NetProfit}}
+                <div class="cell-sub">净利率 {{pct .Totals.NetMargin}}</div>
+              </td>
             </tr>
           </tfoot>
         </table>

@@ -129,19 +129,27 @@ func (s *Service) SaveGroupOrder(ctx context.Context, id int64, in GroupOrderInp
 		})
 	}
 
+	// 修改前先读一次原单：必须在事务**外**读。
+	// 连接池上限是 1，事务已经占用了唯一连接，
+	// 在事务闭包里再走一次连接池会永远等不到连接，直到请求超时。
+	var current *model.GroupOrder
+	if id > 0 {
+		var err error
+		current, err = s.Store.GroupOrderByID(ctx, id)
+		if err != nil {
+			return 0, err
+		}
+		if current == nil {
+			return 0, UserErrf("团单不存在")
+		}
+		if current.Status == model.GroupCancelled {
+			return 0, UserErrf("已取消的团单不能再修改")
+		}
+	}
+
 	var newID int64
 	err := s.Store.Tx(ctx, func(tx *sql.Tx) error {
 		if id > 0 {
-			current, err := s.Store.GroupOrderByID(ctx, id)
-			if err != nil {
-				return err
-			}
-			if current == nil {
-				return UserErrf("团单不存在")
-			}
-			if current.Status == model.GroupCancelled {
-				return UserErrf("已取消的团单不能再修改")
-			}
 			order.ID = id
 			if err := s.Store.UpdateGroupOrder(ctx, tx, order); err != nil {
 				return err

@@ -16,7 +16,7 @@
   </div>
 </div>
 
-<form method="post" action="{{.FormAction}}" x-data="groupLines({{.ProductsJSON}}, {{if .IsNew}}[]{{else}}{{json .Order.Items}}{{end}})">
+<form method="post" action="{{.FormAction}}" x-data="groupLines({{.ProductsJSON}}, {{.ItemsJSON}})">
   {{/* 明细字段直接放在可见的行输入框上提交。
        注意：Alpine 的 x-for 只接受**一个根元素**，多个并列元素只会渲染第一个，
        所以不能再另开一段隐藏字段——那样只有 product_id 会被提交。 */}}

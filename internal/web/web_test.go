@@ -3255,3 +3255,103 @@ func TestAppIcons(t *testing.T) {
 		}
 	}
 }
+
+// TestGroupOrderEditIsUsable 编辑团单必须能用：数字是"元/瓶"，且保存不会卡死。
+//
+// 之前两个 bug：
+//  1. 编辑表单把内部整数单位（Money 是 1/10000 元、Qty 是 1/1000 瓶）
+//     直接喂给前端，数量显示成 24000、单价显示成 3980000；
+//  2. SaveGroupOrder 在事务闭包里又走了一次连接池去读原单，
+//     而连接池上限是 1、唯一连接被事务占着 —— 自死锁，
+//     保存要等到 30 秒请求超时才报错，页面看起来就是"崩了"。
+func TestGroupOrderEditIsUsable(t *testing.T) {
+	h, svc, cfg := testApp(t)
+	ctx := context.Background()
+	cookie := doLogin(t, h, cfg, "admin", "admin123")
+
+	products, _ := svc.Store.ListProducts(ctx, store.ProductFilter{})
+	if len(products) == 0 {
+		t.Fatal("没有产品可用")
+	}
+	p := products[0]
+
+	post(t, h, "/group-orders/new", url.Values{
+		"customer_name": {"编辑测试客户"}, "order_date": {"2026-03-01"},
+		"product_id":   {strconv.FormatInt(p.ID, 10)},
+		"product_name": {p.Name}, "item_sku": {p.SKU},
+		"qty": {"24"}, "unit": {"瓶"}, "unit_price": {"398"}, "item_cost": {"180"},
+	}, cookie)
+	orders, _ := svc.Store.ListGroupOrders(ctx, store.GroupOrderFilter{Keyword: "编辑测试客户"})
+	if len(orders) == 0 {
+		t.Fatal("团单未创建")
+	}
+	gid := strconv.FormatInt(orders[0].ID, 10)
+
+	// 1) 编辑页里的数字必须是显示单位
+	//    页面里的 JSON 会被 html/template 转义（" 变成 &#34;），先解回来
+	_, rawForm := get(t, h, "/group-orders/"+gid+"/edit", cookie)
+	form := html.UnescapeString(rawForm)
+	if strings.Contains(form, "24000") || strings.Contains(form, "3980000") {
+		t.Error("编辑页把内部整数单位喂给了前端：数量/单价会多出一堆零")
+	}
+	for _, want := range []string{`"qty":24`, `"unitPrice":398`, `"unitCost":180`} {
+		if !strings.Contains(form, want) {
+			t.Errorf("编辑页的明细 JSON 里应有 %s（显示单位）", want)
+		}
+	}
+
+	// 2) 保存必须很快返回；这里给 5 秒上限，
+	//    死锁时会卡到 30 秒超时，用短上下文能快速失败
+	saveCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	start := time.Now()
+	_, err := svc.SaveGroupOrder(saveCtx, orders[0].ID, service.GroupOrderInput{
+		CustomerName: "编辑测试客户（已改）", OrderDate: "2026-03-01",
+		Items: []service.GroupItemInput{{
+			ProductID: &p.ID, ProductName: p.Name, SKU: p.SKU,
+			Qty: model.MustQty("24"), Unit: "瓶",
+			UnitPrice: model.MustMoney("398"), UnitCost: model.MustMoney("180"),
+		}},
+	}, mustUser(t, svc, "admin"))
+	if err != nil {
+		t.Fatalf("保存团单失败（死锁会让这里报 context deadline exceeded）: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Errorf("保存耗时 %v，疑似又在事务里用了连接池", elapsed)
+	}
+
+	// 3) 数据要正确落库
+	updated, _ := svc.Store.GroupOrderByID(ctx, orders[0].ID)
+	if updated == nil || len(updated.Items) != 1 {
+		t.Fatal("团单明细应保留一行")
+	}
+	it := updated.Items[0]
+	if it.Qty != model.MustQty("24") {
+		t.Errorf("数量应为 24 瓶，实际 %s", it.Qty)
+	}
+	if it.UnitPrice != model.MustMoney("398") {
+		t.Errorf("单价应为 398 元，实际 %s", it.UnitPrice)
+	}
+	// 24 × 398 = 9552；成本 24 × 180 = 4320；毛利 5232
+	if got := updated.Total(); got != model.MustMoney("9552") {
+		t.Errorf("订单金额应为 9552，实际 %s", got)
+	}
+	if got := updated.Profit(); got != model.MustMoney("5232") {
+		t.Errorf("毛利应为 5232，实际 %s", got)
+	}
+
+	// 4) 通过 HTTP 再保存一次，确认整条链路都通（之前这里是 30 秒超时）
+	code, _ := post(t, h, "/group-orders/"+gid+"/edit", url.Values{
+		"customer_name": {"编辑测试客户（再改）"}, "order_date": {"2026-03-01"},
+		"product_id":   {strconv.FormatInt(p.ID, 10)},
+		"product_name": {p.Name}, "item_sku": {p.SKU},
+		"qty": {"24"}, "unit": {"瓶"}, "unit_price": {"398"}, "item_cost": {"180"},
+	}, cookie)
+	if code != http.StatusSeeOther {
+		t.Fatalf("编辑保存应 303，实际 %d", code)
+	}
+	final, _ := svc.Store.GroupOrderByID(ctx, orders[0].ID)
+	if final.CustomerName != "编辑测试客户（再改）" {
+		t.Errorf("HTTP 保存没生效，客户名仍是 %q", final.CustomerName)
+	}
+}

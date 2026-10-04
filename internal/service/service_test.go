@@ -2,7 +2,10 @@ package service
 
 import (
 	"context"
+	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -657,4 +660,69 @@ func TestPercentExpense(t *testing.T) {
 	if settled.NetProfit != totals.NetProfit {
 		t.Errorf("结算后固化的净利润应与结算前一致：%s vs %s", settled.NetProfit, totals.NetProfit)
 	}
+}
+
+// TestNoPoolCallsInsideTx 事务闭包里不许走连接池。
+//
+// 连接池上限是 1（见 store.Open 里的 SetMaxOpenConns(1)）。
+// 事务已经占住唯一连接，如果闭包里再调用一次走连接池的 store 方法，
+// 就会自死锁：一直等到 30 秒请求超时才报错，页面看起来就是"崩了"。
+// 编辑团单保存时踩过一次（SaveGroupOrder 在事务里读了原单），
+// 所以固定成检查——这类问题不报错、只是静静地卡住，最难查。
+func TestNoPoolCallsInsideTx(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	txStart := regexp.MustCompile(`\.Tx\(ctx,\s*func\(tx \*sql\.Tx\)\s*error\s*\{`)
+	// Go 的正则不支持负向断言，先全匹配再排除 .Tx(
+	callRe := regexp.MustCompile(`\w+\.Store\.(\w+)\(\s*ctx\s*,\s*([^,\)]+)`)
+	// 第二个参数是 tx 的说明用了事务；其余都是去抢连接池
+	okArgs := map[string]bool{"tx": true}
+
+	checked := 0
+	for _, file := range files {
+		if strings.HasSuffix(file, "_test.go") {
+			continue
+		}
+		raw, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Split(string(raw), "\n")
+		for i := 0; i < len(lines); i++ {
+			if !txStart.MatchString(lines[i]) {
+				continue
+			}
+			// 用大括号配平找出整个闭包
+			depth := strings.Count(lines[i], "{") - strings.Count(lines[i], "}")
+			start := i
+			j := i + 1
+			for j < len(lines) && depth > 0 {
+				depth += strings.Count(lines[j], "{") - strings.Count(lines[j], "}")
+				j++
+			}
+			block := strings.Join(lines[start:j], "\n")
+			checked++
+			for _, m := range callRe.FindAllStringSubmatch(block, -1) {
+				if m[1] == "Tx" {
+					continue
+				}
+				arg := strings.TrimSpace(m[2])
+				if !okArgs[arg] {
+					line := start + strings.Count(block[:strings.Index(block, m[0])], "\n") + 1
+					t.Errorf("%s:%d 在事务闭包里调用了 %s(ctx, %s, ...)："+
+						"连接池只有 1 个连接，事务占着它，这里会一直等到请求超时",
+						file, line, m[1], arg)
+				}
+				// 只看第一个匹配就够，避免同一个方法重复报
+				block = strings.Replace(block, m[0], "OKCALL", 1)
+			}
+			i = j
+		}
+	}
+	if checked == 0 {
+		t.Fatal("没有检查到任何事务闭包，检查范围异常")
+	}
+	t.Logf("已检查 %d 个事务闭包", checked)
 }

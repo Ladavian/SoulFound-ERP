@@ -171,6 +171,34 @@ func (s *Server) handleGroupOrderForm(w http.ResponseWriter, r *http.Request) {
 	page["FormAction"] = action
 	page["Products"] = items
 	page["ProductsJSON"] = template.JS(jsonEncode(items))
+
+	// 已有明细要转成"显示单位"再给前端：
+	// Money/Qty 内部是整数（1/10000 元、1/1000 瓶），直接序列化出去
+	// 会变成 3980000、24000 这种数字，编辑框里就会多出一堆零。
+	rowList := make([]map[string]any, 0, len(order.Items))
+	for _, it := range order.Items {
+		var pid int64
+		if it.ProductID != nil {
+			pid = *it.ProductID
+		}
+		rowList = append(rowList, map[string]any{
+			"productId":   pid,
+			"productName": it.ProductName,
+			"sku":         it.SKU,
+			"qty":         it.Qty.Float(),
+			"unit":        it.Unit,
+			"unitPrice":   it.UnitPrice.Float(),
+			"unitCost":    it.UnitCost.Float(),
+			"note":        it.Note,
+		})
+	}
+	if len(rowList) == 0 {
+		rowList = append(rowList, map[string]any{
+			"productId": 0, "productName": "", "sku": "", "qty": 1,
+			"unit": "瓶", "unitPrice": 0, "unitCost": 0, "note": "",
+		})
+	}
+	page["ItemsJSON"] = template.JS(jsonEncode(rowList))
 	page["Customers"] = customers
 	page["StatusOptions"] = model.GroupStatusOptions
 	if err := s.rnd.Render(w, "grouporders/form", page); err != nil {

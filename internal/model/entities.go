@@ -1316,6 +1316,17 @@ type MarketSummaryRow struct {
 	Conversion   float64 // 试饮带动倍数 = 销售瓶数 / 试饮瓶数
 }
 
+// GrossMargin 毛利率（%）。
+func (r MarketSummaryRow) GrossMargin() float64 { return Ratio(r.GrossProfit, r.Revenue) }
+
+// TotalCost 成本与费用合计 = 售出成本 + 试饮 + 损耗 + 活动费用。
+//
+// 与市集列表里的口径保持一致：售出成本是货的钱，
+// 其余三项是本场为了卖出去而额外花的钱。
+func (r MarketSummaryRow) TotalCost() Money {
+	return r.CogsSold + r.TastingCost + r.LossCost + r.ExpenseTotal
+}
+
 // Totals 汇总行。
 type MarketSummaryTotals struct {
 	Count        int
@@ -1330,6 +1341,14 @@ type MarketSummaryTotals struct {
 	SoldQty      Qty
 	TastingQty   Qty
 	Conversion   float64 // 试饮带动倍数 = 销售瓶数 / 试饮瓶数
+}
+
+// GrossMargin 汇总毛利率（%）。
+func (t MarketSummaryTotals) GrossMargin() float64 { return Ratio(t.GrossProfit, t.Revenue) }
+
+// TotalCost 汇总成本与费用合计。
+func (t MarketSummaryTotals) TotalCost() Money {
+	return t.CogsSold + t.TastingCost + t.LossCost + t.ExpenseTotal
 }
 
 // DashboardStats 首页关键指标。

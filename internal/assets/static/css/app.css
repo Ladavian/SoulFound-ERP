@@ -1795,3 +1795,24 @@ body.scan-open { overflow: hidden; }
   table.data--roomy td.row-cell--main { min-width: 240px; }
   table.data--roomy .num { padding-left: 16px; }
 }
+
+/* 排行榜：名次做成圆形小徽标，和产品名并排 */
+.rank-cell { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.rank-badge {
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--text-2);
+}
+/* 前三名给一点颜色，扫排行时更容易定位 */
+tr:nth-child(1) .rank-badge { background: var(--gold-100); border-color: #EBD9B4; color: #8A6A21; }
+tr:nth-child(2) .rank-badge { background: var(--brand-100); border-color: var(--brand-200); color: var(--brand-700); }
+tr:nth-child(3) .rank-badge { background: var(--ice-100); border-color: var(--ice-200); color: var(--info); }

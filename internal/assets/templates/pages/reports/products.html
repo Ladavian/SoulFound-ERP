@@ -84,51 +84,67 @@
 
   {{if .Rows}}
   <div class="table-wrap">
-    <table class="data--wide data--stack">
+    <table class="data data--stack data--roomy">
+      {{/* 9 列压到 5 列：排名并进产品列（"#1 产品名"），
+           试饮/销售/带动 合成"现场"，售出成本挂到销售额下面，
+           毛利率挂到毛利下面。这张表本来就是看排行，
+           数字少了才更容易比较。 */}}
       <thead>
         <tr>
-          <th class="num">排名</th>
           <th>产品</th>
-          <th class="num">试饮</th>
-          <th class="num">销售</th>
-          <th class="num">带动</th>
+          <th class="num">现场</th>
           <th class="num">销售额</th>
-          <th class="num">售出成本</th>
           <th class="num">毛利</th>
-          <th class="num">毛利率</th>
         </tr>
       </thead>
       <tbody>
         {{range $i, $r := .Rows}}
         <tr>
-          <td class="num muted" data-label="排名">{{add $i 1}}</td>
           <td class="row-cell--main">
-            <a class="strong" href="/products/{{$r.ProductID}}">{{$r.ProductName}}</a>
-            <div class="tiny muted mono">{{$r.ProductSKU}}</div>
+            <div class="rank-cell">
+              <span class="rank-badge">{{add $i 1}}</span>
+              <div>
+                <a class="strong" href="/products/{{$r.ProductID}}">{{$r.ProductName}}</a>
+                <div class="tiny muted mono">{{$r.ProductSKU}}</div>
+              </div>
+            </div>
           </td>
-          <td class="num" data-label="试饮">{{$r.TastingQty}}</td>
-          <td class="num" data-label="销售">{{$r.SoldQty}}</td>
-          <td class="num" data-label="带动">{{if $r.TastingQty}}{{fixed 1 $r.Conversion}} ×{{else}}<span class="muted">—</span>{{end}}</td>
-          <td class="num strong" data-label="销售额">{{money $r.Revenue}}</td>
-          <td class="num muted" data-label="售出成本">{{money $r.Cogs}}</td>
-          <td class="num {{if $r.Profit.IsNeg}}neg{{else}}pos{{end}}" data-label="毛利">{{money $r.Profit}}</td>
-          <td class="num small {{if $r.Profit.IsNeg}}neg{{end}}" data-label="毛利率">
-            {{if $r.Revenue}}{{pct (mul (div $r.Profit.Float $r.Revenue.Float) 100.0)}}{{else}}<span class="muted">—</span>{{end}}
+          <td class="num" data-label="现场">
+            <span class="cell-num">销售 {{$r.SoldQty}}</span>
+            <div class="cell-sub">
+              试饮 {{$r.TastingQty}}{{if $r.TastingQty}} · 带动 {{fixed 1 $r.Conversion}}×{{end}}
+            </div>
+          </td>
+          <td class="num" data-label="销售额">
+            <span class="cell-num">{{money $r.Revenue}}</span>
+            <div class="cell-sub">售出成本 {{money $r.Cogs}}</div>
+          </td>
+          <td class="num" data-label="毛利">
+            <span class="cell-num {{if $r.Profit.IsNeg}}neg{{else}}pos{{end}}">{{money $r.Profit}}</span>
+            <div class="cell-sub">
+              {{if $r.Revenue}}毛利率 {{pct (mul (div $r.Profit.Float $r.Revenue.Float) 100.0)}}{{else}}—{{end}}
+            </div>
           </td>
         </tr>
         {{end}}
       </tbody>
       <tfoot>
         <tr>
-          <td></td>
           <td class="small">合计 {{len .Rows}} 个产品</td>
-          <td class="num">{{.TotalTasting}}</td>
-          <td class="num">{{.TotalSold}}</td>
-          <td class="num">{{if .TotalTasting}}{{fixed 1 .Conversion}} ×{{else}}—{{end}}</td>
-          <td class="num">{{money .TotalRevenue}}</td>
-          <td class="num">{{money .TotalCogs}}</td>
-          <td class="num">{{money .TotalProfit}}</td>
-          <td class="num">{{pct .TotalMargin}}</td>
+          <td class="num">
+            <span class="cell-num">销售 {{.TotalSold}}</span>
+            <div class="cell-sub">
+              试饮 {{.TotalTasting}}{{if .TotalTasting}} · 带动 {{fixed 1 .Conversion}}×{{end}}
+            </div>
+          </td>
+          <td class="num">
+            {{money .TotalRevenue}}
+            <div class="cell-sub">售出成本 {{money .TotalCogs}}</div>
+          </td>
+          <td class="num">
+            {{money .TotalProfit}}
+            <div class="cell-sub">毛利率 {{pct .TotalMargin}}</div>
+          </td>
         </tr>
       </tfoot>
     </table>
