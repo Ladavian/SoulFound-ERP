@@ -298,7 +298,16 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
 .neg { color: var(--danger); }
 
 /* ---------------------------------------------------------------- 表格 */
-.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+/* 表格外层同时是「宽度查询容器」：
+   表格按自己所在容器的宽度决定布局，而不是按视口宽度。
+   这样侧栏面板里那 340px 宽的表格也会自动变成卡片，
+   不会出现"视口很宽、但表格被挤成一团"的情况。 */
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  container-type: inline-size;
+  container-name: tablewrap;
+}
 table.data { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 table.data th, table.data td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: middle; }
 table.data thead th {
@@ -1223,7 +1232,15 @@ body.scan-open { overflow: hidden; }
   /* 复选框组这类横向内容在手机上占满整行 */
   .filters__more-full { grid-column: 1 / -1; }
   .filters__more-actions .btn { flex: 1 1 auto; justify-content: center; }
+}
 
+/* ---------------------------------------------------------------- 表格自适应
+   表格按**容器宽度**切换布局（容器查询），而不是按视口宽度：
+   - 宽容器（主内容区）：正常表格
+   - 窄容器（手机、侧栏面板）：转成卡片，每行一张，字段带标签
+   以前只按视口判断，侧栏里 340px 宽的表格在宽屏上完全享受不到卡片模式，
+   只能把每列挤到逐字换行。 */
+@container tablewrap (max-width: 720px) {
   /* 表格转卡片：字段两列排布，操作按钮紧跟标题，卡片不再拉长 */
   .data--stack thead, .data--stack tfoot { display: none; }
   .data--stack { display: block; width: 100%; }

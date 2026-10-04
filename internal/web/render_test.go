@@ -521,7 +521,11 @@ func TestTableLayoutContract(t *testing.T) {
 		case '{':
 			head := strings.TrimSpace(buf.String())
 			buf.Reset()
-			if strings.HasPrefix(head, "@media") {
+			// @media / @container / @supports 这类"里面还能放规则"的块都要记下来，
+			// 否则容器查询里的规则会被当成顶层规则
+			if strings.HasPrefix(head, "@") &&
+				!strings.HasPrefix(head, "@font-face") &&
+				!strings.HasPrefix(head, "@import") {
 				mediaStack = append(mediaStack, head)
 				continue
 			}
@@ -540,6 +544,8 @@ func TestTableLayoutContract(t *testing.T) {
 		}
 	}
 
+	// 「窄容器」既包括 max-width 媒体查询（手机视口），
+	// 也包括 @container（侧栏面板这类窄容器）
 	isMobile := func(r cssRule) bool {
 		for _, m := range r.medias {
 			if strings.Contains(m, "max-width") {
@@ -573,7 +579,7 @@ func TestTableLayoutContract(t *testing.T) {
 		t.Fatal("首列缺少最小宽度：列多的表格会把首列挤成逐字竖排")
 	}
 	if len(mobile) == 0 || !strings.Contains(mobile[len(mobile)-1].body, "min-width: 0") {
-		t.Fatal("手机卡片模式没有复位首列最小宽度")
+		t.Fatal("窄容器（卡片模式）下没有复位首列最小宽度")
 	}
 	dc, de := specificity(desktop[0].selector)
 	mc, me := specificity(mobile[len(mobile)-1].selector)
@@ -664,4 +670,89 @@ func firstLine(s string) string {
 		s = s[:90] + "…"
 	}
 	return strings.TrimSpace(s)
+}
+
+// TestStackTablesInsideWrap 所有 data--stack 表格都必须包在 .table-wrap 里。
+//
+// 表格改成"按容器宽度自适应"之后，卡片模式由
+// @container tablewrap (max-width: 720px) 驱动——前提是表格真的在
+// .table-wrap 这个查询容器里面。漏包一层，那张表在手机上就永远变不成卡片，
+// 也没有任何报错，只会一直挤着。所以固定成检查。
+func TestStackTablesInsideWrap(t *testing.T) {
+	root := "templates"
+	if _, err := os.Stat(root); err != nil {
+		root = "../assets/templates"
+	}
+
+	tagRe := regexp.MustCompile(`(?is)<(/?)([a-z][a-z0-9]*)((?:"[^"]*"|'[^']*'|[^>"'])*)>`)
+	voidTags := map[string]bool{
+		"area": true, "base": true, "br": true, "col": true, "embed": true, "hr": true,
+		"img": true, "input": true, "link": true, "meta": true, "param": true,
+		"source": true, "track": true, "wbr": true, "path": true, "circle": true,
+		"rect": true, "line": true, "polyline": true, "polygon": true, "ellipse": true,
+		"use": true, "stop": true,
+	}
+
+	checked := 0
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".html") {
+			return err
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		src := string(raw)
+		rel := strings.TrimPrefix(path, root+string(filepath.Separator))
+
+		type frame struct {
+			tag   string
+			attrs string
+			line  int
+		}
+		stack := []frame{}
+		for _, m := range tagRe.FindAllStringSubmatchIndex(src, -1) {
+			closing := src[m[2]:m[3]] == "/"
+			name := strings.ToLower(src[m[4]:m[5]])
+			attrs := src[m[6]:m[7]]
+			line := strings.Count(src[:m[0]], "\n") + 1
+
+			if closing {
+				for i := len(stack) - 1; i >= 0; i-- {
+					if stack[i].tag == name {
+						stack = stack[:i]
+						break
+					}
+				}
+				continue
+			}
+			if name == "table" && strings.Contains(attrs, "data--stack") {
+				checked++
+				wrapped := false
+				for _, f := range stack {
+					if f.tag == "div" && strings.Contains(f.attrs, "table-wrap") {
+						wrapped = true
+						break
+					}
+				}
+				if !wrapped {
+					t.Errorf("%s:%d 的 data--stack 表格没有包在 .table-wrap 里："+
+						"容器查询不会生效，手机上这张表不会变成卡片",
+						rel, line)
+				}
+			}
+			if voidTags[name] || strings.HasSuffix(strings.TrimSpace(attrs), "/") {
+				continue
+			}
+			stack = append(stack, frame{tag: name, attrs: attrs, line: line})
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("遍历模板失败: %v", err)
+	}
+	if checked < 15 {
+		t.Fatalf("只检查到 %d 张 data--stack 表格，范围异常", checked)
+	}
+	t.Logf("已检查 %d 张自适应表格的容器包裹", checked)
 }
