@@ -124,18 +124,20 @@
 
       {{if .Products}}
       <div class="table-wrap">
-        <table class="data--wide data--stack">
+        <table class="data data--stack data--roomy">
+          {{/* 列结构按"一眼要看到什么"来排：
+               产品 → 有多少 → 值多少钱 → 卖多少钱/赚多少 → 谁供的 → 操作。
+               品类、年份、容量这些归到产品列里做副信息，
+               平均成本与库存成本合成一列，售价与毛利率合成一列，
+               从 9 列收敛到 6 列，数字才有空间。 */}}
           <thead>
             <tr>
               <th>产品</th>
-              <th>品类</th>
               <th class="num">库存</th>
-              {{if $.Perms.Has "report.view"}}
-              <th class="num">平均成本</th>
-              <th class="num">库存成本</th>
-              {{end}}
-              <th class="num">建议售价</th>
-              {{if $.Perms.Has "report.view"}}<th class="num">毛利率</th>{{end}}
+              {{if $.Perms.Has "report.view"}}<th class="num">平均成本 / 库存值</th>{{end}}
+              {{/* 表头也要按权限区分：店员只看售价，不能出现"毛利"字样 */}}
+              {{if $.Perms.Has "report.view"}}<th class="num">建议售价 / 毛利率</th>
+              {{else}}<th class="num">建议售价</th>{{end}}
               <th>供应商</th>
               <th></th>
             </tr>
@@ -147,31 +149,37 @@
                 <div class="prod-cell">
                   {{template "prod_thumb" (dict "Image" .ImageURL "Name" .Name "Class" "sm")}}
                   <div class="prod-cell__main">
-                <a class="strong" href="/products/{{.ID}}">{{.Name}}</a>
-                <div class="tiny muted">
-                  <span class="mono">{{.SKU}}</span>
-                  {{if .Vintage}} · {{.Vintage}} 年{{end}}
-                  {{if .Spec}} · {{.Spec}}{{end}}
-                  {{if not .IsActive}} <span class="badge badge--muted">停用</span>{{end}}
-                </div>
+                    <a class="strong" href="/products/{{.ID}}">{{.Name}}</a>
+                    {{if not .IsActive}}<span class="badge badge--muted">停用</span>{{end}}
+                    <div class="tiny muted">
+                      <span class="mono">{{.SKU}}</span>
+                      {{if .Category}} · {{.Category}}{{end}}
+                      {{if .Vintage}} · {{.Vintage}} 年{{end}}
+                      {{if .Spec}} · {{.Spec}}{{end}}
+                    </div>
                   </div>
                 </div>
               </td>
-              <td class="small" data-label="品类">{{default "—" .Category}}</td>
               <td class="num" data-label="库存">
-                <span class="strong">{{.StockQty}}</span> <span class="tiny muted">{{default "瓶" .Unit}}</span>
-                {{if .IsLowStock}}{{if not .IsOutOfStock}} <span class="badge badge--danger">低于预警线</span>{{end}}{{end}}
-                {{if .IsOutOfStock}} <span class="badge badge--warn">无库存</span>{{end}}
+                <span class="cell-num">{{.StockQty}}</span>
+                <span class="tiny muted">{{default "瓶" .Unit}}</span>
+                {{if .IsOutOfStock}}<div class="cell-sub neg">已无库存</div>
+                {{else if .IsLowStock}}<div class="cell-sub warn">低于预警线</div>{{end}}
               </td>
               {{if $.Perms.Has "report.view"}}
-              <td class="num muted" data-label="平均成本">{{money4 .AvgCost}}</td>
-              <td class="num" data-label="库存成本">{{money .StockValue}}</td>
+              <td class="num" data-label="成本">
+                <span class="cell-num">{{money4 .AvgCost}}</span>
+                <div class="cell-sub">库存值 {{money .StockValue}}</div>
+              </td>
               {{end}}
-              <td class="num" data-label="建议售价">{{money .SalePrice}}</td>
-              {{if $.Perms.Has "report.view"}}
-              <td class="num small {{if lt .Margin 0.0}}neg{{end}}" data-label="毛利率">{{pct .Margin}}</td>
-              {{end}}
-              <td class="small" data-label="供应商">{{default "—" .SupplierName}}</td>
+              {{$showCost := $.Perms.Has "report.view"}}
+              <td class="num" data-label="{{if $showCost}}建议售价 / 毛利率{{else}}建议售价{{end}}">
+                <span class="cell-num">{{money .SalePrice}}</span>
+                {{if $showCost}}
+                <div class="cell-sub {{if lt .Margin 0.0}}neg{{end}}">毛利率 {{pct .Margin}}</div>
+                {{end}}
+              </td>
+              <td class="small text-2" data-label="供应商">{{default "—" .SupplierName}}</td>
               <td class="right">
                 <div class="row-actions">
                   <a class="btn btn--sm" href="/products/{{.ID}}">详情</a>
@@ -183,15 +191,10 @@
           </tbody>
           <tfoot>
             <tr>
-              <td>合计</td>
-              <td>{{.Count}} 个产品</td>
+              <td>合计 {{.Count}} 个产品</td>
               <td class="num">{{.TotalQty}}</td>
-              {{if .Perms.Has "report.view"}}
+              {{if .Perms.Has "report.view"}}<td class="num">{{money .TotalValue}}</td>{{end}}
               <td></td>
-              <td class="num">{{money .TotalValue}}</td>
-              {{end}}
-              <td></td>
-              {{if .Perms.Has "report.view"}}<td></td>{{end}}
               <td></td>
               <td></td>
             </tr>

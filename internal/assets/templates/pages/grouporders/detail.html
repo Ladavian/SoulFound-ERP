@@ -43,9 +43,11 @@
                 <th class="num">数量</th>
                 <th>单位</th>
                 <th class="num">单价</th>
+                {{if $.Perms.Has "report.view"}}
                 <th class="num">成本单价</th>
+                {{end}}
                 <th class="num">金额</th>
-                <th class="num">毛利</th>
+                {{if $.Perms.Has "report.view"}}<th class="num">毛利</th>{{end}}
                 <th>备注</th>
               </tr>
             </thead>
@@ -59,9 +61,13 @@
                 <td class="num" data-label="数量">{{$it.Qty}}</td>
                 <td data-label="单位">{{if $it.Unit}}{{$it.Unit}}{{else}}<span class="muted">—</span>{{end}}</td>
                 <td class="num" data-label="单价">{{money $it.UnitPrice}}</td>
+                {{if $.Perms.Has "report.view"}}
                 <td class="num muted" data-label="成本单价">{{if $it.UnitCost}}{{money $it.UnitCost}}{{else}}<span class="muted">未填</span>{{end}}</td>
+                {{end}}
                 <td class="num strong" data-label="金额">{{money $it.Amount}}</td>
+                {{if $.Perms.Has "report.view"}}
                 <td class="num {{if $it.Profit.IsNeg}}neg{{else}}pos{{end}}" data-label="毛利">{{money $it.Profit}}</td>
+                {{end}}
                 <td class="muted" data-label="备注">{{if $it.Note}}{{$it.Note}}{{else}}—{{end}}</td>
               </tr>
               {{end}}
@@ -92,6 +98,7 @@
                 <td class="num"></td>
                 <td></td>
               </tr>
+              {{if $.Perms.Has "report.view"}}
               <tr>
                 <td colspan="5" class="right muted">成本合计</td>
                 <td class="num muted">{{money $o.TotalCost}}</td>
@@ -104,6 +111,7 @@
                 <td class="num small {{if $o.Profit.IsNeg}}neg{{end}}">{{if $o.Total}}{{pct $o.Margin}}{{end}}</td>
                 <td></td>
               </tr>
+              {{end}}
             </tfoot>
           </table>
         </div>

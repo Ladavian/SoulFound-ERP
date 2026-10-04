@@ -1764,3 +1764,34 @@ body.scan-open { overflow: hidden; }
 }
 .order-profit b { margin-left: auto; font-size: 15px; font-variant-numeric: tabular-nums; color: var(--text); }
 .order-profit em { font-style: normal; font-size: 11.5px; color: var(--text-3); }
+
+/* ---------------------------------------------------------------- 表格可读性
+   列表页的主要数字：主值放大、副值降一级，一列表达两层信息。
+   这样能在不牺牲信息量的前提下把列数收敛下来，
+   数字也有了呼吸空间，扫一眼就知道重点在哪。 */
+.cell-num {
+  font-size: 15px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.01em;
+}
+.cell-sub {
+  font-size: 11.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+  white-space: nowrap;
+}
+.cell-sub.warn { color: var(--warn); font-weight: 600; }
+.cell-sub.neg { color: var(--danger); font-weight: 600; }
+.cell-sub.pos { color: var(--ok); font-weight: 600; }
+
+/* 主要列表页给行高留点余地，长时间看表格不累 */
+@media (min-width: 901px) {
+  /* 桌面端操作按钮不换行，避免行高被撑成两截 */
+  table.data .row-actions { flex-wrap: nowrap; }
+  table.data--roomy th,
+  table.data--roomy td { padding-top: 13px; padding-bottom: 13px; }
+  table.data--roomy td.row-cell--main { min-width: 240px; }
+  table.data--roomy .num { padding-left: 16px; }
+}

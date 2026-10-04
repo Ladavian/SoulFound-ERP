@@ -19,10 +19,12 @@
       <div class="hero__stat-label">金额</div>
       <div class="hero__stat-value">{{money .Summary.Amount}}</div>
     </div>
+    {{if .Perms.Has "report.view"}}
     <div>
       <div class="hero__stat-label">毛利</div>
       <div class="hero__stat-value">{{money .Summary.Profit}}</div>
     </div>
+    {{end}}
   </div>
 </div>
 
@@ -95,7 +97,7 @@
             <th>状态</th>
             <th class="num">数量</th>
             <th class="num">金额</th>
-            <th class="num">毛利</th>
+            {{if $.Perms.Has "report.view"}}<th class="num">毛利</th>{{end}}
             <th>发货仓</th>
             <th></th>
           </tr>
@@ -116,9 +118,11 @@
             <td data-label="状态">{{template "group_status" $o.Status}}</td>
             <td class="num" data-label="数量">{{$o.TotalQty}}</td>
             <td class="num strong" data-label="金额">{{money $o.Total}}</td>
+            {{if $.Perms.Has "report.view"}}
             <td class="num {{if $o.Profit.IsNeg}}neg{{else}}pos{{end}}" data-label="毛利">
-              {{if $o.HasCost}}{{money $o.Profit}}<div class="tiny muted">{{pct $o.Margin}}</div>{{else}}<span class="muted">未填成本</span>{{end}}
+              {{if $o.HasCost}}{{money $o.Profit}}<div class="cell-sub">{{pct $o.Margin}}</div>{{else}}<span class="muted">未填成本</span>{{end}}
             </td>
+            {{end}}
             <td class="small" data-label="发货仓">{{if $o.Warehouse}}{{$o.Warehouse}}{{else}}<span class="muted">—</span>{{end}}</td>
             <td class="right">
               <div class="row-actions">

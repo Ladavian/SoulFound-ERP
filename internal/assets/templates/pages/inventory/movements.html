@@ -70,59 +70,60 @@
 
   {{if .Movements}}
   <div class="table-wrap">
-    <table class="data--wide data--stack">
+    <table class="data data--stack data--roomy">
+      {{/* 11 列压到 7 列：
+           单位成本归到数量下面（成本是按数量乘出来的，放一起才好对），
+           结存均价/金额归到结存数量下面，
+           来源单号、操作人、备注合到最后一列。
+           数字列就这么多，才能给每个数字留出呼吸的空间。 */}}
       <thead>
         <tr>
           <th>日期</th>
           <th>产品</th>
           <th>类型</th>
-          <th class="num">数量</th>
-          {{if $.Perms.Has "report.view"}}
-          <th class="num">单位成本</th>
-          <th class="num">金额</th>
-          {{end}}
-          <th class="num">结存数量</th>
-          {{if $.Perms.Has "report.view"}}
-          <th class="num">结存均价 / 金额</th>
-          {{end}}
-          <th>来源单号</th>
-          <th>备注</th>
-          <th>操作人</th>
+          {{if $.Perms.Has "report.view"}}<th class="num">数量 / 成本</th>
+          {{else}}<th class="num">数量</th>{{end}}
+          {{if $.Perms.Has "report.view"}}<th class="num">金额</th>{{end}}
+          <th class="num">结存</th>
+          <th>来源 / 操作人 / 备注</th>
         </tr>
       </thead>
       <tbody>
         {{range .Movements}}
         <tr>
-          <td class="nowrap small row-cell--main">{{.OccurredOn}}</td>
-          <td data-label="产品">
+          <td class="nowrap small text-2">{{.OccurredOn}}</td>
+          <td class="row-cell--main" data-label="产品">
             <a class="strong" href="/products/{{.ProductID}}">{{.ProductName}}</a>
             <div class="tiny muted mono">{{.ProductSKU}}</div>
           </td>
           <td data-label="类型">
             <span class="badge{{if .IsIn}} badge--ok{{else}} badge--muted{{end}}">{{.ReasonLabel}}</span>
-            <div class="tiny muted">{{.DirectionLabel}}</div>
+            <div class="cell-sub">{{.DirectionLabel}}</div>
           </td>
-          <td class="num {{if not .IsIn}}neg{{end}}" data-label="数量">{{if .IsIn}}+{{end}}{{.Qty}}</td>
-          <td class="num" data-label="销售额">
-            {{if .IsSale}}{{money .SaleAmount}}{{if .CustomerName}}<div class="tiny muted">{{.CustomerName}}</div>{{end}}
-            {{else if .SalePrice}}{{money .SalePrice}}{{else}}<span class="muted">—</span>{{end}}
+          <td class="num" data-label="{{if $.Perms.Has "report.view"}}数量 / 成本{{else}}数量{{end}}">
+            <span class="cell-num {{if not .IsIn}}neg{{end}}">{{if .IsIn}}+{{end}}{{.Qty}}</span>
+            {{if $.Perms.Has "report.view"}}
+            <div class="cell-sub">单位成本 {{money4 .UnitCost}}</div>
+            {{end}}
           </td>
           {{if $.Perms.Has "report.view"}}
-          <td class="num muted" data-label="单位成本">{{money4 .UnitCost}}</td>
-          <td class="num" data-label="金额">{{money .TotalCost}}</td>
-          {{end}}
-          <td class="num" data-label="结存数量">{{.QtyAfter}}</td>
-          {{if $.Perms.Has "report.view"}}
-          <td class="num muted" data-label="结存均价 / 金额">
-            {{money4 .AvgCostAfter}}
-            <div class="tiny muted">{{money .ValueAfter}}</div>
+          <td class="num" data-label="金额">
+            <span class="cell-num">{{money .TotalCost}}</span>
+            {{if .IsSale}}<div class="cell-sub">售 {{money .SaleAmount}}{{if .CustomerName}} · {{.CustomerName}}{{end}}</div>
+            {{else if .SalePrice}}<div class="cell-sub">售价 {{money .SalePrice}}</div>{{end}}
           </td>
           {{end}}
-          <td class="small" data-label="来源单号">
-            {{if .RefCode}}<span class="mono">{{.RefCode}}</span>{{else}}<span class="muted">—</span>{{end}}
+          <td class="num" data-label="结存">
+            <span class="cell-num">{{.QtyAfter}}</span>
+            {{if $.Perms.Has "report.view"}}
+            <div class="cell-sub">{{money4 .AvgCostAfter}} · {{money .ValueAfter}}</div>
+            {{end}}
           </td>
-          <td class="small" data-label="备注">{{if .Note}}{{.Note}}{{else}}<span class="muted">—</span>{{end}}</td>
-          <td class="small" data-label="操作人">{{if .CreatedByName}}{{.CreatedByName}}{{else}}<span class="muted">—</span>{{end}}</td>
+          <td class="small text-2" data-label="来源 / 操作人 / 备注">
+            {{if .RefCode}}<span class="mono">{{.RefCode}}</span>{{else}}<span class="muted">手工登记</span>{{end}}
+            {{if .CreatedByName}} · {{.CreatedByName}}{{end}}
+            {{if .Note}}<div class="tiny muted">{{.Note}}</div>{{end}}
+          </td>
         </tr>
         {{end}}
       </tbody>

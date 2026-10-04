@@ -313,9 +313,9 @@ func TestStaffCannotSeeCostsOrSettle(t *testing.T) {
 	// 注意：采购单价、售价、销售额是店员自己录入/日常要用的，允许可见；
 	// 这里检查的是系统派生出来的成本与利润口径。
 	forbiddenWords := []string{"单位成本", "平均成本", "结存均价", "结存金额",
-		"库存成本", "库存总值", "毛利", "净利润", "净利率"}
+		"库存成本", "库存总值", "毛利", "净利润", "净利率", "成本单价"}
 	staffPages := []string{"/", "/markets", "/products", "/products/1",
-		"/inventory", "/inventory/movements"}
+		"/inventory", "/inventory/movements", "/group-orders", "/purchases"}
 	for _, path := range staffPages {
 		_, body := get(t, h, path, staff)
 		for _, forbidden := range forbiddenWords {
