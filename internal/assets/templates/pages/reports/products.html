@@ -119,7 +119,7 @@
             <span class="cell-num">{{money $r.Revenue}}</span>
             <div class="cell-sub">售出成本 {{money $r.Cogs}}</div>
           </td>
-          <td class="num" data-label="毛利">
+          <td class="num span-2" data-label="毛利">
             <span class="cell-num {{if $r.Profit.IsNeg}}neg{{else}}pos{{end}}">{{money $r.Profit}}</span>
             <div class="cell-sub">
               {{if $r.Revenue}}毛利率 {{pct (mul (div $r.Profit.Float $r.Revenue.Float) 100.0)}}{{else}}—{{end}}

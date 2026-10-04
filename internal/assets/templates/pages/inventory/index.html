@@ -229,7 +229,7 @@
               <td class="row-cell--main">{{default "未分类" .Category}}</td>
               <td class="num" data-label="SKU">{{.SKUCount}}</td>
               <td class="num" data-label="数量">{{.Qty}}</td>
-              {{if $.Perms.Has "report.view"}}<td class="num" data-label="成本金额">{{money .Value}}</td>{{end}}
+              {{if $.Perms.Has "report.view"}}<td class="span-2 num" data-label="成本金额">{{money .Value}}</td>{{end}}
             </tr>
             {{end}}
           </tbody>

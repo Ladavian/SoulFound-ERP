@@ -100,7 +100,7 @@
           {{if $.Perms.Has "report.view"}}
           <td class="num" data-label="货款">{{money $p.GoodsAmount}}</td>
           <td class="num muted" data-label="附加费用">{{money $p.ExtraCost}}</td>
-          <td class="num strong" data-label="合计">{{money $p.TotalCost}}</td>
+          <td class="span-2 num strong" data-label="合计">{{money $p.TotalCost}}</td>
           {{end}}
           <td class="right">
             <div class="row-actions">

@@ -68,7 +68,7 @@
                 {{if $.Perms.Has "report.view"}}
                 <td class="num {{if $it.Profit.IsNeg}}neg{{else}}pos{{end}}" data-label="毛利">{{money $it.Profit}}</td>
                 {{end}}
-                <td class="muted" data-label="备注">{{if $it.Note}}{{$it.Note}}{{else}}—{{end}}</td>
+                <td class="span-2 muted" data-label="备注">{{if $it.Note}}{{$it.Note}}{{else}}—{{end}}</td>
               </tr>
               {{end}}
             </tbody>

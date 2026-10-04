@@ -123,7 +123,7 @@
               {{if $o.HasCost}}{{money $o.Profit}}<div class="cell-sub">{{pct $o.Margin}}</div>{{else}}<span class="muted">未填成本</span>{{end}}
             </td>
             {{end}}
-            <td class="small" data-label="发货仓">{{if $o.Warehouse}}{{$o.Warehouse}}{{else}}<span class="muted">—</span>{{end}}</td>
+            <td class="span-2 small" data-label="发货仓">{{if $o.Warehouse}}{{$o.Warehouse}}{{else}}<span class="muted">—</span>{{end}}</td>
             <td class="right">
               <div class="row-actions">
                 <a class="btn btn--sm" href="/group-orders/{{$o.ID}}">详情</a>

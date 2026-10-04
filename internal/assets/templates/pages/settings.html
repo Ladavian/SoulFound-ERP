@@ -241,7 +241,7 @@
           <td class="nowrap small muted row-cell--main">{{datetime $l.CreatedAt}}</td>
           <td class="nowrap small" data-label="操作人">{{default "系统" $l.Username}}</td>
           <td data-label="动作"><span class="badge badge--muted">{{$l.Action}}</span></td>
-          <td class="small text-2" data-label="详情">
+          <td class="span-2 small text-2" data-label="详情">
             {{$l.Detail}}
             {{if $l.Entity}}<span class="tiny muted">{{$l.Entity}}{{with $l.EntityID}} #{{.}}{{end}}</span>{{end}}
           </td>

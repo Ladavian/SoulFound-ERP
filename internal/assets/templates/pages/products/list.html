@@ -141,7 +141,7 @@
           {{end}}
           <td class="num" data-label="售价">{{money $p.SalePrice}}</td>
           {{if $showCost}}<td class="num small {{if lt $p.Margin 0.0}}neg{{end}}" data-label="毛利率">{{pct $p.Margin}}</td>{{end}}
-          <td class="small" data-label="供应商">{{if $p.SupplierName}}{{$p.SupplierName}}{{else}}<span class="muted">—</span>{{end}}</td>
+          <td class="span-2 small" data-label="供应商">{{if $p.SupplierName}}{{$p.SupplierName}}{{else}}<span class="muted">—</span>{{end}}</td>
           <td class="right">
             <div class="row-actions">
               <a class="btn btn--sm" href="/products/{{$p.ID}}">详情</a>

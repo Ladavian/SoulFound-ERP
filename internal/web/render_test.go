@@ -6,6 +6,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 
@@ -817,4 +818,103 @@ func TestStackTableCellsHaveLabels(t *testing.T) {
 		t.Fatalf("只检查到 %d 个单元格，范围异常", checked)
 	}
 	t.Logf("已检查 %d 个卡片字段的标签", checked)
+}
+
+// TestStackCardGridHasNoHoles 手机卡片的网格不能留空位。
+//
+// 卡片是两列网格，每个字段占一格。字段数是奇数、又没有整行字段时，
+// 最后一行就会空一格：用户看到的是"第 5 格塞了一堆数据、第 6 格空着"。
+// 修法有两种：拆成偶数个字段，或让末尾字段占整行（.span-2）。
+// 这里按实际排版顺序模拟一遍网格填充，任何中间或末尾的空位都算问题。
+func TestStackCardGridHasNoHoles(t *testing.T) {
+	root := "templates"
+	if _, err := os.Stat(root); err != nil {
+		root = "../assets/templates"
+	}
+	tableRe := regexp.MustCompile(`(?s)<table class="([^"]*data--stack[^"]*)"(.*?)</table>`)
+	tbodyRe := regexp.MustCompile(`(?s)<tbody>(.*?)</tbody>`)
+	trRe := regexp.MustCompile(`(?s)<tr>(.*?)</tr>`)
+	tdRe := regexp.MustCompile(`<td([^>]*)>`)
+
+	checked := 0
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".html") {
+			return err
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		src := string(raw)
+		if !strings.Contains(src, "data--stack") {
+			return nil
+		}
+		rel := strings.TrimPrefix(path, root+string(filepath.Separator))
+		for _, tm := range tableRe.FindAllStringSubmatchIndex(src, -1) {
+			body := src[tm[4]:tm[5]]
+			tb := tbodyRe.FindStringSubmatchIndex(body)
+			if tb == nil {
+				continue
+			}
+			tbody := body[tb[2]:tb[3]]
+			tr := trRe.FindStringSubmatchIndex(tbody)
+			if tr == nil {
+				continue
+			}
+			row := tbody[tr[2]:tr[3]]
+			checked++
+
+			// 按视觉顺序排列：标题(order -2) → 操作区(order -1) → 其余按原顺序
+			type cell struct {
+				order int
+				full  bool
+			}
+			var cells []cell
+			for _, td := range tdRe.FindAllStringSubmatchIndex(row, -1) {
+				attrs := row[td[2]:td[3]]
+				full := strings.Contains(attrs, "span-2") ||
+					strings.Contains(attrs, "row-cell--main") ||
+					strings.Contains(attrs, `class="right`) ||
+					strings.Contains(attrs, "actions-col")
+				order := 0
+				if strings.Contains(attrs, "row-cell--main") {
+					order = -2
+				} else if strings.Contains(attrs, `class="right`) || strings.Contains(attrs, "actions-col") {
+					order = -1
+				}
+				cells = append(cells, cell{order: order, full: full})
+			}
+			sort.SliceStable(cells, func(i, j int) bool { return cells[i].order < cells[j].order })
+
+			pos := 0 // 0 = 行首，1 = 已占左列
+			holes := 0
+			for _, c := range cells {
+				if c.full {
+					if pos != 0 {
+						holes++ // 整行字段前的空位
+					}
+					pos = 0
+					continue
+				}
+				pos = 1 - pos
+			}
+			if pos != 0 {
+				holes++ // 末尾空一格
+			}
+			if holes > 0 {
+				line := strings.Count(src[:tm[4]+tb[2]+tr[0]], "\n") + 1
+				t.Errorf("%s:%d 的卡片网格有 %d 处空位："+
+					"字段数是奇数时，末尾字段应加 .span-2 占整行（或把字段拆成偶数个）",
+					rel, line, holes)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("遍历模板失败: %v", err)
+	}
+	if checked < 15 {
+		t.Fatalf("只检查到 %d 张卡片，范围异常", checked)
+	}
+	t.Logf("已检查 %d 张卡片的网格排布", checked)
 }

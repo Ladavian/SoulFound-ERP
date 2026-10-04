@@ -108,6 +108,7 @@
               <th class="num">现场</th>
               <th class="num">销售额</th>
               <th class="num">毛利</th>
+              <th class="num">成本与费用</th>
               <th class="num">净利润</th>
             </tr>
           </thead>
@@ -138,11 +139,17 @@
                 <span class="cell-num">{{money .GrossProfit}}</span>
                 <div class="cell-sub">毛利率 {{pct .GrossMargin}}</div>
               </td>
+              {{/* 成本与费用单独一格：净利润 = 毛利 − 成本与费用，
+                   塞进净利率那一格会挤，空着那格又浪费。 */}}
+              <td class="num" data-label="成本与费用">
+                <span class="cell-num">{{money .TotalCost}}</span>
+                <div class="cell-sub">
+                  试饮 {{money .TastingCost}}{{if .LossCost}} · 损耗 {{money .LossCost}}{{end}}{{if .ExpenseTotal}} · 摊位等 {{money .ExpenseTotal}}{{end}}
+                </div>
+              </td>
               <td class="num" data-label="净利润">
                 <span class="cell-num {{if .NetProfit.IsNeg}}neg{{else}}pos{{end}}">{{money .NetProfit}}</span>
-                <div class="cell-sub">
-                  净利率 {{pct .NetMargin}} · 花费 {{money .TotalCost}}
-                </div>
+                <div class="cell-sub">净利率 {{pct .NetMargin}}</div>
               </td>
             </tr>
             {{end}}
@@ -163,8 +170,14 @@
                 <div class="cell-sub">毛利率 {{pct .Totals.GrossMargin}}</div>
               </td>
               <td class="num">
+                {{money .Totals.TotalCost}}
+                <div class="cell-sub">
+                  试饮 {{money .Totals.TastingCost}}{{if .Totals.LossCost}} · 损耗 {{money .Totals.LossCost}}{{end}}{{if .Totals.ExpenseTotal}} · 摊位等 {{money .Totals.ExpenseTotal}}{{end}}
+                </div>
+              </td>
+              <td class="num">
                 {{money .Totals.NetProfit}}
-                <div class="cell-sub">净利率 {{pct .Totals.NetMargin}} · 花费 {{money .Totals.TotalCost}}</div>
+                <div class="cell-sub">净利率 {{pct .Totals.NetMargin}}</div>
               </td>
             </tr>
           </tfoot>

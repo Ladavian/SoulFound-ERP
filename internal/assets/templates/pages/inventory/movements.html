@@ -113,7 +113,7 @@
             {{else if .SalePrice}}<div class="cell-sub">售价 {{money .SalePrice}}</div>{{end}}
           </td>
           {{end}}
-          <td class="num" data-label="结存">
+          <td class="num span-2" data-label="结存">
             <span class="cell-num">{{.QtyAfter}}</span>
             {{if $.Perms.Has "report.view"}}
             <div class="cell-sub">{{money4 .AvgCostAfter}} · {{money .ValueAfter}}</div>
