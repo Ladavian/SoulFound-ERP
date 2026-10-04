@@ -1241,76 +1241,83 @@ body.scan-open { overflow: hidden; }
    以前只按视口判断，侧栏里 340px 宽的表格在宽屏上完全享受不到卡片模式，
    只能把每列挤到逐字换行。 */
 @container tablewrap (max-width: 720px) {
-  /* 表格转卡片：字段两列排布，操作按钮紧跟标题，卡片不再拉长 */
+  /* 表格转卡片。
+     关键点：**单列**，每个字段独占一行（标签在左、值在右），
+     副行另起一行。
+     以前是两列网格 + 标签与值同行，字段一多就互相压字：
+     "数量 / 成本 -1 单位成本 ¥110.0金额 -¥110.00" 这种。
+     手机上横向空间本来就紧张，两列根本放不下"标签+值+副行"。 */
   .data--stack thead, .data--stack tfoot { display: none; }
   .data--stack { display: block; width: 100%; }
   .data--stack tbody { display: block; }
   .data--stack tr {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 3px 12px;
+    display: block;
     border: 1px solid var(--line);
     border-radius: var(--radius);
     margin-bottom: 10px;
-    padding: 11px 13px;
+    padding: 12px 14px;
     background: var(--surface);
     box-shadow: var(--shadow-sm);
   }
   .data--stack td {
-    border: 0;
-    padding: 2px 0;
     display: flex;
+    flex-wrap: wrap;              /* 副行可以换到下一行 */
     align-items: baseline;
     justify-content: space-between;
-    gap: 8px;
+    gap: 0 12px;
+    padding: 8px 0;
+    border: 0;
+    border-bottom: 1px dashed var(--line);
     text-align: right;
     min-width: 0;
+    overflow-wrap: anywhere;      /* 再长也不溢出卡片 */
   }
+  .data--stack td:last-child { border-bottom: 0; }
   .data--stack td::before {
     content: attr(data-label);
     flex: 0 0 auto;
-    font-size: 11.5px;
+    max-width: 42%;               /* 标签最多占 42%，不能把值挤没 */
+    font-size: 12px;
     font-weight: 550;
     color: var(--text-3);
     text-align: left;
+  }
+  /* 值本身也不要撑破卡片 */
+  .data--stack td > * { min-width: 0; max-width: 100%; }
+  .data--stack td .cell-num { font-size: 15px; }
+  /* 副行占满一整行，右对齐贴在值下面 */
+  .data--stack td .cell-sub {
+    flex: 1 1 100%;
+    text-align: right;
+    margin-top: 3px;
+    white-space: normal;          /* 卡片里允许换行，别再 nowrap 溢出 */
   }
   /* 卡片模式（手机）：首列变成卡片标题，不需要最小宽度。
      复位选择器要与桌面规则同等具体（table.data td.row-cell--main），
      否则优先级不够、复位不生效。 */
   table.data td.row-cell--main { min-width: 0; }
-  /* 标题与操作区横跨整行 */
   .data--stack td.row-cell--main {
-    grid-column: 1 / -1;
-    order: -2; /* 标题在最前，操作区紧随其后 */
     display: block;
     text-align: left;
-    padding-bottom: 8px;
+    padding: 0 0 10px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--line);
+  }
+  .data--stack td.row-cell--main::before { display: none; }
+  /* 操作区紧随标题，手机上不用往下翻 */
+  .data--stack td.right,
+  .data--stack td.actions-col {
+    display: block;
+    padding: 0 0 10px;
     margin-bottom: 4px;
     border-bottom: 1px dashed var(--line);
   }
-  .data--stack td.row-cell--main::before { display: none; }
-  .data--stack td.right {
-    grid-column: 1 / -1;
-    order: -1; /* 操作按钮提到字段前面，手机上不用往下翻 */
-    display: block;
-    padding: 0 0 9px;
-    margin-bottom: 5px;
-    border-bottom: 1px dashed var(--line);
-  }
-  .data--stack td.right::before { display: none; }
+  .data--stack td.right::before,
+  .data--stack td.actions-col::before { display: none; }
   .data--stack .row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
   .data--stack .row-actions .btn { flex: 1 1 auto; justify-content: center; min-height: 42px; }
   .data--stack .row-actions .btn--primary { flex: 2 1 auto; }
   .data--stack .mobile-hide { display: none; }
-  .data--stack td.actions-col {
-    grid-column: 1 / -1;
-    display: block;
-    padding-top: 9px;
-    margin-top: 5px;
-    border-top: 1px dashed var(--line);
-  }
-  .data--stack td.actions-col::before { display: none; }
-  .data--stack td.actions-col .btn { width: 100%; justify-content: center; min-height: 42px; }
 }
 
 /* ==========================================================================
@@ -1816,3 +1823,16 @@ body.scan-open { overflow: hidden; }
 tr:nth-child(1) .rank-badge { background: var(--gold-100); border-color: #EBD9B4; color: #8A6A21; }
 tr:nth-child(2) .rank-badge { background: var(--brand-100); border-color: var(--brand-200); color: var(--brand-700); }
 tr:nth-child(3) .rank-badge { background: var(--ice-100); border-color: var(--ice-200); color: var(--info); }
+
+/* 扫码选产品：按钮 + 条码输入 + 结果提示 */
+.scan-pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.scan-pick .input { flex: 1 1 200px; min-width: 0; }
+.scan-pick .btn { flex: 0 0 auto; }
+.scan-pick .pos { color: var(--ok); }
+.scan-pick .neg { color: var(--danger); }

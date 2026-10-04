@@ -100,7 +100,7 @@
             <span class="badge{{if .IsIn}} badge--ok{{else}} badge--muted{{end}}">{{.ReasonLabel}}</span>
             <div class="cell-sub">{{.DirectionLabel}}</div>
           </td>
-          <td class="num" data-label="{{if $.Perms.Has "report.view"}}数量 / 成本{{else}}数量{{end}}">
+          <td class="num" data-label="数量">
             <span class="cell-num {{if not .IsIn}}neg{{end}}">{{if .IsIn}}+{{end}}{{.Qty}}</span>
             {{if $.Perms.Has "report.view"}}
             <div class="cell-sub">单位成本 {{money4 .UnitCost}}</div>
@@ -119,7 +119,7 @@
             <div class="cell-sub">{{money4 .AvgCostAfter}} · {{money .ValueAfter}}</div>
             {{end}}
           </td>
-          <td class="small text-2" data-label="来源 / 操作人 / 备注">
+          <td class="small text-2" data-label="来源">
             {{if .RefCode}}<span class="mono">{{.RefCode}}</span>{{else}}<span class="muted">手工登记</span>{{end}}
             {{if .CreatedByName}} · {{.CreatedByName}}{{end}}
             {{if .Note}}<div class="tiny muted">{{.Note}}</div>{{end}}

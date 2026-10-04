@@ -252,7 +252,7 @@
             <select class="select" id="add-product" name="product_id">
               <option value="">— 选择产品 —</option>
               {{range .AvailableProducts}}
-              <option value="{{.ID}}">{{.Label}}（售价 {{.Price}} / 库存 {{.Stock}}）</option>
+              <option value="{{.ID}}">{{.Label}} · 售价 {{.Price}} · 库存 {{.Stock}}</option>
               {{end}}
             </select>
           </div>

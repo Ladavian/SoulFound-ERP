@@ -179,6 +179,7 @@ func (s *Server) handleAdjustForm(w http.ResponseWriter, r *http.Request) {
 
 	noCache(w)
 	page := s.newPage(r, "出入库登记", "adjust")
+	page["NeedsScanner"] = true // 可以扫码选产品
 	page["Products"] = options
 	page["ReasonGroups"] = []ReasonGroup{
 		{Label: "入库", Options: model.DirectionInReasons},

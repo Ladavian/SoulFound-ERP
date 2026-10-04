@@ -53,11 +53,22 @@
                 <select class="select" id="product_id" name="product_id" x-model="pid" required>
                   <option value="">— 选择产品 —</option>
                   {{range .Products}}
-                  <option value="{{.ID}}">{{.Label}}（库存 {{.Stock}}）</option>
+                  <option value="{{.ID}}">{{.Label}} · 库存 {{.Stock}}</option>
                   {{end}}
                 </select>
                 <img class="pick-thumb" x-show="imgs[pid]" :src="imgs[pid] || ''"
                      alt="产品图片" x-cloak>
+              </div>
+              {{/* 扫码选产品：对着瓶身条码扫一下就自动选中。
+                   摄像头需要 https，局域网 http 下会提示手动输入条码。 */}}
+              <div class="scan-pick" x-data="scanPick()">
+                <button class="btn" type="button" data-scan-fill="#scan-code">
+                  {{template "icon" "scan"}}<span>扫码选产品</span>
+                </button>
+                <input class="input" id="scan-code" type="text" inputmode="numeric"
+                       x-model="code" @change="lookup()" @keydown.enter.prevent="lookup()"
+                       placeholder="或直接输入 / 粘贴条码">
+                <span class="tiny" x-show="msg" x-text="msg" :class="ok ? 'pos' : 'neg'" x-cloak></span>
               </div>
               <div class="field__hint">按 SKU 或名称查找，括号内是当前库存。选好后左边会显示产品图片，方便核对。</div>
             </div>
@@ -180,4 +191,49 @@
     </div>
   </div>
 </div>
+
+<script>
+/* 扫码/输条码 → 查产品 → 自动选中下拉里的那一项 */
+window.scanPick = function () {
+  return {
+    code: '',
+    msg: '',
+    ok: false,
+    lookup: function () {
+      var code = (this.code || '').trim();
+      if (!code) return;
+      var self = this;
+      fetch('/scan?code=' + encodeURIComponent(code), { credentials: 'same-origin' })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (!d.ok || !d.product) {
+            self.ok = false;
+            self.msg = d.message || '没有找到这个条码对应的产品';
+            return;
+          }
+          var sel = document.getElementById('product_id');
+          if (!sel) return;
+          var found = false;
+          for (var i = 0; i < sel.options.length; i++) {
+            if (String(sel.options[i].value) === String(d.product.id)) { found = true; break; }
+          }
+          if (!found) {
+            self.ok = false;
+            self.msg = '「' + d.product.name + '」已停用，不在可选列表里';
+            return;
+          }
+          sel.value = String(d.product.id);
+          // 通知 Alpine（x-model 绑的是 pid）与其它监听者
+          sel.dispatchEvent(new Event('change', { bubbles: true }));
+          self.ok = true;
+          self.msg = '已选中：' + d.product.name;
+        })
+        .catch(function () {
+          self.ok = false;
+          self.msg = '查询失败，请重试';
+        });
+    }
+  };
+};
+</script>
 {{end}}

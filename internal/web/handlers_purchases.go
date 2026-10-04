@@ -32,13 +32,22 @@ func (s *Server) productOptions(r *http.Request) ([]ProductOption, error) {
 	}
 	out := make([]ProductOption, 0, len(products))
 	for _, p := range products {
-		spec := ""
+		// 标签做成"名称 · 编码"：名称最好认，编码用来区分同名产品。
+		// 容量只在名称里没写的时候才补——产品名通常已经带 375ml，
+		// 之前无条件拼一次会变成"…375ml 375ml"这种啰嗦的重复。
+		label := p.Name
 		if p.VolumeML > 0 {
-			spec = " " + strconv.Itoa(p.VolumeML) + "ml"
+			volume := strconv.Itoa(p.VolumeML) + "ml"
+			if !strings.Contains(label, volume) {
+				label += " " + volume
+			}
+		}
+		if p.SKU != "" {
+			label += " · " + p.SKU
 		}
 		out = append(out, ProductOption{
 			ID:    p.ID,
-			Label: p.SKU + " · " + p.Name + spec,
+			Label: label,
 			Name:  p.Name,
 			SKU:   p.SKU,
 			Image: p.ImageURL,
