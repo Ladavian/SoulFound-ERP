@@ -614,3 +614,83 @@ func (s *Store) HasStatementChecks(ctx context.Context, platform, period string)
 		platform, period).Scan(&n)
 	return n > 0, err
 }
+
+// PlatformPeriod 一个平台的一个账期（总对账单的勾选单位）。
+//
+// 用户的实际结算节奏：淘宝按月做，小平台可能两个月做一次；
+// 9 月要结"淘宝 8 月 + 京东 7-8 月"，所以勾选必须以
+// 「平台 + 账期」为单位，而不是"平台 × 账期"的笛卡尔积——
+// 后者会把已经结过的淘宝 7 月也一起算进去。
+type PlatformPeriod struct {
+	Platform   string
+	Period     string
+	Kinds      int
+	Amount     model.Money
+	HasIncome  bool
+	HasExpense bool
+	RowCount   int
+}
+
+// StatementPlatformPeriods 列出所有「平台 + 账期」组合（账期倒序）。
+func (s *Store) StatementPlatformPeriods(ctx context.Context) ([]PlatformPeriod, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT platform, period, COUNT(DISTINCT kind),
+		       COALESCE(SUM(amount), 0), COALESCE(SUM(row_count), 0)
+		  FROM ec_statements
+		 GROUP BY platform, period
+		 ORDER BY period DESC, platform`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []PlatformPeriod
+	for rows.Next() {
+		var pp PlatformPeriod
+		if err := rows.Scan(&pp.Platform, &pp.Period, &pp.Kinds, &pp.Amount, &pp.RowCount); err != nil {
+			return nil, err
+		}
+		out = append(out, pp)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// 标注收入/支出，界面上好认
+	dirRows, err := s.db.QueryContext(ctx, `
+		SELECT platform, period, direction FROM ec_statements
+		 GROUP BY platform, period, direction`)
+	if err != nil {
+		return nil, err
+	}
+	defer dirRows.Close()
+	type pk struct{ p, pe string }
+	dirs := map[pk]map[string]bool{}
+	for dirRows.Next() {
+		var p, pe, d string
+		if err := dirRows.Scan(&p, &pe, &d); err != nil {
+			return nil, err
+		}
+		k := pk{p, pe}
+		if dirs[k] == nil {
+			dirs[k] = map[string]bool{}
+		}
+		dirs[k][d] = true
+	}
+	for i := range out {
+		d := dirs[pk{out[i].Platform, out[i].Period}]
+		out[i].HasIncome = d["income"]
+		out[i].HasExpense = d["expense"]
+	}
+	return out, nil
+}
+
+// StatementKeyString 「平台|账期」的编码，用于 URL 勾选参数。
+func StatementKeyString(platform, period string) string { return platform + "|" + period }
+
+// ParseStatementKey 解出平台与账期。
+func ParseStatementKey(s string) (platform, period string, ok bool) {
+	i := strings.LastIndex(s, "|")
+	if i <= 0 || i == len(s)-1 {
+		return "", "", false
+	}
+	return s[:i], s[i+1:], true
+}

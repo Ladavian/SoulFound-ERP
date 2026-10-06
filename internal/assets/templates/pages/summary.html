@@ -7,14 +7,59 @@
     <h1 class="page-head__title">总对账单</h1>
     <div class="page-head__sub">
       各平台各自的账期汇总在一起 · 共 {{len $rep.Items}} 份账单
-      {{/* 筛选：平台与账期都可多选，自由组合要汇总的范围 */}}
-{{template "filter_bar" .PlatformChips}}
-{{template "filter_bar" .PeriodChips2}}
-{{if .AllCount}}
-<div class="tiny muted" style="margin:-6px 0 12px">
-  已导入 {{.AllCount}} 份账单，当前选中 {{len .Picked}} 份参与汇总与导出。
-</div>
-{{end}}
+      {{/* 勾选单位是「平台 + 账期」这一对。
+     用平台 × 账期分别筛会变成笛卡尔积：选淘宝+京东、7月+8月，
+     会把已经结过的淘宝 7 月也算进去。所以这里逐条勾。
+     GET 表单 + 复选框，点「应用」生效；地址栏可收藏可分享。 */}}
+<form class="card" method="get" action="/ecommerce/summary">
+  <div class="card__head">
+    <div class="card__title">
+      选择要结算的账单
+      <span class="card__sub">按「平台 + 账期」逐条勾选；默认只勾每个平台最新一期</span>
+    </div>
+    <div class="card__actions">
+      <button class="btn btn--sm btn--ghost" type="button"
+              onclick="this.form.querySelectorAll('input[name=sel]').forEach(c=>c.checked=true)">全选</button>
+      <button class="btn btn--sm btn--ghost" type="button"
+              onclick="this.form.querySelectorAll('input[name=sel]').forEach(c=>c.checked=false)">清空</button>
+      <button class="btn btn--sm btn--primary" type="submit">应用</button>
+    </div>
+  </div>
+  <div class="card__body">
+    {{if .PPRows}}
+    <div class="table-wrap">
+      <table class="data data--stack">
+        <thead>
+          <tr><th>平台 / 账期</th><th class="num">金额合计</th></tr>
+        </thead>
+        <tbody>
+          {{range .PPRows}}
+          <tr>
+            <td class="row-cell--main">
+              <label class="pick">
+                <input type="checkbox" name="sel" value="{{.Key}}" {{if .Checked}}checked{{end}}>
+                <span>{{.Label}} · {{.PeriodL}}</span>
+              </label>
+              <div class="tiny muted">
+                {{if .HasIncome}}收入{{end}}{{if and .HasIncome .HasExpense}} + {{end}}{{if .HasExpense}}支出{{end}}
+                · {{.Kinds}} 个费用项 · {{.RowCount}} 行
+              </div>
+            </td>
+            <td class="num span-2" data-label="金额合计">{{money .Amount}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    <div class="tiny muted" style="margin-top:10px;line-height:1.8">
+      已导入 {{.AllCount}} 份账单，当前勾选 <strong>{{len .Picked}}</strong> 份参与汇总与导出。<br>
+      例：9 月要结「淘宝 8 月 + 京东 7-8 月」，就只勾这三条，淘宝 7 月不会被带进来。
+    </div>
+    {{else}}
+    <div class="tiny muted">还没有导入过任何账单。</div>
+    {{end}}
+  </div>
+</form>
 
 {{if not $rep.Items}}· 还没有导入过平台账单{{end}}
     </div>

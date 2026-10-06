@@ -3,7 +3,6 @@ package web
 import (
 	"fmt"
 	"net/http"
-	"sort"
 	"strings"
 
 	"icewine-erp/internal/model"
@@ -498,31 +497,58 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	// 平台与账期都支持多选：淘宝按月做、小平台两三个月一次，
-	// 所以要能把"哪几个平台的哪几个月"自由组合起来汇总。
-	allPlatforms := model.EcPlatforms
-	selPlatforms := selectedValues(r, "platform", allPlatforms)
-	selSet := map[string]bool{}
-	for _, p := range selPlatforms {
-		selSet[p] = true
+	// 勾选单位是「平台 + 账期」这一对，不是"平台 × 账期"的笛卡尔积。
+	//
+	// 用户的实际结算节奏：淘宝按月做，小平台可能两个月做一次。
+	// 9 月要结"淘宝 8 月 + 京东 7-8 月"，如果按平台 × 账期来筛，
+	// 选淘宝+京东、7月+8月 会把已经结过的淘宝 7 月也算进来。
+	pp, err := s.svc.Store.StatementPlatformPeriods(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-	var periodAll []string
-	seenP := map[string]bool{}
-	for _, k := range keys {
-		if !seenP[k.Period] {
-			seenP[k.Period] = true
-			periodAll = append(periodAll, k.Period)
+	pickedSet := map[string]bool{}
+	rawSel := r.URL.Query()["sel"]
+	if len(rawSel) == 0 {
+		// 默认只勾每个平台最新的一期：最贴近"这次要结的账"，
+		// 不会把以前已经结过的月份又算一遍。
+		seen := map[string]bool{}
+		for _, it := range pp {
+			if !seen[it.Platform] {
+				seen[it.Platform] = true
+				pickedSet[store.StatementKeyString(it.Platform, it.Period)] = true
+			}
+		}
+	} else {
+		for _, v := range rawSel {
+			if _, _, ok := store.ParseStatementKey(v); ok {
+				pickedSet[v] = true
+			}
 		}
 	}
-	sort.Sort(sort.Reverse(sort.StringSlice(periodAll)))
-	selPeriods := selectedPeriods(r, periodAll, 0)
-	periodSet := map[string]bool{}
-	for _, p := range selPeriods {
-		periodSet[p] = true
+	type ppRow struct {
+		store.PlatformPeriod
+		Key     string
+		Label   string
+		PeriodL string
+		Checked bool
 	}
+	var ppRows []ppRow
+	var selKeys []string
+	for _, it := range pp {
+		k := store.StatementKeyString(it.Platform, it.Period)
+		row := ppRow{PlatformPeriod: it, Key: k,
+			Label: model.EcPlatformLabel(it.Platform), PeriodL: model.PeriodLabel(it.Period),
+			Checked: pickedSet[k]}
+		if row.Checked {
+			selKeys = append(selKeys, k)
+		}
+		ppRows = append(ppRows, row)
+	}
+
 	var picked []store.StatementKey
 	for _, k := range keys {
-		if selSet[k.Platform] && periodSet[k.Period] {
+		if pickedSet[store.StatementKeyString(k.Platform, k.Period)] {
 			picked = append(picked, k)
 		}
 	}
@@ -535,10 +561,10 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 	}
 	noCache(w)
 	page := s.newPage(r, "总对账单", "summary")
-	page["PlatformChips"] = valueChips(r, "platform", "平台", model.EcPlatformOptions(), selPlatforms)
-	page["PeriodChips2"] = periodChips(r, periodAll, selPeriods, nil)
+	page["PPRows"] = ppRows
 	page["Picked"] = picked
 	page["AllCount"] = len(keys)
+	page["SelKeys"] = selKeys
 	page["Rep"] = rep
 	page["Rates"] = rep.Rates
 	page["Keys"] = keys
@@ -559,7 +585,7 @@ func (s *Server) handleSummaryExport(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, "/ecommerce/summary", err)
 		return
 	}
-	// 导出跟页面选择保持一致
+	// 导出跟页面选择保持一致（同样是"平台 + 账期"逐条勾选）
 	keys = filterStatementKeys(r, keys)
 	settings, _ := s.svc.Store.Settings(ctx)
 	rep, err := s.svc.BuildSummary(ctx, keys, settings)
@@ -684,30 +710,22 @@ func (s *Server) saveStatementGroupsSource(r *http.Request, platform, period, so
 	return out
 }
 
-// filterStatementKeys 按 URL 上的平台与账期多选过滤账单。
+// filterStatementKeys 按 URL 上的「平台|账期」勾选过滤账单。
+//
+// 注意不是按平台、按账期分别过滤（那会变成笛卡尔积），
+// 而是逐条勾选：淘宝8月 + 京东7月 + 京东8月 这样。
 func filterStatementKeys(r *http.Request, keys []store.StatementKey) []store.StatementKey {
-	allPlatforms := model.EcPlatforms
-	selPlatforms := selectedValues(r, "platform", allPlatforms)
-	selSet := map[string]bool{}
-	for _, p := range selPlatforms {
-		selSet[p] = true
+	raw := r.URL.Query()["sel"]
+	if len(raw) == 0 {
+		return keys
 	}
-	var periodAll []string
-	seen := map[string]bool{}
-	for _, k := range keys {
-		if !seen[k.Period] {
-			seen[k.Period] = true
-			periodAll = append(periodAll, k.Period)
-		}
-	}
-	selPeriods := selectedPeriods(r, periodAll, 0)
-	periodSet := map[string]bool{}
-	for _, p := range selPeriods {
-		periodSet[p] = true
+	picked := map[string]bool{}
+	for _, v := range raw {
+		picked[v] = true
 	}
 	var out []store.StatementKey
 	for _, k := range keys {
-		if selSet[k.Platform] && periodSet[k.Period] {
+		if picked[store.StatementKeyString(k.Platform, k.Period)] {
 			out = append(out, k)
 		}
 	}

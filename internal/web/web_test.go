@@ -3474,3 +3474,54 @@ func TestProductEcLinkEditorShowsPlatform(t *testing.T) {
 		t.Errorf("绑定数据里应带 platform 字段\n片段: %s", snippetAround(page, "__ERP_EC_LINKS__", 200))
 	}
 }
+
+// TestSummarySelectsByPlatformPeriod 总对账单按「平台 + 账期」逐条勾选。
+//
+// 用户的场景：淘宝每月做账单，小平台两三个月做一次。
+// 9 月要结「淘宝 8 月 + 京东 7-8 月」，如果筛选做成
+// "平台 × 账期" 的笛卡尔积（选淘宝+京东、7月+8月），
+// 会把已经结过的淘宝 7 月也一起算进去——用户明确反馈过这个问题。
+func TestSummarySelectsByPlatformPeriod(t *testing.T) {
+	h, svc, cfg := testApp(t)
+	ctx := context.Background()
+	cookie := doLogin(t, h, cfg, "admin", "admin123")
+	admin := mustUser(t, svc, "admin")
+
+	// 淘宝 6/7/8 月 + 京东 7/8 月
+	mk := func(platform, period, amount string) {
+		items := []model.EcStatementItem{{
+			Period: period, Kind: model.StmtGoodsPayment, Direction: "income",
+			OrderNo: platform + "-" + period, Amount: model.MustMoney(amount),
+		}}
+		if err := svc.ImportStatement(ctx, &model.EcStatement{
+			Platform: platform, Period: period, Kind: model.StmtGoodsPayment,
+			Source: model.StmtSourceBill, Direction: "income"}, items, admin); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mk(model.EcTaobao, "202606", "100")
+	mk(model.EcTaobao, "202607", "200")
+	mk(model.EcTaobao, "202608", "300")
+	mk(model.EcJD, "202607", "400")
+	mk(model.EcJD, "202608", "500")
+
+	// 不传 sel：默认每个平台最新一期（淘宝8月 + 京东8月），
+	// 不能把淘宝 6/7 月带进来
+	_, raw := get(t, h, "/ecommerce/summary", cookie)
+	page := html.UnescapeString(raw)
+	if !strings.Contains(page, "当前勾选 <strong>2</strong>") {
+		t.Errorf("默认应只勾每个平台最新一期（2 条）\n片段: %s", snippetAround(page, "当前勾选", 120))
+	}
+	// 选中淘宝8月 + 京东7月 + 京东8月
+	_, raw2 := get(t, h, "/ecommerce/summary?sel=taobao%7C202608&sel=jd%7C202607&sel=jd%7C202608", cookie)
+	page2 := html.UnescapeString(raw2)
+	if !strings.Contains(page2, "当前勾选 <strong>3</strong>") {
+		t.Errorf("勾选 3 条应生效\n片段: %s", snippetAround(page2, "当前勾选", 120))
+	}
+	if strings.Contains(page2, `value="taobao|202607" checked`) {
+		t.Error("淘宝 7 月不应被带进来（这正是笛卡尔积筛选的错误）")
+	}
+	if !strings.Contains(page2, `value="jd|202607" checked`) {
+		t.Error("京东 7 月应被勾上")
+	}
+}
