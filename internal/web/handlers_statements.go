@@ -3,10 +3,12 @@ package web
 import (
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 
 	"icewine-erp/internal/model"
 	"icewine-erp/internal/service"
+	"icewine-erp/internal/store"
 )
 
 // stmtKindFromSheet 按列名/内容判断这份账单是哪一类。
@@ -177,17 +179,51 @@ func (s *Server) handleReconcile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	period := fr.Str("period")
-	if period == "" && len(periods) > 0 {
-		period = periods[0]
-	}
+	sel := selectedPeriods(r, periods, 1)
 
-	rec, err := s.svc.Store.Reconcile(ctx, platform, period)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	// 多账期：逐个算再合并（账期不多，循环足够）
+	var rec model.EcReconcile
+	var statements []model.EcStatement
+	for _, p := range sel {
+		one, err := s.svc.Store.Reconcile(ctx, platform, p)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		rec.IncomeTotal += one.IncomeTotal
+		rec.ExpenseTotal += one.ExpenseTotal
+		rec.IncomeItems += one.IncomeItems
+		rec.ExpenseItems += one.ExpenseItems
+		if rec.IncomeByKind == nil {
+			rec.IncomeByKind = map[string]model.Money{}
+			rec.ExpenseByKind = map[string]model.Money{}
+			rec.IncomeKindRows = map[string]int{}
+			rec.ExpenseKindRows = map[string]int{}
+		}
+		for k, v := range one.IncomeByKind {
+			rec.IncomeByKind[k] += v
+		}
+		for k, v := range one.ExpenseByKind {
+			rec.ExpenseByKind[k] += v
+		}
+		for k, v := range one.IncomeKindRows {
+			rec.IncomeKindRows[k] += v
+		}
+		for k, v := range one.ExpenseKindRows {
+			rec.ExpenseKindRows[k] += v
+		}
+		list, err := s.svc.Store.ListStatements(ctx, platform, p)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		statements = append(statements, list...)
 	}
-	statements, err := s.svc.Store.ListStatements(ctx, platform, period)
+	rec.Platform, rec.Period = platform, ""
+	period := ""
+	if len(sel) > 0 {
+		period = sel[0]
+	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -195,13 +231,32 @@ func (s *Server) handleReconcile(w http.ResponseWriter, r *http.Request) {
 
 	// 各账单类型的明细（页面上按类型展开）
 	// 两份账单的对账校验结果（只列有问题的）
-	checks, _ := s.svc.Store.StatementChecks(ctx, platform, period)
-	checkStats, _ := s.svc.Store.StatementCheckStats(ctx, platform, period)
-	hasChecks, _ := s.svc.Store.HasStatementChecks(ctx, platform, period)
+	var checks []model.EcStatementCheck
+	checkStats := map[string]int{}
+	hasChecks := false
+	for _, p := range sel {
+		cs, _ := s.svc.Store.StatementChecks(ctx, platform, p)
+		checks = append(checks, cs...)
+		st, _ := s.svc.Store.StatementCheckStats(ctx, platform, p)
+		for k, v := range st {
+			checkStats[k] += v
+		}
+		if ok, _ := s.svc.Store.HasStatementChecks(ctx, platform, p); ok {
+			hasChecks = true
+		}
+	}
+	// 结算口径：多账期合并
+	settings, _ := s.svc.Store.Settings(ctx)
+	settle, err := s.svc.BuildSettlementFor(ctx, platform, sel, settings)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	_ = settle
 
 	detail := map[string][]model.EcStatementItem{}
 	for _, st := range statements {
-		list, err := s.svc.Store.StatementByKindRows(ctx, platform, period, st.Kind)
+		list, err := s.svc.Store.StatementByKindRows(ctx, platform, st.Period, st.Kind)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -331,25 +386,30 @@ func (s *Server) handleSettlement(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	period := fr.Str("period")
-	if period == "" && len(periods) > 0 {
-		period = periods[0]
-	}
+	// 账期支持多选：小平台两三个月结一次，得能把几个月合起来看
+	sel := selectedPeriods(r, periods, 1)
 	settings, _ := s.svc.Store.Settings(ctx)
-	rep, err := s.svc.BuildSettlement(ctx, platform, period, settings)
+	rep, err := s.svc.BuildSettlementFor(ctx, platform, sel, settings)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	rep.Products = service.MergeProducts(rep.Products)
+	period := ""
+	if len(sel) > 0 {
+		period = sel[0]
+	}
 
 	noCache(w)
 	page := s.newPage(r, "结算单", "settlement")
+	page["PeriodChips"] = periodChips(r, periods, sel, nil)
 	page["Platform"] = platform
 	page["PlatformLabel"] = model.EcPlatformLabel(platform)
 	page["PlatformOptions"] = model.EcPlatformOptions()
 	page["Periods"] = periods
+	page["SelectedPeriods"] = sel
 	page["Period"] = period
-	page["PeriodLabel"] = model.PeriodLabel(period)
+	page["PeriodLabel"] = periodLabelMulti(sel)
 	page["Rep"] = rep
 	page["Rates"] = rep.Rates
 	page["Kinds"] = model.StmtKinds
@@ -408,14 +468,47 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// 平台与账期都支持多选：淘宝按月做、小平台两三个月一次，
+	// 所以要能把"哪几个平台的哪几个月"自由组合起来汇总。
+	allPlatforms := model.EcPlatforms
+	selPlatforms := selectedValues(r, "platform", allPlatforms)
+	selSet := map[string]bool{}
+	for _, p := range selPlatforms {
+		selSet[p] = true
+	}
+	var periodAll []string
+	seenP := map[string]bool{}
+	for _, k := range keys {
+		if !seenP[k.Period] {
+			seenP[k.Period] = true
+			periodAll = append(periodAll, k.Period)
+		}
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(periodAll)))
+	selPeriods := selectedPeriods(r, periodAll, 0)
+	periodSet := map[string]bool{}
+	for _, p := range selPeriods {
+		periodSet[p] = true
+	}
+	var picked []store.StatementKey
+	for _, k := range keys {
+		if selSet[k.Platform] && periodSet[k.Period] {
+			picked = append(picked, k)
+		}
+	}
+
 	settings, _ := s.svc.Store.Settings(ctx)
-	rep, err := s.svc.BuildSummary(ctx, keys, settings)
+	rep, err := s.svc.BuildSummary(ctx, picked, settings)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	noCache(w)
 	page := s.newPage(r, "总对账单", "summary")
+	page["PlatformChips"] = valueChips(r, "platform", "平台", model.EcPlatformOptions(), selPlatforms)
+	page["PeriodChips2"] = periodChips(r, periodAll, selPeriods, nil)
+	page["Picked"] = picked
+	page["AllCount"] = len(keys)
 	page["Rep"] = rep
 	page["Rates"] = rep.Rates
 	page["Keys"] = keys
@@ -436,6 +529,8 @@ func (s *Server) handleSummaryExport(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, "/ecommerce/summary", err)
 		return
 	}
+	// 导出跟页面选择保持一致
+	keys = filterStatementKeys(r, keys)
 	settings, _ := s.svc.Store.Settings(ctx)
 	rep, err := s.svc.BuildSummary(ctx, keys, settings)
 	if err != nil {
@@ -554,6 +649,36 @@ func (s *Server) saveStatementGroupsSource(r *http.Request, platform, period, so
 				out = append(out, fmt.Sprintf("　对账校验 %s：一致 %d · 不一致 %d · 只在月度账单 %d · 只在对账中心 %d",
 					model.StmtKindLabel(k), same, diff, onlyP, onlyO))
 			}
+		}
+	}
+	return out
+}
+
+// filterStatementKeys 按 URL 上的平台与账期多选过滤账单。
+func filterStatementKeys(r *http.Request, keys []store.StatementKey) []store.StatementKey {
+	allPlatforms := model.EcPlatforms
+	selPlatforms := selectedValues(r, "platform", allPlatforms)
+	selSet := map[string]bool{}
+	for _, p := range selPlatforms {
+		selSet[p] = true
+	}
+	var periodAll []string
+	seen := map[string]bool{}
+	for _, k := range keys {
+		if !seen[k.Period] {
+			seen[k.Period] = true
+			periodAll = append(periodAll, k.Period)
+		}
+	}
+	selPeriods := selectedPeriods(r, periodAll, 0)
+	periodSet := map[string]bool{}
+	for _, p := range selPeriods {
+		periodSet[p] = true
+	}
+	var out []store.StatementKey
+	for _, k := range keys {
+		if selSet[k.Platform] && periodSet[k.Period] {
+			out = append(out, k)
 		}
 	}
 	return out

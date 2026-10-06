@@ -2044,3 +2044,30 @@ tr:nth-child(3) .rank-badge { background: var(--ice-100); border-color: var(--ic
   font-weight: 600;
   box-shadow: inset 2px 0 0 var(--ice-400);
 }
+
+/* 筛选条：可点选 chips + 全选/清空 */
+.filter-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  margin-bottom: 14px;
+}
+.filter-bar__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.filter-bar__title { font-size: 13px; font-weight: 600; color: var(--text-2); }
+.filter-bar__actions { margin-left: auto; display: flex; gap: 6px; }
+.filter-bar__chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.filter-bar__chips .chip { cursor: pointer; }
+.chip__count {
+  font-size: 10.5px;
+  opacity: .7;
+  font-variant-numeric: tabular-nums;
+}

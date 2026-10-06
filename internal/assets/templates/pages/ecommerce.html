@@ -19,6 +19,8 @@
 {{template "platform_bar" (dict "Platforms" .PlatformOptions "Current" .Platform
     "Base" "/ecommerce" "Hint" "不同平台的订单分开看")}}
 
+{{if .MonthChips.Chips}}{{template "filter_bar" .MonthChips}}{{end}}
+
 {{/* 汇总：只统计"有效"的行（交易关闭与退款成功的不算）。
      没绑定产品或没填电商成本的行单独提示，不混进毛利里。 */}}
 <div class="stat-grid">

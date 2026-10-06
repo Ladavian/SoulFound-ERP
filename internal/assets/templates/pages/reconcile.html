@@ -3,14 +3,15 @@
 {{/* x-data 放在最外层：导入按钮在页头、导入卡片在下面，两者是同级，
      放在卡片上按钮就点不动了。 */}}
 <div x-data="{ showImport: {{if .Statements}}false{{else}}true{{end}} }">
-{{/* 平台切换：不同平台各自一套账单，先在这里切 */}}
+{{/* 平台切换：不同平台各自一套账单 */}}
 <div class="card">
   <div class="card__body">
     {{template "platform_bar" (dict "Platforms" .PlatformOptions "Current" .Platform
-        "Base" "/ecommerce/reconcile" "Period" .Period
-        "Hint" "已跑通淘宝；其余平台接账单格式后逐个开放")}}
+        "Base" "/ecommerce/reconcile" "Hint" "先选平台，再选账期（账期可多选）")}}
   </div>
 </div>
+
+{{template "filter_bar" .PeriodChips}}
 
 <div class="page-head">
   <div>

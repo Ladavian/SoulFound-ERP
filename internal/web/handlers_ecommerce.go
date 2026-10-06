@@ -21,6 +21,10 @@ func (s *Server) handleEcommerce(w http.ResponseWriter, r *http.Request) {
 	if pageNo < 1 {
 		pageNo = 1
 	}
+	// 下单月份多选：订单列表按平台 + 月份筛选
+	months, _ := s.svc.Store.EcOrderMonths(ctx, platform)
+	monthCounts, _ := s.svc.Store.EcOrderMonthCounts(ctx, platform)
+	selMonths := selectedValues(r, "month", months)
 	base := store.EcOrderFilter{
 		Platform:  platform,
 		Status:    fr.Str("status"),
@@ -28,6 +32,7 @@ func (s *Server) handleEcommerce(w http.ResponseWriter, r *http.Request) {
 		From:      fr.Str("from"),
 		To:        fr.Str("to"),
 		Unmatched: fr.Str("unmatched") == "1",
+		Months:    selMonths,
 		Limit:     ecPageSize,
 	}
 	f := base
@@ -100,6 +105,24 @@ func (s *Server) handleEcommerce(w http.ResponseWriter, r *http.Request) {
 	page["PrevURL"] = withPage(r, pageNo-1)
 	page["NextURL"] = withPage(r, pageNo+1)
 	page["TotalPages"] = (total + ecPageSize - 1) / ecPageSize
+	// 月份 chips（多选）
+	monthChips := FilterBar{Title: "下单月份", Multi: true,
+		Hint: "可多选；不选则显示全部月份"}
+	for _, m := range months {
+		active := false
+		for _, x := range selMonths {
+			if x == m {
+				active = true
+			}
+		}
+		monthChips.Chips = append(monthChips.Chips, FilterChip{
+			Value: m, Label: m, Active: active,
+			Href: toggleQuery(r, "month", m, true), Count: monthCounts[m],
+		})
+	}
+	monthChips.AllHref = setQuery(r, "month", months)
+	monthChips.NoneHref = setQuery(r, "month", nil)
+	page["MonthChips"] = monthChips
 	page["Status"] = f.Status
 	page["Keyword"] = f.Keyword
 	page["From"] = f.From

@@ -89,7 +89,8 @@ type EcOrderFilter struct {
 	Keyword   string // 订单号 / 商品标题 / 买家留言
 	From      string
 	To        string
-	Unmatched bool // 只看还有未匹配商品的订单
+	Unmatched bool     // 只看还有未匹配商品的订单
+	Months    []string // 下单月份（YYYY-MM），多选
 	Limit     int
 	Offset    int
 }
@@ -121,6 +122,17 @@ func (f EcOrderFilter) where() (string, []any) {
 	if f.To != "" {
 		conds = append(conds, "date(o.created_at) <= ?")
 		args = append(args, f.To)
+	}
+	if len(f.Months) > 0 {
+		ph := make([]string, 0, len(f.Months))
+		args2 := make([]any, 0, len(f.Months))
+		for _, m := range f.Months {
+			// created_at 存的是 2026-08-11 10:00 这种格式，按月前缀匹配
+			ph = append(ph, "substr(o.created_at, 1, 7) = ?")
+			args2 = append(args2, m)
+		}
+		conds = append(conds, "("+strings.Join(ph, " OR ")+")")
+		args = append(args, args2...)
 	}
 	if f.Unmatched {
 		conds = append(conds, `EXISTS (SELECT 1 FROM ec_order_items i
@@ -657,4 +669,48 @@ func (s *Store) CountEcUnmatched(ctx context.Context, platform string) (int, err
 		`SELECT COUNT(*) FROM ec_order_items WHERE product_id IS NULL AND platform = ?`,
 		platform).Scan(&n)
 	return n, err
+}
+
+// EcOrderMonths 订单里出现过的下单月份（倒序），供筛选 chips 用。
+func (s *Store) EcOrderMonths(ctx context.Context, platform string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT DISTINCT substr(created_at, 1, 7) AS m FROM ec_orders
+		  WHERE platform = ? AND created_at <> ''
+		  ORDER BY m DESC`, platform)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var m string
+		if err := rows.Scan(&m); err != nil {
+			return nil, err
+		}
+		if m != "" {
+			out = append(out, m)
+		}
+	}
+	return out, rows.Err()
+}
+
+// EcOrderMonthCounts 每个月的订单数。
+func (s *Store) EcOrderMonthCounts(ctx context.Context, platform string) (map[string]int, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT substr(created_at, 1, 7) AS m, COUNT(*) FROM ec_orders
+		  WHERE platform = ? AND created_at <> '' GROUP BY m`, platform)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var m string
+		var n int
+		if err := rows.Scan(&m, &n); err != nil {
+			return nil, err
+		}
+		out[m] = n
+	}
+	return out, rows.Err()
 }

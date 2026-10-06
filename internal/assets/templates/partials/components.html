@@ -59,3 +59,25 @@
   {{if .Hint}}<span class="tiny muted" style="margin-left:8px">{{.Hint}}</span>{{end}}
 </div>
 {{end}}
+
+{{/* 筛选条：可点选 chips + 全选/清空。
+     data--stack 无关，纯链接实现，不依赖 JS，地址栏可收藏可分享。 */}}
+{{define "filter_bar"}}
+<div class="filter-bar">
+  <div class="filter-bar__head">
+    <span class="filter-bar__title">{{.Title}}</span>
+    {{if .Hint}}<span class="tiny muted">{{.Hint}}</span>{{end}}
+    <span class="filter-bar__actions">
+      <a class="btn btn--sm btn--ghost" href="{{.AllHref}}">全选</a>
+      <a class="btn btn--sm btn--ghost" href="{{.NoneHref}}">清空</a>
+    </span>
+  </div>
+  <div class="filter-bar__chips">
+    {{range .Chips}}
+    <a class="chip{{if .Active}} is-active{{end}}" href="{{.Href}}">
+      {{if .Active}}✓ {{end}}{{.Label}}{{if gt .Count 0}} <span class="chip__count">{{.Count}}</span>{{end}}
+    </a>
+    {{end}}
+  </div>
+</div>
+{{end}}

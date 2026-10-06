@@ -7,7 +7,16 @@
     <h1 class="page-head__title">总对账单</h1>
     <div class="page-head__sub">
       各平台各自的账期汇总在一起 · 共 {{len $rep.Items}} 份账单
-      {{if not $rep.Items}}· 还没有导入过平台账单{{end}}
+      {{/* 筛选：平台与账期都可多选，自由组合要汇总的范围 */}}
+{{template "filter_bar" .PlatformChips}}
+{{template "filter_bar" .PeriodChips2}}
+{{if .AllCount}}
+<div class="tiny muted" style="margin:-6px 0 12px">
+  已导入 {{.AllCount}} 份账单，当前选中 {{len .Picked}} 份参与汇总与导出。
+</div>
+{{end}}
+
+{{if not $rep.Items}}· 还没有导入过平台账单{{end}}
     </div>
   </div>
   <div class="page-head__actions">

@@ -12,7 +12,9 @@ import (
 // SettlementReport 一个账期的完整结算报表。
 type SettlementReport struct {
 	Platform  string
-	Period    string
+	Period    string        // 首个（最新）账期，展示用
+	Periods2  []string      // 选中的全部账期
+	Periods   []PeriodSlice // 逐账期小计
 	Rates     model.VatRates
 	Total     model.Settlement
 	Orders    []SettlementOrderRow
@@ -383,4 +385,69 @@ func (s *Service) SaveStatementChecks(ctx context.Context, checks []model.EcStat
 		return s.Store.ReplaceStatementChecks(ctx, tx,
 			checks[0].Platform, checks[0].Period, checks[0].Kind, checks)
 	})
+}
+
+// ---------------------------------------------------------------- 多账期合并
+
+// BuildSettlementFor 把同一个平台选中的多个账期合并成一张结算单。
+//
+// 小平台两三个月才结一次账，看单月没意义；淘宝按月做，
+// 但有时也要跨月看。所以这里按账期逐个算再合并，
+// 同时留下逐月的明细，界面上既能看合并数也能看每月数。
+func (s *Service) BuildSettlementFor(ctx context.Context, platform string, periods []string, settings *model.Settings) (*SettlementReport, error) {
+	if len(periods) == 0 {
+		return s.BuildSettlement(ctx, platform, "", settings)
+	}
+	merged := &SettlementReport{
+		Platform:  platform,
+		Period:    periods[0],
+		Rates:     VatRatesFromSettings(settings),
+		FeeByKind: map[string]model.Money{},
+	}
+	for _, p := range periods {
+		one, err := s.BuildSettlement(ctx, platform, p, settings)
+		if err != nil {
+			return nil, err
+		}
+		merged.Periods = append(merged.Periods, PeriodSlice{Period: p, Total: one.Total, FeeByKind: one.FeeByKind})
+		merged.Orders = append(merged.Orders, one.Orders...)
+		merged.Products = append(merged.Products, one.Products...)
+		merged.Total.Add(one.Total)
+		// Total.Add 只累加金额，平台费用单独合并（Add 也累加了 PlatformFee，
+		// 但合并口径要保证两项都在）
+		merged.Total.PlatformFee += one.Total.PlatformFee
+		merged.Total.CreditableFee += one.Total.CreditableFee
+		merged.FeeRows += one.FeeRows
+		for k, v := range one.FeeByKind {
+			merged.FeeByKind[k] += v
+		}
+	}
+	merged.Periods2 = periods
+	return merged, nil
+}
+
+// PeriodSlice 单个账期的结算小计。
+type PeriodSlice struct {
+	Period    string
+	Total     model.Settlement
+	FeeByKind map[string]model.Money
+}
+
+// MergeProducts 把按商品汇总的多账期行按产品合并。
+func MergeProducts(rows []SettlementProductRow) []SettlementProductRow {
+	seen := map[string]int{}
+	out := make([]SettlementProductRow, 0, len(rows))
+	for _, r := range rows {
+		key := r.Name
+		if i, ok := seen[key]; ok {
+			out[i].S.Qty += r.S.Qty
+			out[i].S.Revenue += r.S.Revenue
+			out[i].S.Goods += r.S.Goods
+			out[i].S.Cost += r.S.Cost
+			continue
+		}
+		seen[key] = len(out)
+		out = append(out, r)
+	}
+	return out
 }
