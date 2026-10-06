@@ -458,7 +458,11 @@ func (s *Store) StatementSettlementProducts(ctx context.Context, platform, perio
 		  FROM ec_statement_items si
 		  `+statementOrderJoin+`
 		 WHERE si.platform = ? AND si.period = ? AND si.kind = ?
-		 GROUP BY COALESCE(CAST(oi.product_id AS TEXT), ''), si.ec_product_id, COALESCE(p.name, '')
+		 -- 按产品合并：同一个产品可能绑了多个平台商品ID
+		 -- （同一平台多个链接、或跨平台），它们是同一个产品，
+		 -- 汇总时必须合成一行，否则同一款酒会被拆成好几行。
+		 -- 未绑定产品时才退回按商品ID 分组。
+		 GROUP BY COALESCE(CAST(oi.product_id AS TEXT), 'ec:' || si.ec_product_id)
 		 ORDER BY SUM(si.amount) DESC`, platform, period, model.StmtGoodsPayment)
 	if err != nil {
 		return nil, err

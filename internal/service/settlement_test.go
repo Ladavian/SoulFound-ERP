@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"icewine-erp/internal/model"
+	"icewine-erp/internal/store"
 )
 
 // TestSettlementCostNotDuplicated 供货成本只能按商品数量算一次。
@@ -270,5 +271,114 @@ func TestShippingNotInVatCredit(t *testing.T) {
 	net := total.Net(rep.Rates).Float()
 	if net < 503.3 || net > 503.5 {
 		t.Errorf("应结金额应约 503.40，实际 %.2f", net)
+	}
+}
+
+// TestOneProductManyEcIDs 同一个产品可以绑多个平台商品ID。
+//
+// 用户的实际场景：一个产品在淘宝有多个链接（不同标题、不同活动），
+// 它们是同一个产品。要求：
+//   - 同一平台的多个商品ID 都能绑到同一个产品
+//   - 各链接的订单都归到这一个产品，收入与成本合并计算
+//   - 同一个商品ID（含规格）不能被两个产品同时占用（唯一的限制）
+func TestOneProductManyEcIDs(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+	admin := adminUser(t, svc)
+
+	pid, err := svc.Store.CreateProduct(ctx, &model.Product{
+		SKU: "P-MULTI", Name: "同一产品", Unit: "瓶", IsActive: true, IsWine: true,
+		EcCost: model.MustMoney("140"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 同一平台两个商品ID + 另一个平台一个
+	for _, l := range []struct{ platform, ecID string }{
+		{model.EcTaobao, "TB-A"},
+		{model.EcTaobao, "TB-B"},
+		{model.EcDouyin, "DY-C"},
+	} {
+		if _, err := svc.BindEcLink(ctx, l.platform, l.ecID, "", "", pid, admin); err != nil {
+			t.Fatalf("绑 %s/%s 失败: %v", l.platform, l.ecID, err)
+		}
+	}
+	links, _ := svc.Store.ProductLinks(ctx, pid)
+	if len(links) != 3 {
+		t.Fatalf("一个产品应能绑 3 条（同平台两条 + 别的平台一条），实际 %d", len(links))
+	}
+
+	// 两个商品ID 各来一单
+	rows := []EcOrderRow{
+		{OrderNo: "O-A", SubOrderNo: "O-A", Title: "同一产品", EcProductID: "TB-A",
+			Qty: "2", PaidAmt: "600", ItemStatus: "交易成功",
+			RefundStatus: "没有申请退款", CreatedAt: "2026-08-10 10:00"},
+		{OrderNo: "O-B", SubOrderNo: "O-B", Title: "同一产品", EcProductID: "TB-B",
+			Qty: "3", PaidAmt: "900", ItemStatus: "交易成功",
+			RefundStatus: "没有申请退款", CreatedAt: "2026-08-11 10:00"},
+	}
+	if _, err := svc.ImportEcOrders(ctx, model.EcTaobao, rows, admin); err != nil {
+		t.Fatal(err)
+	}
+	// 两单都要匹配到同一个产品
+	orders, _ := svc.Store.ListEcOrders(ctx, store.EcOrderFilter{Platform: model.EcTaobao})
+	matched := 0
+	for _, o := range orders {
+		for _, it := range o.Items {
+			if it.ProductID != nil && *it.ProductID == pid {
+				matched++
+			}
+		}
+	}
+	if matched != 2 {
+		t.Fatalf("两个商品ID 的订单都应匹配到同一个产品，实际匹配 %d", matched)
+	}
+
+	// 账单：一份交易货款，两行（两个商品ID）
+	items := []model.EcStatementItem{
+		{Period: "202608", Kind: model.StmtGoodsPayment, Direction: "income",
+			OrderNo: "O-A", SubOrderNo: "O-A", EcProductID: "TB-A",
+			Qty: model.MustQty("2"), Amount: model.MustMoney("600")},
+		{Period: "202608", Kind: model.StmtGoodsPayment, Direction: "income",
+			OrderNo: "O-B", SubOrderNo: "O-B", EcProductID: "TB-B",
+			Qty: model.MustQty("3"), Amount: model.MustMoney("900")},
+	}
+	if err := svc.ImportStatement(ctx, &model.EcStatement{
+		Platform: model.EcTaobao, Period: "202608", Kind: model.StmtGoodsPayment,
+		Source: model.StmtSourceBill, Direction: "income"}, items, admin); err != nil {
+		t.Fatal(err)
+	}
+
+	settings, _ := svc.Store.Settings(ctx)
+	rep, err := svc.BuildSettlement(ctx, model.EcTaobao, "202608", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	total := rep.Total
+	// 收入 600+900；成本 (2+3)×140 = 700；数量 5
+	if total.Revenue != model.MustMoney("1500") {
+		t.Errorf("销售收入应为 1500（两个链接合并），实际 %s", total.Revenue)
+	}
+	if total.Cost != model.MustMoney("700") {
+		t.Errorf("供货成本应为 700（两个链接的瓶数一起算），实际 %s", total.Cost)
+	}
+	if total.Qty != model.MustQty("5") {
+		t.Errorf("数量应为 5，实际 %s", total.Qty)
+	}
+	// 按商品汇总里也应只有一行、且是合并后的数
+	if len(rep.Products) != 1 {
+		t.Fatalf("按商品汇总应合并成 1 行，实际 %d 行", len(rep.Products))
+	}
+	if rep.Products[0].S.Cost != model.MustMoney("700") ||
+		rep.Products[0].S.Revenue != model.MustMoney("1500") {
+		t.Errorf("按商品汇总应合并两个链接：成本 700 / 收入 1500，实际 %s / %s",
+			rep.Products[0].S.Cost, rep.Products[0].S.Revenue)
+	}
+
+	// 唯一的限制：同一个商品ID 不能再绑给别的产品
+	other, _ := svc.Store.CreateProduct(ctx, &model.Product{
+		SKU: "P-OTHER", Name: "另一个产品", Unit: "瓶", IsActive: true, IsWine: true})
+	if _, err := svc.BindEcLink(ctx, model.EcTaobao, "TB-A", "", "", other, admin); err == nil {
+		t.Error("同一个商品ID 绑给第二个产品时应被拒绝")
 	}
 }
