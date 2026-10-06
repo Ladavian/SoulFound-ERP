@@ -726,3 +726,14 @@ func TestNoPoolCallsInsideTx(t *testing.T) {
 	}
 	t.Logf("已检查 %d 个事务闭包", checked)
 }
+
+// stockIn 测试用：登记一笔入库（期初建账）。
+func stockIn(t *testing.T, svc *Service, user *model.User, productID int64, qty, cost string) {
+	t.Helper()
+	if err := svc.AdjustStock(context.Background(), AdjustInput{
+		ProductID: productID, Reason: model.ReasonOpening,
+		Qty: model.MustQty(qty), UnitCost: model.MustMoney(cost), OccurredOn: "2026-01-01",
+	}, user); err != nil {
+		t.Fatalf("入库失败: %v", err)
+	}
+}

@@ -1906,3 +1906,13 @@ tr:nth-child(3) .rank-badge { background: var(--ice-100); border-color: var(--ic
   background: var(--surface);
 }
 .hint-fold__body a { color: var(--brand-600); }
+
+/* 虚拟组套：组成产品 + 用量 */
+.bundle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.bundle-row .select { flex: 1 1 auto; min-width: 0; }
+.bundle-row .input--num { flex: 0 0 92px; }

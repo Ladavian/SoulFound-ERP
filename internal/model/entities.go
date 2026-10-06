@@ -7,6 +7,17 @@ import (
 	"time"
 )
 
+// EcCostOrAvg 算电商毛利时的成本单价：优先电商成本，没填才退回平均成本。
+func (p Product) EcCostOrAvg() Money {
+	if p.EcCost > 0 {
+		return p.EcCost
+	}
+	return p.AvgCost
+}
+
+// HasEcCost 是否填过电商成本。
+func (p Product) HasEcCost() bool { return p.EcCost > 0 }
+
 // Option 下拉框选项。
 type Option struct {
 	Value string
@@ -164,6 +175,14 @@ type Product struct {
 	ImageURL       string
 	Notes          string
 	IsActive       bool
+
+	// 电商平台字段：
+	// EcProductID 是平台上的商品ID，订单导入时靠它把平台商品对到 ERP 产品；
+	// EcCost 是电商口径的成本单价（平台扣点、活动价、赠品摊薄跟市场不一样），
+	// 算电商毛利时优先用它。
+	EcProductID string
+	EcSKUId     string
+	EcCost      Money
 
 	StockQty   Qty
 	AvgCost    Money

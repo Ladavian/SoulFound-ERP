@@ -311,6 +311,10 @@ func (s *Server) routes() {
 	m.Handle("GET /more", s.guard("", s.handleMore))
 	// 电商平台账单：入口先占住（菜单里标"规划中"），功能后续接入
 	m.Handle("GET /ecommerce", s.guard("", s.handleEcommerce))
+	m.Handle("GET /ecommerce/orders/{id}", s.guard("", s.handleEcOrderDetail))
+	m.Handle("POST /ecommerce/bind", s.guard(PermProductManage, s.handleEcBind))
+	m.Handle("POST /ecommerce/bind-item", s.guard(PermProductManage, s.handleEcBindItem))
+	m.Handle("POST /import/ec-orders", s.guard(PermProductManage, s.handleImportEcOrders))
 
 	// 产品
 	m.Handle("GET /products", s.guard(PermProductView, s.handleProductList))

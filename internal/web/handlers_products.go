@@ -26,6 +26,19 @@ func pathID(r *http.Request, name string) int64 {
 	return n
 }
 
+// formID 读取表单字段里的 ID（可能是 multipart，先解析）。
+func formID(r *http.Request, name string) int64 {
+	raw := strings.TrimSpace(r.FormValue(name))
+	if raw == "" {
+		return 0
+	}
+	n, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
+}
+
 // at 安全取列表元素。
 func at(list []string, i int) string {
 	if i < 0 || i >= len(list) {
@@ -205,6 +218,9 @@ func (s *Server) handleProductSave(w http.ResponseWriter, r *http.Request) {
 		SupplierID:     f.OptionalID("supplier_id"),
 		Barcode:        f.Str("barcode"),
 		ImageURL:       f.Str("image_url"),
+		EcProductID:    strings.TrimSpace(f.Str("ec_product_id")),
+		EcSKUId:        strings.TrimSpace(f.Str("ec_sku_id")),
+		EcCost:         f.Money("ec_cost", "电商成本"),
 		Notes:          f.Str("notes"),
 		IsActive:       f.Bool("is_active"),
 	}
@@ -258,6 +274,10 @@ func (s *Server) handleProductSave(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, r, fallback, err)
 			return
 		}
+		if err := s.svc.SaveBundles(ctx, id, s.parseBundles(r, id), userFrom(r)); err != nil {
+			s.fail(w, r, fallback, err)
+			return
+		}
 		s.logAction(r, "修改产品", "product", &id, product.SKU+" "+product.Name)
 		if !ok {
 			s.fail(w, r, fallback, service.UserErrf("%s（产品其它信息已保存）", note))
@@ -276,6 +296,10 @@ func (s *Server) handleProductSave(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, fallback, err)
 		return
 	}
+	if err := s.svc.SaveBundles(ctx, newID, s.parseBundles(r, newID), userFrom(r)); err != nil {
+		s.fail(w, r, fallback, service.UserErrf("产品已创建，但组套保存失败：%v", err))
+		return
+	}
 	s.logAction(r, "新建产品", "product", &newID, product.SKU+" "+product.Name)
 	// 新建时是先有产品 ID 才能存图片，没有旧文件需要清理
 	note, ok := s.applyProductImage(r, newID)
@@ -288,6 +312,33 @@ func (s *Server) handleProductSave(w http.ResponseWriter, r *http.Request) {
 		msg += "，" + note
 	}
 	s.ok(w, r, "/products/"+strconv.FormatInt(newID, 10), msg)
+}
+
+// parseBundles 解析表单里的组套组成。
+//
+// 表单用两个同名列表（bundle_component_id / bundle_qty）按顺序对齐，
+// 空行与重复项直接跳过。
+func (s *Server) parseBundles(r *http.Request, productID int64) []model.ProductBundle {
+	_ = r.ParseMultipartForm(8 << 20)
+	ids := r.Form["bundle_component_id"]
+	qtys := r.Form["bundle_qty"]
+	var out []model.ProductBundle
+	seen := map[int64]bool{}
+	for i, raw := range ids {
+		cid, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+		if err != nil || cid <= 0 || cid == productID || seen[cid] {
+			continue
+		}
+		seen[cid] = true
+		qty := model.MustQty("1")
+		if i < len(qtys) {
+			if v, err := model.ParseQty(strings.TrimSpace(qtys[i])); err == nil && v > 0 {
+				qty = v
+			}
+		}
+		out = append(out, model.ProductBundle{ComponentID: cid, Qty: qty})
+	}
+	return out
 }
 
 // imageTouched 本次提交是否动过图片（选了新文件或勾了删除）。

@@ -10,6 +10,7 @@ import (
 
 	"github.com/xuri/excelize/v2"
 
+	"icewine-erp/internal/model"
 	"icewine-erp/internal/service"
 )
 
@@ -273,4 +274,100 @@ func (s *Server) importDone(w http.ResponseWriter, r *http.Request, label string
 	if err := s.rnd.Render(w, "import", page); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+// ---------------------------------------------------------------- 淘宝订单导入
+
+// taobaoOrderRow 把一行表格映射成订单明细。
+//
+// 列名按淘宝"导出订单列表"的实际表头来，同时留几个常见别名，
+// 平台改版或换导出模板时不至于整列读不到。
+func taobaoOrderRow(sh importSheet, row []string) service.EcOrderRow {
+	return service.EcOrderRow{
+		SubOrderNo:   sh.cell(row, "子订单编号", "子订单号"),
+		OrderNo:      sh.cell(row, "主订单编号", "主订单号", "订单编号", "订单号"),
+		Title:        sh.cell(row, "商品标题", "宝贝标题", "商品名称"),
+		EcProductID:  sh.cell(row, "商品ID", "宝贝ID", "商品id"),
+		EcSKU:        sh.cell(row, "商品属性", "规格", "销售属性", "SKU属性"),
+		MerchantCode: sh.cell(row, "商家编码", "外部系统编号", "商家sku编码", "货号"),
+		Qty:          sh.cell(row, "购买数量", "数量", "商品数量"),
+		UnitPrice:    sh.cell(row, "商品价格", "单价", "宝贝价格"),
+		PayableAmt:   sh.cell(row, "买家应付货款", "应付货款", "应付金额"),
+		PaidAmt:      sh.cell(row, "买家实付金额", "实付金额", "买家实付"),
+		RefundStatus: sh.cell(row, "退款状态"),
+		RefundAmt:    sh.cell(row, "退款金额"),
+		ItemStatus:   sh.cell(row, "订单状态", "子订单状态"),
+		CreatedAt:    sh.cell(row, "订单创建时间", "创建时间"),
+		PaidAt:       sh.cell(row, "订单付款时间", "付款时间"),
+		ShippedAt:    sh.cell(row, "发货时间"),
+		LogisticsNo:  sh.cell(row, "物流单号", "运单号"),
+		LogisticsCo:  sh.cell(row, "物流公司", "快递公司"),
+		SellerNote:   sh.cell(row, "商家备注", "卖家备注"),
+		BuyerNote:    sh.cell(row, "主订单买家留言", "买家留言", "买家备注"),
+	}
+}
+
+// handleImportEcOrders 导入平台订单明细。
+func (s *Server) handleImportEcOrders(w http.ResponseWriter, r *http.Request) {
+	platform := strings.TrimSpace(r.FormValue("platform"))
+	if platform == "" {
+		platform = model.EcTaobao
+	}
+	sh, ok := importUpload(w, r)
+	if !ok {
+		return
+	}
+	rows := make([]service.EcOrderRow, 0, len(sh.Rows))
+	for _, row := range sh.Rows {
+		rows = append(rows, taobaoOrderRow(sh, row))
+	}
+	summary, err := s.svc.ImportEcOrders(r.Context(), platform, rows, userFrom(r))
+	if err != nil {
+		s.fail(w, r, "/ecommerce", err)
+		return
+	}
+	msg := fmt.Sprintf("导入完成：%d 张订单 / %d 行明细", summary.Orders+summary.OrdersUpd, summary.Items)
+	if summary.Unmatched > 0 {
+		msg += fmt.Sprintf("；还有 %d 种商品没绑定产品，请在下方绑定", len(summary.UnmatchedEc))
+	}
+	if len(summary.Errors) > 0 {
+		msg += fmt.Sprintf("；%d 行有问题（%s）", len(summary.Errors), summary.Errors[0])
+	}
+	s.ok(w, r, "/ecommerce", msg)
+}
+
+// handleEcBind 把电商商品ID 绑到 ERP 产品。
+func (s *Server) handleEcBind(w http.ResponseWriter, r *http.Request) {
+	ecID := strings.TrimSpace(r.FormValue("ec_product_id"))
+	productID := formID(r, "product_id")
+	if productID <= 0 {
+		s.fail(w, r, "/ecommerce", service.UserErrf("请选择要绑定的产品"))
+		return
+	}
+	fixed, err := s.svc.BindEcProduct(r.Context(), ecID, productID, userFrom(r))
+	if err != nil {
+		s.fail(w, r, "/ecommerce", err)
+		return
+	}
+	msg := "绑定成功，之后这个商品ID 的订单会自动对上"
+	if fixed > 0 {
+		msg += fmt.Sprintf("；顺带补齐了 %d 行历史订单明细", fixed)
+	}
+	s.ok(w, r, "/ecommerce", msg)
+}
+
+// handleEcBindItem 单独绑一条订单明细（不回写产品档案）。
+func (s *Server) handleEcBindItem(w http.ResponseWriter, r *http.Request) {
+	itemID := formID(r, "item_id")
+	productID := formID(r, "product_id")
+	item, _ := s.svc.Store.EcItemByID(r.Context(), itemID)
+	back := "/ecommerce"
+	if item != nil {
+		back = fmt.Sprintf("/ecommerce/orders/%d", item.OrderID)
+	}
+	if err := s.svc.BindEcItem(r.Context(), itemID, productID, userFrom(r)); err != nil {
+		s.fail(w, r, back, err)
+		return
+	}
+	s.ok(w, r, back, "已绑定这一行（只影响这一行，产品的电商商品ID 未改动）")
 }

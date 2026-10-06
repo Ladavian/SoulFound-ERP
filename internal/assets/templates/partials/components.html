@@ -36,3 +36,13 @@
 {{define "purchase_status"}}{{if eq . "confirmed"}}<span class="badge badge--ok">已入库</span>{{else if eq . "void"}}<span class="badge badge--muted">已作废</span>{{else}}<span class="badge badge--warn">草稿</span>{{end}}{{end}}
 
 {{define "confirm_form"}}<form method="post" action="{{.Action}}" class="inline" onsubmit="return confirm('{{.Message}}')"><button class="btn {{.Class}}" type="submit">{{template "icon" .Icon}}<span>{{.Label}}</span></button></form>{{end}}
+
+{{/* 平台订单状态徽标 */}}
+{{define "ec_status"}}
+{{- if .}}
+  {{- if contains . "关闭"}}<span class="badge badge--muted">{{.}}</span>
+  {{- else if contains . "成功"}}<span class="badge badge--ok">{{.}}</span>
+  {{- else if contains . "已发货"}}<span class="badge badge--info">{{.}}</span>
+  {{- else}}<span class="badge">{{.}}</span>{{end}}
+{{- else}}<span class="muted">—</span>{{end}}
+{{end}}

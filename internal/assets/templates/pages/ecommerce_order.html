@@ -1,0 +1,121 @@
+{{define "content"}}
+{{$o := .Order}}
+<div class="page-head">
+  <div>
+    <h1 class="page-head__title">订单 {{$o.OrderNo}}</h1>
+    <div class="page-head__sub">
+      {{.PlatformLabel}} · 下单 {{default "—" $o.CreatedAt}}
+      {{if $o.ShippedAt}} · 发货 {{$o.ShippedAt}}{{end}}
+    </div>
+  </div>
+  <div class="page-head__actions">
+    <a class="btn" href="/ecommerce">{{template "icon" "arrow-left"}}<span>返回列表</span></a>
+  </div>
+</div>
+
+<div class="stat-grid">
+  <div class="stat">
+    <div class="stat__label">订单状态</div>
+    <div class="stat__value" style="font-size:18px">{{template "ec_status" $o.Status}}</div>
+    <div class="stat__hint">{{default "—" $o.RefundStatus}}</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">实收</div>
+    <div class="stat__value">{{money $o.NetTotal}}</div>
+    {{if $o.RefundTotal.IsPos}}
+    <div class="stat__hint">实付 {{money $o.PaidTotal}}，退款 {{money $o.RefundTotal}}</div>
+    {{else}}<div class="stat__hint">买家实付合计</div>{{end}}
+  </div>
+  <div class="stat">
+    <div class="stat__label">电商成本</div>
+    <div class="stat__value">{{money $o.CostTotal}}</div>
+    <div class="stat__hint">按产品档案的电商成本价</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">毛利</div>
+    <div class="stat__value {{if $o.Profit.IsNeg}}neg{{else}}pos{{end}}">{{money $o.Profit}}</div>
+    <div class="stat__hint">
+      {{if $o.HasMissingCost}}有商品未绑定或缺电商成本，毛利不完整
+      {{else}}毛利率 {{pct $o.Margin}}{{end}}
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__head">
+    <div class="card__title">商品明细<span class="card__sub">{{len $o.Items}} 个商品 · {{$o.QtyTotal}} 件</span></div>
+  </div>
+  <div class="card__body">
+    <div class="table-wrap">
+      <table class="data data--stack data--roomy">
+        <thead>
+          <tr>
+            <th>平台商品</th>
+            <th class="num">数量 / 单价</th>
+            <th class="num">实付</th>
+            <th class="num">成本 / 毛利</th>
+            <th>状态</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range $o.Items}}
+          <tr>
+            <td class="row-cell--main">
+              <div>{{.Title}}</div>
+              <div class="tiny muted">
+                商品ID <span class="mono">{{default "—" .EcProductID}}</span>
+                {{if .EcSKU}} · {{.EcSKU}}{{end}}
+                {{if .MerchantCode}} · 商家编码 {{.MerchantCode}}{{end}}
+              </div>
+            </td>
+            <td class="num" data-label="数量 / 单价">
+              <span class="cell-num">{{.Qty}}</span>
+              <div class="cell-sub">单价 {{money .UnitPrice}}</div>
+            </td>
+            <td class="num" data-label="实付">
+              <span class="cell-num">{{money .NetPaid}}</span>
+              {{if .RefundAmount.IsPos}}<div class="cell-sub neg">退款 {{money .RefundAmount}}</div>
+              {{else if .PayableAmount}}<div class="cell-sub">应付 {{money .PayableAmount}}</div>{{end}}
+            </td>
+            <td class="num" data-label="成本 / 毛利">
+              {{if .Matched}}
+                {{if .EcCost}}
+                <span class="cell-num">{{money .ItemCost}}</span>
+                <div class="cell-sub {{if .ItemProfit.IsNeg}}neg{{else}}pos{{end}}">毛利 {{money .ItemProfit}}</div>
+                {{else}}
+                <span class="warn">缺电商成本</span>
+                <div class="cell-sub"><a href="/products/{{deref .ProductID}}/edit">去产品档案填</a></div>
+                {{end}}
+              {{else}}
+              <form method="post" action="/ecommerce/bind-item" x-data>
+                <input type="hidden" name="item_id" value="{{.ID}}">
+                <select class="select" name="product_id" required>
+                  <option value="">— 选产品 —</option>
+                  {{range $.Products}}<option value="{{.ID}}">{{.Name}} · {{.SKU}}</option>{{end}}
+                </select>
+                <button class="btn btn--sm btn--primary" type="submit" style="margin-top:6px">绑这一行</button>
+              </form>
+              {{end}}
+            </td>
+            <td class="small text-2" data-label="状态">
+              {{template "ec_status" .ItemStatus}}
+              <div class="cell-sub">{{default "—" .RefundStatus}}</div>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{{if or $o.BuyerNote $o.SellerNote}}
+<div class="card">
+  <div class="card__head"><div class="card__title">留言与备注</div></div>
+  <div class="card__body">
+    {{if $o.BuyerNote}}<div><strong>买家留言</strong>：{{$o.BuyerNote}}</div>{{end}}
+    {{if $o.SellerNote}}<div style="margin-top:6px"><strong>商家备注</strong>：{{$o.SellerNote}}</div>{{end}}
+  </div>
+</div>
+{{end}}
+{{end}}

@@ -196,6 +196,81 @@ const migrationV10 = `
 ALTER TABLE group_order_items ADD COLUMN unit_cost INTEGER NOT NULL DEFAULT 0;
 `
 
+// migrationV11 电商订单导入。
+//
+// 平台订单要能对上 ERP 的商品，靠的是「电商商品ID」——
+// 淘宝导出的「商家编码」经常是空的（实测 91 行全空），
+// 只有商品ID 稳定，所以把它做成产品上的一个绑定字段。
+//
+// 电商成本单独一个字段：平台上卖的成本口径和市集、采购不一样
+// （平台扣点、活动价、赠品摊薄都在里面），不能和平均成本混用。
+//
+// 虚拟组套：平台上会卖「2瓶装」「A+B套装」，
+// 这类在 ERP 里没有实体库存，由若干产品组合而成，
+// 记在 product_bundles 里，算成本时按组成累加。
+const migrationV11 = `
+ALTER TABLE products ADD COLUMN ec_product_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE products ADD COLUMN ec_sku_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE products ADD COLUMN ec_cost INTEGER NOT NULL DEFAULT 0;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_products_ec_id
+    ON products(ec_product_id) WHERE ec_product_id <> '';
+CREATE INDEX IF NOT EXISTS idx_products_ec_sku
+    ON products(ec_sku_id) WHERE ec_sku_id <> '';
+
+CREATE TABLE IF NOT EXISTS product_bundles (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id   INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    component_id INTEGER NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
+    qty          INTEGER NOT NULL DEFAULT 1000,
+    sort_order   INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (product_id, component_id)
+);
+CREATE INDEX IF NOT EXISTS idx_bundles_product ON product_bundles(product_id, sort_order);
+
+CREATE TABLE IF NOT EXISTS ec_orders (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    platform      TEXT    NOT NULL DEFAULT 'taobao',
+    order_no      TEXT    NOT NULL,
+    status        TEXT    NOT NULL DEFAULT '',
+    refund_status TEXT    NOT NULL DEFAULT '',
+    created_at    TEXT    NOT NULL DEFAULT '',
+    paid_at       TEXT    NOT NULL DEFAULT '',
+    shipped_at    TEXT    NOT NULL DEFAULT '',
+    buyer_note    TEXT    NOT NULL DEFAULT '',
+    seller_note   TEXT    NOT NULL DEFAULT '',
+    imported_at   TEXT    NOT NULL DEFAULT '',
+    UNIQUE (platform, order_no)
+);
+CREATE INDEX IF NOT EXISTS idx_ec_orders_time ON ec_orders(created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_ec_orders_status ON ec_orders(status);
+
+CREATE TABLE IF NOT EXISTS ec_order_items (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id          INTEGER NOT NULL REFERENCES ec_orders(id) ON DELETE CASCADE,
+    platform          TEXT    NOT NULL DEFAULT 'taobao',
+    sub_order_no      TEXT    NOT NULL,
+    title             TEXT    NOT NULL DEFAULT '',
+    ec_product_id     TEXT    NOT NULL DEFAULT '',
+    ec_sku            TEXT    NOT NULL DEFAULT '',
+    merchant_code     TEXT    NOT NULL DEFAULT '',
+    qty               INTEGER NOT NULL DEFAULT 0,
+    unit_price        INTEGER NOT NULL DEFAULT 0,
+    payable_amount    INTEGER NOT NULL DEFAULT 0,
+    paid_amount       INTEGER NOT NULL DEFAULT 0,
+    refund_status     TEXT    NOT NULL DEFAULT '',
+    refund_amount     INTEGER NOT NULL DEFAULT 0,
+    item_status       TEXT    NOT NULL DEFAULT '',
+    logistics_no      TEXT    NOT NULL DEFAULT '',
+    logistics_company TEXT    NOT NULL DEFAULT '',
+    product_id        INTEGER REFERENCES products(id) ON DELETE SET NULL,
+    imported_at       TEXT    NOT NULL DEFAULT '',
+    UNIQUE (platform, sub_order_no)
+);
+CREATE INDEX IF NOT EXISTS idx_ec_items_order   ON ec_order_items(order_id);
+CREATE INDEX IF NOT EXISTS idx_ec_items_product ON ec_order_items(product_id);
+CREATE INDEX IF NOT EXISTS idx_ec_items_ecid    ON ec_order_items(ec_product_id);
+`
+
 // migrations 按顺序执行的迁移脚本。新增结构或数据变更时在末尾追加一段 SQL，
 // 已执行过的版本不会重复执行（版本号记录在 schema_meta 表）。
 var migrations = []string{
@@ -209,4 +284,5 @@ var migrations = []string{
 	migrationV8,
 	migrationV9,
 	migrationV10,
+	migrationV11,
 }

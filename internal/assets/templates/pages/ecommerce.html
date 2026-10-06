@@ -1,59 +1,254 @@
 {{define "content"}}
 <div class="page-head">
-  <div class="page-head__main">
-    <div class="page-head__title">电商平台账单</div>
-    <div class="page-head__meta">
-      <span>位置已预留，功能开发中</span>
-      <span class="badge badge--warn">规划中</span>
+  <div>
+    <h1 class="page-head__title">电商平台账单</h1>
+    <div class="page-head__sub">
+      先把平台的订单明细导进来，绑定好商品，再来做对账单。
+      当前平台：<strong>{{.PlatformLabel}}</strong>
     </div>
+  </div>
+  {{if .UnmatchedLines}}
+  <div class="page-head__actions">
+    <a class="btn btn--primary" href="/ecommerce?unmatched=1">
+      {{template "icon" "alert"}}<span>处理待绑定（{{.UnmatchedLines}} 行）</span>
+    </a>
+  </div>
+  {{end}}
+</div>
+
+{{/* 汇总：只统计"有效"的行（交易关闭与退款成功的不算）。
+     没绑定产品或没填电商成本的行单独提示，不混进毛利里。 */}}
+<div class="stat-grid">
+  <div class="stat">
+    <div class="stat__label">有效订单行</div>
+    <div class="stat__value">{{.LineCount}}</div>
+    <div class="stat__hint">当前筛选结果内，关闭与退款成功的不计入</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">实收金额</div>
+    <div class="stat__value">{{money .Revenue}}</div>
+    <div class="stat__hint">买家实付合计，已扣退款</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">电商成本</div>
+    <div class="stat__value">{{money .Cost}}</div>
+    <div class="stat__hint">按产品档案里的「电商成本价」× 数量</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">毛利</div>
+    {{if .MissingCostAmount}}
+      {{/* 还有行没有成本时，不把它当 0 成本算成毛利，
+           否则毛利会虚高成全额收入；只报"能算准的那部分"。 */}}
+      <div class="stat__value {{if .Profit.IsNeg}}neg{{else}}pos{{end}}">{{money .Profit}}</div>
+      <div class="stat__hint warn">
+        仅含已绑商品且填了电商成本的 {{money .KnownRevenue}}；
+        另有 <strong>{{money .MissingCostAmount}}</strong> 还没成本，
+        补齐后毛利才会完整
+      </div>
+    {{else}}
+      <div class="stat__value {{if .Profit.IsNeg}}neg{{else}}pos{{end}}">{{money .Profit}}</div>
+      <div class="stat__hint">实收 − 电商成本</div>
+    {{end}}
   </div>
 </div>
 
-<div class="alert alert--info">
-  {{template "icon" "info"}}
-  <div class="alert__body">
-    这一块是给<strong>电商平台账单导入与对账</strong>预留的位置。
-    菜单里先占住入口，接入后不需要再调整菜单结构。
-  </div>
-</div>
-
-<div class="grid grid--2">
-  <div class="card">
-    <div class="card__head"><div class="card__title">接入后能做什么</div></div>
-    <div class="card__body">
-      <ul class="plan-list">
-        <li><strong>导入平台账单</strong>：把平台导出的结算单（Excel / CSV）直接上传，自动识别订单号、商品、数量、成交价、平台佣金与运费。</li>
-        <li><strong>自动匹配产品</strong>：按产品编码或条形码对上档案里的产品；对不上的会列出来手工指定，下次记住。</li>
-        <li><strong>按平台算收入与费用</strong>：平台佣金、支付手续费、推广费、退款分别归集，算出每个平台的净收入与毛利。</li>
-        <li><strong>对账差异提示</strong>：账单金额与系统记录不一致时直接标出来，不用自己一格一格核。</li>
-        <li><strong>与现有口径并存</strong>：市集、线下团单、电商三个渠道各自独立统计，也能合起来看总销售额。</li>
-      </ul>
+<div class="grid grid--sidebar">
+  <div>
+    {{/* 待绑定商品：导入后第一件事 */}}
+    {{if .Unmatched}}
+    <div class="card">
+      <div class="card__head">
+        <div class="card__title">
+          待绑定商品
+          <span class="card__sub">平台商品对上 ERP 产品才能算成本与毛利</span>
+        </div>
+        <div class="card__actions">
+          <span class="badge badge--warn">{{.UnmatchedLines}} 行待处理</span>
+        </div>
+      </div>
+      <div class="card__body">
+        <div class="tiny muted" style="margin-bottom:10px">
+          平台的<strong>商家编码是空的</strong>，所以靠「商品ID」绑定。
+          在这里绑一次，会写进产品档案的「电商商品ID」，
+          下次导入自动对上，历史未匹配的订单行也会一起补齐。
+        </div>
+        {{range .Unmatched}}
+        <form class="bind-row" method="post" action="/ecommerce/bind">
+          <input type="hidden" name="ec_product_id" value="{{.EcProductID}}">
+          <div class="bind-row__info">
+            <div class="strong">{{default "（无商品ID）" .EcProductID}}</div>
+            <div class="tiny muted">{{.Title}}</div>
+            <div class="tiny muted">
+              {{if .EcSKU}}规格 {{.EcSKU}} · {{end}}共 {{.Orders}} 单 · {{.Qty}} 件
+            </div>
+          </div>
+          <div class="bind-row__pick">
+            <select class="select" name="product_id" required>
+              <option value="">— 选择 ERP 产品 —</option>
+              {{range $.ProductOptions}}
+              <option value="{{.id}}">{{.label}}{{if .ec}}（已绑 {{.ec}}）{{end}}</option>
+              {{end}}
+            </select>
+            <button class="btn btn--primary" type="submit">绑定</button>
+          </div>
+        </form>
+        {{end}}
+      </div>
     </div>
-  </div>
+    {{end}}
 
-  <div class="card">
-    <div class="card__head"><div class="card__title">需要你提供的信息</div></div>
-    <div class="card__body">
-      <div class="small text-2" style="line-height:1.9">
-        接入前我需要知道这几件事，你说清楚我就能一次做对：<br>
-        1. 平台有哪些（例如淘宝 / 抖音 / 小红书 / 微信小商店）？<br>
-        2. 每个平台导出的账单长什么样（把导出的表格发我最好）？<br>
-        3. 平台佣金、手续费是账单里直接给出的，还是要按比例算？<br>
-        4. 电商的货是从本系统仓库发，还是也从大仓发？（决定要不要扣库存）
+    <div class="card" x-data="{ exporting: {{if .Orders}}false{{else}}true{{end}} }">
+      <div class="card__head">
+        <div class="card__title">
+          订单明细
+          <span class="card__sub">共 {{.Total}} 张订单</span>
+        </div>
+        <div class="card__actions">
+          <button class="btn btn--sm" type="button" @click="exporting = !exporting">
+            {{template "icon" "download"}}<span>导入新订单</span>
+          </button>
+        </div>
+      </div>
+      <div class="card__body">
+        <form class="import-form" x-show="exporting" x-cloak
+              method="post" action="/import/ec-orders" enctype="multipart/form-data">
+          <input type="hidden" name="platform" value="{{.Platform}}">
+          <div class="field">
+            <label class="field__label" for="ec-file">平台导出的订单表格</label>
+            <input class="input" id="ec-file" name="file" type="file" accept=".xlsx,.xlsm,.csv" required>
+            <div class="field__hint">
+              淘宝：卖家中心 → 已卖出的宝贝 → 导出订单（.xlsx 直接传）。
+              重复导入同一份文件不会产生重复数据；
+              已经手工绑好的商品不会被覆盖。
+            </div>
+          </div>
+          <button class="btn btn--primary" type="submit">
+            {{template "icon" "upload"}}<span>开始导入</span>
+          </button>
+        </form>
+
+        <form class="filters" method="get" action="/ecommerce" x-data="{ more: false }">
+          <input type="hidden" name="platform" value="{{.Platform}}">
+          <div class="field field--wide">
+            <label class="field__label" for="q">搜索</label>
+            <input class="input" id="q" name="q" type="search" value="{{.Keyword}}"
+                   placeholder="订单号、商品标题、商品ID 或留言">
+          </div>
+          <button class="btn filters__toggle" type="button" @click="more = !more" :aria-expanded="more">
+            {{template "icon" "filter"}}<span x-text="more ? '收起条件' : '筛选条件'">筛选条件</span>
+          </button>
+          <button class="btn btn--primary filters__submit" type="submit">
+            {{template "icon" "search"}}<span>筛选</span>
+          </button>
+          <div class="filters__more" :class="more ? 'is-open' : ''">
+            <div class="field">
+              <label class="field__label" for="status">订单状态</label>
+              <select class="select" id="status" name="status">
+                <option value="">— 全部 —</option>
+                {{range .Statuses}}<option value="{{.Value}}"{{if eq .Value $.Status}} selected{{end}}>{{.Label}}</option>{{end}}
+              </select>
+            </div>
+            <div class="field">
+              <label class="field__label" for="from">下单起</label>
+              <input class="input" id="from" name="from" type="date" value="{{.From}}">
+            </div>
+            <div class="field">
+              <label class="field__label" for="to">下单止</label>
+              <input class="input" id="to" name="to" type="date" value="{{.To}}">
+            </div>
+            <div class="field">
+              <label class="field__label" for="unmatched">只看待绑定</label>
+              <select class="select" id="unmatched" name="unmatched">
+                <option value="">— 全部订单 —</option>
+                <option value="1"{{if .UnmatchedOnly}} selected{{end}}>只显示有待绑定商品的订单</option>
+              </select>
+            </div>
+            <div class="filters__more-actions">
+              <a class="btn" href="/ecommerce">重置条件</a>
+            </div>
+          </div>
+        </form>
+
+        {{if .Orders}}
+        <div class="table-wrap">
+          <table class="data data--stack data--roomy">
+            <thead>
+              <tr>
+                <th>订单</th>
+                <th>下单时间</th>
+                <th class="num">商品</th>
+                <th class="num">实收</th>
+                <th class="num">成本 / 毛利</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{range .Orders}}
+              <tr>
+                <td class="row-cell--main">
+                  <a class="strong mono" href="/ecommerce/orders/{{.ID}}">{{.OrderNo}}</a>
+                  <div class="cell-sub">
+                    {{template "ec_status" .Status}}
+                    {{if .UnmatchedCount}} <span class="badge badge--warn">{{.UnmatchedCount}} 行待绑定</span>{{end}}
+                  </div>
+                </td>
+                <td class="small text-2" data-label="下单时间">
+                  {{default "—" .CreatedAt}}
+                  {{if .IsShipped}}<div class="cell-sub">已发货</div>{{end}}
+                </td>
+                <td class="num" data-label="商品">
+                  <span class="cell-num">{{.QtyTotal}} 件</span>
+                  <div class="cell-sub">{{len .Items}} 个商品</div>
+                </td>
+                <td class="num" data-label="实收">
+                  <span class="cell-num">{{money .NetTotal}}</span>
+                  {{if .RefundTotal.IsPos}}
+                  <div class="cell-sub">退款 {{money .RefundTotal}}</div>
+                  {{end}}
+                </td>
+                <td class="num" data-label="成本 / 毛利">
+                  {{if .HasMissingCost}}
+                  <span class="muted">成本待补</span>
+                  <div class="cell-sub warn">有商品未绑定或缺电商成本</div>
+                  {{else}}
+                  <span class="cell-num">{{money .CostTotal}}</span>
+                  <div class="cell-sub {{if .Profit.IsNeg}}neg{{else}}pos{{end}}">毛利 {{money .Profit}}</div>
+                  {{end}}
+                </td>
+              </tr>
+              {{end}}
+            </tbody>
+          </table>
+        </div>
+        {{template "pager" (dict "Total" .Total "Page" .Page "TotalPages" .TotalPages
+            "HasPrev" .HasPrev "HasNext" .HasNext "PrevURL" .PrevURL "NextURL" .NextURL)}}
+        {{else}}
+        {{template "empty" (dict "Title" "还没有导入订单" "Text" "把淘宝导出的订单表格传上来，系统会按商品ID 自动对到 ERP 产品。")}}
+        {{end}}
       </div>
     </div>
   </div>
-</div>
 
-<div class="card">
-  <div class="card__head"><div class="card__title">现在可以先用的替代做法</div></div>
-  <div class="card__body">
-    <div class="small text-2" style="line-height:1.9">
-      • 电商销售如果<strong>从本仓库发货</strong>：用
-      <a href="/inventory/adjust">出入库登记</a> 选「销售出库」，填售价即可记录收入。<br>
-      • 电商销售如果<strong>从大仓发货、不进本系统库存</strong>：用
-      <a href="/group-orders">线下团单</a> 记录订单信息，不影响库存。<br>
-      • 需要看合计：<a href="/inventory">库存查询</a> 页有「本月直销出库」与「本月出库构成」。
+  <div>
+    <div class="card">
+      <div class="card__head"><div class="card__title">怎么走通</div></div>
+      <div class="card__body">
+        <ol class="plan-list">
+          <li><strong>导入订单</strong><span>传淘宝导出的表格，订单与明细入库</span></li>
+          <li><strong>绑定商品</strong><span>把平台商品ID 绑到 ERP 产品，写进产品档案</span></li>
+          <li><strong>补电商成本</strong><span>在产品档案里填「电商成本价」，与市集口径分开</span></li>
+          <li><strong>做对账单</strong><span>下一步按订单算实收、成本、毛利与平台费用</span></li>
+        </ol>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card__head"><div class="card__title">口径说明</div></div>
+      <div class="card__body tiny muted" style="line-height:1.75">
+        <p><strong>实收</strong>用「买家实付金额」，按行算，已扣退款成功的那部分。</p>
+        <p><strong>不计入</strong>：订单状态含「关闭」、退款状态为「退款成功」的行。</p>
+        <p><strong>成本</strong>只用产品档案里的<strong>电商成本价</strong>，
+           不会用库存的平均成本——平台有扣点、活动价和赠品，口径不同。</p>
+        <p><strong>组套</strong>（2瓶装、A+B套装）按组成产品的成本累加。</p>
+      </div>
     </div>
   </div>
 </div>

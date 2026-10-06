@@ -86,12 +86,3 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
-
-// handleEcommerce 电商平台账单（位置预留，功能开发中）。
-func (s *Server) handleEcommerce(w http.ResponseWriter, r *http.Request) {
-	noCache(w)
-	page := s.newPage(r, "电商平台账单", "ecommerce")
-	if err := s.rnd.Render(w, "ecommerce", page); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-}

@@ -174,6 +174,9 @@ func (m Money) IsZero() bool { return m == 0 }
 // IsNeg 是否为负。
 func (m Money) IsNeg() bool { return m < 0 }
 
+// IsPos 是否大于 0。
+func (m Money) IsPos() bool { return m > 0 }
+
 // ---------------------------------------------------------------- 运算
 
 func divRound(a, b int64) int64 {
@@ -195,6 +198,22 @@ func divRound(a, b int64) int64 {
 }
 
 // MulQty 金额 × 数量，得金额。
+// DivQty 两个数量相除（保留 1/1000 精度），用于"库存 ÷ 用量"这类计算。
+func DivQty(a, b Qty) Qty {
+	if b == 0 {
+		return 0
+	}
+	return Qty(int64(a) * qtyScale / int64(b))
+}
+
+// DivQtyInt 数量除以整数。
+func DivQtyInt(a Qty, n int64) Qty {
+	if n == 0 {
+		return 0
+	}
+	return Qty(int64(a) / n)
+}
+
 func MulQty(q Qty, m Money) Money {
 	return Money(divRound(int64(q)*int64(m), qtyScale))
 }
