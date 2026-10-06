@@ -105,6 +105,19 @@ func (s *Server) handleEcommerce(w http.ResponseWriter, r *http.Request) {
 	page["From"] = f.From
 	page["To"] = f.To
 	page["UnmatchedOnly"] = f.Unmatched
+	// 待绑定的商品ID 里，有些可能已经在别的产品上绑过了——
+	// 直接标出来，省得用户试一次才知道。
+	for i := range unmatched {
+		end := len(flat)
+		_ = end
+		for _, l := range flat {
+			if l.Platform == platform && l.EcProductID == unmatched[i].EcProductID {
+				unmatched[i].BoundTo = l.ProductName
+				unmatched[i].BoundID = l.ProductID
+				break
+			}
+		}
+	}
 	page["Unmatched"] = unmatched
 	page["UnmatchedLines"] = unmatchedLines
 	page["Statuses"] = statuses

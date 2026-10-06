@@ -229,6 +229,7 @@ func (s *Server) handleProductForm(w http.ResponseWriter, r *http.Request) {
 	}
 	page["LinksJSON"] = template.JS(jsonEncode(linkRows))
 	page["PlatformsJSON"] = template.JS(jsonEncode(model.EcPlatformOptions()))
+	page["Platforms"] = model.EcPlatformOptions()
 
 	if err := s.rnd.Render(w, "products/form", page); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

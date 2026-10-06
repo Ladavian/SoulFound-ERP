@@ -299,10 +299,11 @@
       <div class="ec-links">
         <template x-for="(row, index) in rows" :key="index">
           <div class="ec-link-row">
+            {{/* 选项必须由服务端渲染：
+                 Alpine 的 x-model 在 x-for 生成 option 之前就初始化，
+                 用动态选项会导致下拉永远显示第一个平台、看不出实际绑的是哪个。 */}}
             <select class="select" x-model="row.platform">
-              <template x-for="p in platforms" :key="p.value">
-                <option :value="p.value" x-text="p.label"></option>
-              </template>
+              {{range $.Platforms}}<option value="{{.Value}}">{{.Label}}</option>{{end}}
             </select>
             <input class="input mono" type="text" inputmode="numeric" x-model="row.ecProductId"
                    placeholder="平台商品ID" required>

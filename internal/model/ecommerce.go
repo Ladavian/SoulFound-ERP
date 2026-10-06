@@ -353,4 +353,9 @@ type EcUnmatchedItem struct {
 	MerchantCode string
 	Qty          Qty
 	Orders       int
+
+	// BoundTo 这个平台商品ID 若已经绑在某个产品上，带出产品名。
+	// 直接告诉用户"已经绑给谁"，不用试一次才知道重复。
+	BoundTo string
+	BoundID int64
 }

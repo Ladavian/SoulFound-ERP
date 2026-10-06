@@ -3433,3 +3433,44 @@ func snippetAround(s, key string, n int) string {
 	}
 	return s[i:end]
 }
+
+// TestProductEcLinkEditorShowsPlatform 产品编辑页的绑定行要显示实际平台。
+//
+// 踩过：平台下拉用 Alpine 的 <template x-for> 生成选项，
+// 而 x-model 在选项生成之前就初始化了，结果下拉永远显示第一个平台
+// （淘宝），用户看不出某个商品ID 到底绑在哪个平台。
+// 所以选项必须由服务端渲染。
+func TestProductEcLinkEditorShowsPlatform(t *testing.T) {
+	h, svc, cfg := testApp(t)
+	ctx := context.Background()
+	cookie := doLogin(t, h, cfg, "admin", "admin123")
+	admin := mustUser(t, svc, "admin")
+
+	products, _ := svc.Store.ListProducts(ctx, store.ProductFilter{})
+	if len(products) == 0 {
+		t.Fatal("没有产品可用")
+	}
+	target := products[0]
+	// 绑到京东（不是第一个平台），用来验证下拉不会退回默认值
+	if _, err := svc.BindEcLink(ctx, model.EcJD, "JD-XYZ", "", "京东链接", target.ID, admin); err != nil {
+		t.Fatal(err)
+	}
+
+	_, raw := get(t, h, "/products/"+strconv.FormatInt(target.ID, 10)+"/edit", cookie)
+	page := html.UnescapeString(raw)
+
+	// 平台选项要在 HTML 里静态出现（而不是只靠 JS 生成）
+	for _, want := range []string{`value="taobao"`, `value="jd"`, "京东"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("平台下拉的选项应由服务端渲染，页面里应出现 %q", want)
+		}
+	}
+	if strings.Contains(page, `<select class="select" x-model="row.platform">`) &&
+		strings.Contains(page, `x-for="p in platforms"`) {
+		t.Error("平台下拉不该用 x-for 生成选项：x-model 会先初始化，导致选不中实际平台")
+	}
+	// 已有的京东绑定要带上平台信息
+	if !strings.Contains(page, `"platform":"jd"`) {
+		t.Errorf("绑定数据里应带 platform 字段\n片段: %s", snippetAround(page, "__ERP_EC_LINKS__", 200))
+	}
+}

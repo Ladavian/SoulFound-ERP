@@ -87,6 +87,12 @@
             <div class="tiny muted">
               {{if .EcSKU}}规格 {{.EcSKU}} · {{end}}共 {{.Orders}} 单 · {{.Qty}} 件
             </div>
+            {{if .BoundTo}}
+            <div class="tiny warn" style="margin-top:3px">
+              ⚠ 这个商品ID 已经绑给「{{.BoundTo}}」了；再绑给别的产品会被拒绝，
+              要改绑请先到该产品的编辑页解绑。
+            </div>
+            {{end}}
           </div>
           <div class="bind-row__pick">
             <select class="select" name="product_id" required>
