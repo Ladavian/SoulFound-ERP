@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"icewine-erp/internal/model"
+	"icewine-erp/internal/service"
 )
 
 // stmtKindFromSheet 按列名/内容判断这份账单是哪一类。
@@ -144,44 +145,22 @@ func (s *Server) handleImportStatement(w http.ResponseWriter, r *http.Request) {
 
 	var summaries []string
 	for _, fh := range files {
-		f, err := fh.Open()
-		if err != nil {
-			s.fail(w, r, "/ecommerce/reconcile", err)
-			return
-		}
-		sh, err := readImportFile(f, fh.Filename)
-		f.Close()
-		if err != nil {
-			s.fail(w, r, "/ecommerce/reconcile", fmt.Errorf("%s：%w", fh.Filename, err))
-			return
-		}
-		kind := stmtKindFromSheet(sh)
-		if kind == "" {
-			summaries = append(summaries, fmt.Sprintf("%s：认不出是哪类账单，已跳过", fh.Filename))
-			continue
-		}
-		period, items := stmtItemsFromSheet(sh, kind)
-		if period == "" || len(items) == 0 {
-			summaries = append(summaries, fmt.Sprintf("%s：没有可导入的数据行", fh.Filename))
-			continue
-		}
-		st := &model.EcStatement{
-			Platform:  platform,
-			Period:    period,
-			Kind:      kind,
-			Direction: model.StmtDirection(kind),
-			FileName:  fh.Filename,
-			RowCount:  len(items),
-		}
-		for _, it := range items {
-			st.Amount += it.Amount
-		}
-		if err := s.svc.ImportStatement(r.Context(), st, items, userFrom(r)); err != nil {
-			s.fail(w, r, "/ecommerce/reconcile", fmt.Errorf("%s：%w", fh.Filename, err))
-			return
-		}
-		summaries = append(summaries, fmt.Sprintf("%s → %s %s ¥%s（%d 行）",
-			fh.Filename, model.PeriodLabel(period), model.StmtKindLabel(kind), st.Amount, len(items)))
+		func() {
+			f, err := fh.Open()
+			if err != nil {
+				summaries = append(summaries, fmt.Sprintf("%s：打不开（%v）", fh.Filename, err))
+				return
+			}
+			sheets, err := readImportSheets(f, fh.Filename)
+			f.Close()
+			if err != nil {
+				summaries = append(summaries, fmt.Sprintf("%s：%v", fh.Filename, err))
+				return
+			}
+			for _, sh := range sheets {
+				summaries = append(summaries, s.importOneSheet(r, platform, fh.Filename, sh)...)
+			}
+		}()
 	}
 	s.ok(w, r, "/ecommerce/reconcile?period="+strings.TrimSpace(r.FormValue("period")),
 		"账单导入完成："+strings.Join(summaries, "；"))
@@ -466,4 +445,79 @@ func (s *Server) handleSummaryExport(w http.ResponseWriter, r *http.Request) {
 	if err := f.Write(w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+// importOneSheet 处理上传文件里的一张工作表，返回给用户看的说明。
+//
+// 一张表可能是：京东月度账单 / 京东对账中心费用明细 / 京东订单明细 /
+// 淘宝各类账期账单。按表头特征识别，再按「账单类型」分别落库
+// （同一账期同一类型整体覆盖，不会重复计账）。
+func (s *Server) importOneSheet(r *http.Request, platform, filename string, sh importSheet) []string {
+	label := filename
+	if sh.Name != "" {
+		label += "[" + sh.Name + "]"
+	}
+
+	// 京东：月度账单与对账中心费用明细都是"每行一个费用项"
+	if isJDMonthly(sh) || isJDFees(sh) {
+		jdPeriod, items := jdStatementRows(sh)
+		if jdPeriod == "" || len(items) == 0 {
+			return []string{label + "：没有可导入的数据行"}
+		}
+		return s.saveStatementGroups(r, model.EcJD, jdPeriod, label, items)
+	}
+	// 京东订单明细
+	if isJDOrders(sh) {
+		rows := make([]service.EcOrderRow, 0, len(sh.Rows))
+		for _, row := range sh.Rows {
+			rows = append(rows, jdOrderRow(sh, row))
+		}
+		summary, err := s.svc.ImportEcOrders(r.Context(), model.EcJD, rows, userFrom(r))
+		if err != nil {
+			return []string{fmt.Sprintf("%s：京东订单导入失败（%v）", label, err)}
+		}
+		return []string{fmt.Sprintf("%s → 京东订单 %d 单 / %d 行",
+			label, summary.Orders+summary.OrdersUpd, summary.Items)}
+	}
+
+	// 淘宝（及其它平台）的账期账单
+	kind := stmtKindFromSheet(sh)
+	if kind == "" {
+		return []string{label + "：认不出是哪类账单，已跳过"}
+	}
+	period, items := stmtItemsFromSheet(sh, kind)
+	if period == "" || len(items) == 0 {
+		return []string{label + "：没有可导入的数据行"}
+	}
+	return s.saveStatementGroups(r, platform, period, label, items)
+}
+
+// saveStatementGroups 按账单类型分组落库。
+func (s *Server) saveStatementGroups(r *http.Request, platform, period, label string, items []model.EcStatementItem) []string {
+	grouped := map[string][]model.EcStatementItem{}
+	var order []string
+	for _, it := range items {
+		if _, ok := grouped[it.Kind]; !ok {
+			order = append(order, it.Kind)
+		}
+		grouped[it.Kind] = append(grouped[it.Kind], it)
+	}
+	var out []string
+	for _, k := range order {
+		list := grouped[k]
+		st := &model.EcStatement{
+			Platform: platform, Period: period, Kind: k,
+			Direction: list[0].Direction, FileName: label, RowCount: len(list),
+		}
+		for _, it := range list {
+			st.Amount += it.Amount
+		}
+		if err := s.svc.ImportStatement(r.Context(), st, list, userFrom(r)); err != nil {
+			out = append(out, fmt.Sprintf("%s：%s 导入失败（%v）", label, model.StmtKindLabel(k), err))
+			continue
+		}
+		out = append(out, fmt.Sprintf("%s → %s %s %s（%d 行）",
+			label, model.PeriodLabel(period), model.StmtKindLabel(k), st.Amount, len(list)))
+	}
+	return out
 }

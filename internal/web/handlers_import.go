@@ -26,6 +26,7 @@ const maxImportSize = 12 << 20
 type importSheet struct {
 	Headers []string
 	Rows    [][]string
+	Name    string // 工作表名（Excel 多表时用于区分）
 }
 
 // cell 按列名取值，支持多个别名，找不到返回空串。
@@ -58,8 +59,13 @@ func normalizeHeader(s string) string {
 // cleanCell 清洗单元格：去掉首尾空白与全角空格。
 func cleanCell(s string) string {
 	v := strings.TrimSpace(s)
-	v = strings.Trim(v, "\u3000")
+	v = strings.Trim(v, "\u3000") // 全角空格
 	v = strings.TrimSpace(v)
+	// 京东导出的 CSV 用 Excel 文本格式包裹：="3600482011154052"。
+	// 不去掉的话订单号会带着引号，永远匹配不上订单。
+	if strings.HasPrefix(v, `="`) && strings.HasSuffix(v, `"`) && len(v) > 2 {
+		v = strings.TrimSpace(v[2 : len(v)-1])
+	}
 	// Excel 会把长条码读成 8.32136E+11，这里还原成整数串
 	if strings.ContainsAny(v, "eE") && strings.ContainsAny(v, "0123456789") {
 		if f, err := strconv.ParseFloat(v, 64); err == nil && f > 0 {
@@ -98,23 +104,156 @@ func readImportFile(file io.Reader, filename string) (importSheet, error) {
 		}
 		return buildSheet(rows), nil
 	case strings.HasSuffix(lower, ".xlsx"), strings.HasSuffix(lower, ".xlsm"):
-		f, err := excelize.OpenReader(file)
+		all, err := readXlsxSheets(file)
 		if err != nil {
-			return sh, fmt.Errorf("读取 Excel 失败：%w", err)
+			return sh, err
 		}
-		defer f.Close()
-		sheets := f.GetSheetList()
-		if len(sheets) == 0 {
-			return sh, fmt.Errorf("文件里没有工作表")
-		}
-		rows, err := f.GetRows(sheets[0])
-		if err != nil {
-			return sh, fmt.Errorf("读取工作表失败：%w", err)
-		}
-		return buildSheet(rows), nil
+		return pickSheet(all), nil
 	default:
 		return sh, fmt.Errorf("只支持 .xlsx 或 .csv 文件")
 	}
+}
+
+// readXlsxSheets 读取 Excel 的所有工作表。
+//
+// 平台的账单常把「交易汇总」放第一个 Sheet、真正要用的
+// 「费用明细」放第二个，只读第一个会漏掉关键数据。
+func readXlsxSheets(file io.Reader) ([]importSheet, error) {
+	f, err := excelize.OpenReader(file)
+	if err != nil {
+		return nil, fmt.Errorf("读取 Excel 失败：%w", err)
+	}
+	defer f.Close()
+	names := f.GetSheetList()
+	if len(names) == 0 {
+		return nil, fmt.Errorf("文件里没有工作表")
+	}
+	var out []importSheet
+	for _, name := range names {
+		rows, err := f.GetRows(name)
+		if err != nil {
+			continue
+		}
+		// 表头不一定在第一行（京东对账中心是两行表头），
+		// 在前几行里挑最像表头的一行。
+		var nonEmpty [][]string
+		for _, r := range rows {
+			if !isEmptyRow(r) {
+				nonEmpty = append(nonEmpty, r)
+			}
+		}
+		if len(nonEmpty) < 2 {
+			continue
+		}
+		at := pickHeaderRow(nonEmpty)
+		sh := buildSheetFrom(nonEmpty, at)
+		if len(sh.Headers) == 0 || len(sh.Rows) == 0 {
+			continue
+		}
+		sh.Name = name
+		out = append(out, sh)
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("文件里没有可用的数据行")
+	}
+	return out, nil
+}
+
+// knownImportColumns 导入时要认的列名。
+//
+// 京东对账中心的表头是两行（第一行是大类，第二行才是列名），
+// 所以不能想当然用第一行当表头——要在前几行里挑"最像表头"的那行。
+var knownImportColumns = []string{
+	"费用名称", "费用项", "费用分类", "商品标题", "商品ID", "商品名称",
+	"订单号", "订单编号", "子订单编号", "订购数量", "商家应收", "商家SKU",
+	"订单实际金额", "产品编码", "条形码", "账期", "收支方向", "金额",
+	"商品编号", "费用结算时间", "费用发生时间", "商户订单号", "京东价",
+	"商品数量", "结算金额", "收入金额", "支出金额",
+}
+
+// pickHeaderRow 在前几行里挑最像表头的一行，返回行号。
+func pickHeaderRow(rows [][]string) int {
+	// 评分 = 命中的已知列名 × 100 + 该行的去重单元格数。
+	//
+	// 后半截是关键：京东对账中心第一行是"大类行"
+	// （平台承担金额/商家承担金额…里也含"金额"字样，能混到几分），
+	// 但它重复列多；真正表头那行的列名几乎都不重复。
+	// 加上去重数就能稳定挑中真正的表头行。
+	best, bestScore := 0, -1
+	for i := 0; i < len(rows) && i < 4; i++ {
+		hits := 0
+		seen := map[string]bool{}
+		for _, cell := range rows[i] {
+			v := cleanCell(cell)
+			if v == "" {
+				continue
+			}
+			seen[v] = true
+			// 必须精确等于已知列名。
+			// 用 Contains 会误判：京东对账中心的大类行里
+			// 「平台承担金额 / 商家承担金额 / 政府承担金额」都含"金额"，
+			// 会把大类行当成表头，真正的列名就读不到了。
+			for _, k := range knownImportColumns {
+				if v == k {
+					hits++
+					break
+				}
+			}
+		}
+		score := hits*100 + len(seen)
+		if score > bestScore {
+			best, bestScore = i, score
+		}
+	}
+	return best
+}
+
+// buildSheetFrom 从指定表头行开始构造工作表。
+func buildSheetFrom(rows [][]string, headerAt int) importSheet {
+	var sh importSheet
+	sh.Headers = rows[headerAt]
+	for _, r := range rows[headerAt+1:] {
+		if isEmptyRow(r) {
+			continue
+		}
+		sh.Rows = append(sh.Rows, r)
+	}
+	return sh
+}
+
+// pickSheet 从多个工作表里挑最像"要导入的那张"。
+//
+// 表头里出现已知字段的优先；都认不出来就用第一张。
+func pickSheet(all []importSheet) importSheet {
+	known := []string{"费用名称", "费用项", "商品标题", "商品ID", "订单号", "产品编码",
+		"子订单编号", "订购数量", "商家应收", "订单实际金额"}
+	best, bestScore := all[0], -1
+	for _, sh := range all {
+		j := strings.Join(sh.Headers, " ")
+		score := 0
+		for _, k := range known {
+			if strings.Contains(j, k) {
+				score++
+			}
+		}
+		if score > bestScore {
+			best, bestScore = sh, score
+		}
+	}
+	return best
+}
+
+// readImportSheets 读取上传文件里的全部工作表（CSV 只有一张）。
+func readImportSheets(file io.Reader, filename string) ([]importSheet, error) {
+	lower := strings.ToLower(filename)
+	if strings.HasSuffix(lower, ".xlsx") || strings.HasSuffix(lower, ".xlsm") {
+		return readXlsxSheets(file)
+	}
+	sh, err := readImportFile(file, filename)
+	if err != nil {
+		return nil, err
+	}
+	return []importSheet{sh}, nil
 }
 
 // decodeTextFile 把上传的文本文件解成 UTF-8。
