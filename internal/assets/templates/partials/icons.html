@@ -47,6 +47,14 @@
 {{- else if eq . "wifi-off"}}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M8.5 15.5a5 5 0 017 0"/><path d="M5 12a10 10 0 013.5-2.3M15.6 9.7A10 10 0 0119 12"/><path d="M12 19h.01"/></svg>
 {{- else}}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/></svg>{{end}}{{end}}
 
+{{/* 带子菜单的一级菜单：进入任一子页面时自动展开 */}}
+{{define "nav_parent"}}<details class="nav-sub"{{if .Open}} open{{end}}>
+  <summary class="nav-item nav-sub__head">{{template "icon" .Icon}}<span>{{.Label}}</span>{{template "icon" "down"}}</summary>
+  <div class="nav-sub__body">
+    {{range .Children}}<a class="nav-sub__item{{if eq $.Page .Key}} is-active{{end}}" href="{{.Href}}"><span>{{.Label}}</span></a>{{end}}
+  </div>
+</details>{{end}}
+
 {{define "nav_item"}}<a class="nav-item{{if eq .Page .Key}} is-active{{end}}" href="{{.Href}}">{{template "icon" .Icon}}<span>{{.Label}}</span>{{if .Badge}}<span class="nav-item__badge">{{.Badge}}</span>{{end}}</a>{{end}}
 
 {{define "bottom_item"}}<a class="bottom-nav__item{{if eq .Page .Key}} is-active{{end}}" href="{{.Href}}">{{template "icon" .Icon}}<span>{{.Label}}</span></a>{{end}}

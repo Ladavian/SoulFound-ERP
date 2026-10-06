@@ -61,9 +61,19 @@ func StaticFS() (fs.FS, error) {
 	return fs.Sub(assets.FS, "static")
 }
 
+// ecNavItems 侧栏「电商账单」的子菜单项。
+var ecNavItems = []map[string]any{
+	{"Href": "/ecommerce", "Label": "电商订单", "Key": "ecommerce"},
+	{"Href": "/ecommerce/reconcile", "Label": "平台账单", "Key": "reconcile"},
+	{"Href": "/ecommerce/settlement", "Label": "结算单", "Key": "settlement"},
+	{"Href": "/ecommerce/summary", "Label": "总对账单", "Key": "summary"},
+}
+
 func (r *Renderer) funcs() template.FuncMap {
 	sym := r.symbol()
 	return template.FuncMap{
+		// 侧栏「电商账单」的子菜单
+		"ecNav": func() []map[string]any { return ecNavItems },
 		// 金额与数量。负数把负号放在货币符号前：-¥123.45，而不是 ¥-123.45
 		"money":  func(v model.Money) string { return withSymbol(sym, v.String(), v.IsNeg()) },
 		"money0": func(v model.Money) string { return withSymbol(sym, v.Round2().String(), v.IsNeg()) },

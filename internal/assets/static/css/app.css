@@ -2004,3 +2004,43 @@ tr:nth-child(3) .rank-badge { background: var(--ice-100); border-color: var(--ic
   font-weight: 700;
   color: var(--text);
 }
+
+/* 侧栏子菜单：一级菜单可展开，子项缩进并带一条引导线 */
+.nav-sub { margin: 0; }
+.nav-sub__head {
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.nav-sub__head::-webkit-details-marker { display: none; }
+.nav-sub__head > svg:last-child {
+  margin-left: auto;
+  width: 14px; height: 14px; flex: 0 0 14px;
+  opacity: .55;
+  transition: transform .15s;
+}
+.nav-sub[open] > .nav-sub__head > svg:last-child { transform: rotate(180deg); }
+.nav-sub[open] > .nav-sub__head { color: #fff; }
+.nav-sub__body {
+  margin: 2px 0 4px 18px;
+  padding-left: 10px;
+  border-left: 1px solid rgba(255, 255, 255, .13);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.nav-sub__item {
+  display: block;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: rgba(235, 239, 244, .78);
+  transition: background .15s, color .15s;
+}
+.nav-sub__item:hover { background: rgba(255, 255, 255, .07); color: #fff; text-decoration: none; }
+.nav-sub__item.is-active {
+  background: rgba(255, 255, 255, .13);
+  color: #fff;
+  font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--ice-400);
+}
