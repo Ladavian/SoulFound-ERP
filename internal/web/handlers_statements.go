@@ -252,7 +252,17 @@ func (s *Server) handleReconcile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	_ = settle
+	// 页面上展示的结算口径直接用结算单算出来的数，
+	// 不在这里再算一遍，避免两处口径不一致。
+	rates := settle.Rates
+	rec.Advance = settle.Total.Advance
+	rec.RealRevenue = settle.Total.Revenue
+	rec.Cost = settle.Total.Cost
+	rec.CostTotal = settle.Total.Cost
+	rec.Vat = settle.Total.VatPayable(rates)
+	rec.Profit = settle.Total.Net(rates)
+	rec.Fee = settle.Total.PlatformFee
+	rec.ExpenseTotal = settle.Total.PlatformFee
 
 	detail := map[string][]model.EcStatementItem{}
 	for _, st := range statements {
@@ -321,8 +331,28 @@ func (s *Server) handleReconcile(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// 各平台已导入多少份账单：用来在"当前平台没数据"时提示去哪看
+	allKeys, _ := s.svc.Store.StatementKeys(ctx)
+	platformCounts := map[string]int{}
+	for _, k := range allKeys {
+		platformCounts[k.Platform]++
+	}
+	type platHint struct {
+		Label string
+		Value string
+		Count int
+	}
+	var hints []platHint
+	for _, opt := range model.EcPlatformOptions() {
+		if n := platformCounts[opt.Value]; n > 0 && opt.Value != platform {
+			hints = append(hints, platHint{Label: opt.Label, Value: opt.Value, Count: n})
+		}
+	}
+
 	noCache(w)
 	page := s.newPage(r, "电商对账单", "reconcile")
+	page["PlatformHints"] = hints
+	page["PlatformStatements"] = platformCounts[platform]
 	page["Platform"] = platform
 	page["PlatformLabel"] = model.EcPlatformLabel(platform)
 	page["Periods"] = periods

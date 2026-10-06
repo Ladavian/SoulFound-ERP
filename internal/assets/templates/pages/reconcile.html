@@ -1,9 +1,11 @@
 {{define "content"}}
 {{$rec := .Rec}}
-{{/* x-data 放在最外层：导入按钮在页头、导入卡片在下面，两者是同级，
-     放在卡片上按钮就点不动了。 */}}
-<div x-data="{ showImport: {{if .Statements}}false{{else}}true{{end}} }">
-{{/* 平台切换：不同平台各自一套账单 */}}
+{{/* 页面结构（用户反馈过"打开像上传页"）：
+     1) 筛选：平台 + 账期（账期可多选）
+     2) 数据：对账校验 / 收入明细 / 支出明细 / 订单到手 / 已导入账单
+     3) 导入入口放最后，用 details 默认收起（不依赖 JS）
+     以前导入表单是页面第一块、还靠 JS 折叠，JS 没起来或该平台还没数据时，
+     打开就像个上传页，把下面的数据全挡在后面。 */}}
 <div class="card">
   <div class="card__body">
     {{template "platform_bar" (dict "Platforms" .PlatformOptions "Current" .Platform
@@ -23,65 +25,18 @@
     </div>
   </div>
   <div class="page-head__actions">
-    <a class="btn" href="/ecommerce">{{template "icon" "list"}}<span>订单列表</span></a>
-    <button class="btn btn--primary" type="button" @click="showImport = !showImport">
-      {{template "icon" "upload"}}<span>导入账单</span>
-    </button>
-  </div>
-</div>
-
-{{/* 导入：一次可以选多个文件，按列名/业务大类自动识别类型 */}}
-<div class="card" x-show="showImport" x-cloak>
-  <div class="card__head">
-    <div class="card__title">导入平台账单<span class="card__sub">可一次多选，系统自动识别每一份是哪类账单</span></div>
-  </div>
-  <div class="card__body">
-    <form method="post" action="/ecommerce/reconcile/import" enctype="multipart/form-data">
-      <div class="import-grid">
-        <div class="field">
-          <label class="field__label" for="stmt-platform">平台</label>
-          <select class="select" id="stmt-platform" name="platform">
-            {{range .PlatformOptions}}<option value="{{.Value}}"{{if eq .Value $.Platform}} selected{{end}}>{{.Label}}</option>{{end}}
-          </select>
-        </div>
-        <div class="field span-2">
-          <label class="field__label" for="stmt-files">账单文件（.csv / .xlsx，可多选）</label>
-          <input class="input" id="stmt-files" name="files" type="file" multiple
-                 accept=".csv,.xlsx,.xlsm,.txt" required>
-          <div class="field__hint">
-            把「收入」和「支出」两个文件夹里的账单一起选上即可：
-            交易货款、淘金币合作费用（收入）、基础软件服务费、品牌新享礼金、
-            商家寄件服务费、淘金币软件服务费、消费券代付扣回、消费者体验提升计划（支出）。
-            GBK 编码的 CSV 会自动识别。同一账期同一类型重复导入时<strong>整体覆盖</strong>，不会重复计账。
-          </div>
-        </div>
-      </div>
-      <button class="btn btn--primary" type="submit" style="margin-top:12px">
-        {{template "icon" "upload"}}<span>开始导入</span>
-      </button>
-    </form>
+    <a class="btn" href="/ecommerce?platform={{.Platform}}">{{template "icon" "list"}}<span>订单列表</span></a>
+    <a class="btn" href="/ecommerce/settlement?platform={{.Platform}}">{{template "icon" "cash"}}<span>结算单</span></a>
   </div>
 </div>
 
 {{if .Statements}}
-{{/* 账期切换 */}}
-<div class="card">
-  <div class="card__body">
-    <div class="period-bar">
-      <span class="tiny muted">账期</span>
-      {{range .Periods}}
-      <a class="chip{{if eq . $.Period}} is-active{{end}}" href="/ecommerce/reconcile?platform={{$.Platform}}&period={{.}}">{{periodLabel .}}</a>
-      {{end}}
-    </div>
-  </div>
-</div>
-
-{{/* 汇总 */}}
+{{/* 汇总：收入、费用、净得、净利（成本与净利取自结算口径，与结算单一致） */}}
 <div class="stat-grid">
   <div class="stat">
-    <div class="stat__label">平台收入</div>
+    <div class="stat__label">账单收入</div>
     <div class="stat__value">{{money $rec.IncomeTotal}}</div>
-    <div class="stat__hint">{{$rec.IncomeItems}} 行（货款 + 淘金币补贴）</div>
+    <div class="stat__hint">{{$rec.IncomeItems}} 行（货款 + 平台补贴）</div>
   </div>
   <div class="stat">
     <div class="stat__label">平台费用</div>
@@ -91,14 +46,15 @@
   <div class="stat">
     <div class="stat__label">净得</div>
     <div class="stat__value {{if $rec.Net.IsNeg}}neg{{else}}pos{{end}}">{{money $rec.Net}}</div>
-    <div class="stat__hint">平台实际结算给商家的钱</div>
+    <div class="stat__hint">
+      {{if $rec.Advance}}另扣平台代付垫支 {{money $rec.Advance}} → 销售收入 {{money $rec.RealRevenue}}{{else}}平台实际结算给商家的钱{{end}}
+    </div>
   </div>
   <div class="stat">
     <div class="stat__label">净利</div>
-    <div class="stat__value {{if $rec.NetProfit.IsNeg}}neg{{else}}pos{{end}}">{{money $rec.NetProfit}}</div>
+    <div class="stat__value {{if $rec.Profit.IsNeg}}neg{{else}}pos{{end}}">{{money $rec.Profit}}</div>
     <div class="stat__hint">
-      净得 − 产品成本 {{money $rec.CostTotal}}
-      {{if $rec.CostMissing}}<span class="warn">（有 {{$rec.CostMissing}} 行没匹配到产品或缺电商成本）</span>{{end}}
+      销售收入 {{money $rec.RealRevenue}} − 供货成本 {{money $rec.Cost}} − 增值税 {{money $rec.Vat}}
     </div>
   </div>
 </div>
@@ -158,79 +114,8 @@
 </div>
 {{end}}
 
-{{/* 收入 / 支出 明细 */}}
 <div class="grid grid--sidebar">
   <div>
-    <div class="card">
-      <div class="card__head">
-        <div class="card__title">收入明细<span class="card__sub">共 {{$rec.IncomeItems}} 行</span></div>
-      </div>
-      <div class="card__body">
-        <div class="table-wrap">
-          <table class="data data--stack">
-            <thead>
-              <tr><th>账单类型</th><th class="num">行数</th><th class="num">金额</th></tr>
-            </thead>
-            <tbody>
-              {{range $kind := .Kinds}}
-              {{$amt := index $rec.IncomeByKind $kind}}
-              {{if $amt}}
-              <tr>
-                <td class="row-cell--main">{{stmtKind $kind}}</td>
-                <td class="num" data-label="行数">{{index $rec.IncomeKindRows $kind}}</td>
-                <td class="num pos" data-label="金额">{{money $amt}}</td>
-              </tr>
-              {{end}}
-              {{end}}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td>收入合计</td>
-                <td class="num">{{$rec.IncomeItems}}</td>
-                <td class="num pos">{{money $rec.IncomeTotal}}</td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card__head">
-        <div class="card__title">支出明细<span class="card__sub">共 {{$rec.ExpenseItems}} 行</span></div>
-      </div>
-      <div class="card__body">
-        <div class="table-wrap">
-          <table class="data data--stack">
-            <thead>
-              <tr><th>账单类型</th><th>匹配方式</th><th class="num">行数</th><th class="num">金额</th></tr>
-            </thead>
-            <tbody>
-              {{range $kind := .Kinds}}
-              {{$amt := index $rec.ExpenseByKind $kind}}
-              {{if $amt}}
-              <tr>
-                <td class="row-cell--main">{{stmtKind $kind}}</td>
-                <td class="small text-2" data-label="匹配方式">{{stmtHint $kind}}</td>
-                <td class="num" data-label="行数">{{index $rec.ExpenseKindRows $kind}}</td>
-                <td class="num neg span-2" data-label="金额">−{{money $amt}}</td>
-              </tr>
-              {{end}}
-              {{end}}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td>支出合计</td>
-                <td></td>
-                <td class="num">{{$rec.ExpenseItems}}</td>
-                <td class="num neg">−{{money $rec.ExpenseTotal}}</td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      </div>
-    </div>
-
     {{/* 订单维度：这一单最终到手多少 */}}
     <div class="card">
       <div class="card__head">
@@ -279,24 +164,72 @@
           </table>
         </div>
         {{else}}
-        {{template "empty" (dict "Title" "还没有可对账的订单" "Text" "导入账单后，带订单号的明细会在这里按订单汇总。")}}
+        {{template "empty" (dict "Title" "还没有可对账的订单" "Text" "导入账单后，带订单号的明细会在这里按订单汇总；也可以先导入平台订单明细。")}}
         {{end}}
       </div>
     </div>
   </div>
 
   <div>
-    {{/* 已导入的账单文件 */}}
+    {{/* 收入 / 支出按类型 */}}
     <div class="card">
-      <div class="card__head">
-        <div class="card__title">已导入账单<span class="card__sub">{{len .Statements}} 份</span></div>
+      <div class="card__head"><div class="card__title">收入明细<span class="card__sub">{{$rec.IncomeItems}} 行</span></div></div>
+      <div class="card__body">
+        <div class="table-wrap">
+          <table class="data data--stack">
+            <thead><tr><th>账单类型</th><th class="num">行数</th><th class="num">金额</th></tr></thead>
+            <tbody>
+              {{range $kind := .Kinds}}
+              {{$amt := index $rec.IncomeByKind $kind}}
+              {{if $amt}}
+              <tr>
+                <td class="row-cell--main">{{stmtKind $kind}}</td>
+                <td class="num" data-label="行数">{{index $rec.IncomeKindRows $kind}}</td>
+                <td class="num pos" data-label="金额">{{money $amt}}</td>
+              </tr>
+              {{end}}
+              {{end}}
+            </tbody>
+            <tfoot><tr><td>收入合计</td><td class="num">{{$rec.IncomeItems}}</td><td class="num pos">{{money $rec.IncomeTotal}}</td></tr></tfoot>
+          </table>
+        </div>
       </div>
+    </div>
+
+    <div class="card">
+      <div class="card__head"><div class="card__title">支出明细<span class="card__sub">{{$rec.ExpenseItems}} 行</span></div></div>
+      <div class="card__body">
+        <div class="table-wrap">
+          <table class="data data--stack">
+            <thead><tr><th>账单类型</th><th>匹配方式</th><th class="num">行数</th><th class="num">金额</th></tr></thead>
+            <tbody>
+              {{range $kind := .Kinds}}
+              {{$amt := index $rec.ExpenseByKind $kind}}
+              {{if $amt}}
+              <tr>
+                <td class="row-cell--main">{{stmtKind $kind}}</td>
+                <td class="small text-2" data-label="匹配方式">{{stmtHint $kind}}</td>
+                <td class="num" data-label="行数">{{index $rec.ExpenseKindRows $kind}}</td>
+                <td class="num neg span-2" data-label="金额">−{{money $amt}}</td>
+              </tr>
+              {{end}}
+              {{end}}
+            </tbody>
+            <tfoot><tr><td>支出合计</td><td></td><td class="num">{{$rec.ExpenseItems}}</td><td class="num neg">−{{money $rec.ExpenseTotal}}</td></tr></tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card__head"><div class="card__title">已导入账单<span class="card__sub">{{len .Statements}} 份</span></div></div>
       <div class="card__body">
         {{range .Statements}}
         <div class="bind-item">
           <div>
             <div class="strong">{{stmtKind .Kind}}</div>
             <div class="tiny muted">
+              {{periodLabel .Period}} ·
               {{if eq .Direction "income"}}<span class="pos">收入</span>{{else}}<span class="neg">支出</span>{{end}}
               · {{.RowCount}} 行 · {{money .Amount}}
               · <span title="{{if eq .Source "reconcile"}}对账中心：项目更全，只补月度账单没有的费用项{{else}}平台月度账单：订单与数量以它为准{{end}}">{{sourceLabel .Source}}</span>
@@ -311,26 +244,69 @@
     <div class="card">
       <div class="card__head"><div class="card__title">口径说明</div></div>
       <div class="card__body tiny muted" style="line-height:1.8">
-        <p><strong>月份归属</strong>跟着平台账单的账期走，不按订单月份。
-           平台按月结算，跟着账单才能和支付宝到账对上。</p>
-        <p><strong>收入</strong>含交易货款与淘金币两项补贴
-           （平台把淘金币合作费用放在收入账单里导出）。</p>
-        <p><strong>支出</strong>是各类平台费用：基础软件服务费（扣点）、
-           品牌新享礼金、商家寄件服务费（运费）、淘金币软件服务费、
-           消费券代付扣回、消费者体验提升计划服务费。</p>
-        <p><strong>匹配方式</strong>：货款与多数费用按订单号匹配，
-           运费单只有运单号、按运单号匹配订单，
-           消费者体验提升计划是整期一笔、不做订单归属。</p>
-        <p><strong>产品成本</strong>用产品档案里的电商成本价，
-           只算匹配到产品且填了成本的行。</p>
+        <p><strong>月份归属</strong>跟着平台账单的账期走，不按订单月份。</p>
+        <p><strong>匹配方式</strong>：货款与多数费用按订单号匹配；运费按运单号；
+           消费者体验提升计划是整期一笔，不归订单。</p>
+        <p><strong>运费</strong>只在报表里展示给上游看，不从利润扣、也不参与增值税抵扣。</p>
       </div>
     </div>
   </div>
 </div>
+
 {{else}}
-{{template "empty" (dict "Title" "还没有导入账单"
-  "Text" "先把平台导出的账期账单（收入与支出两个文件夹）一次多选传上来。")}}
-{{end}}
+{{/* 该平台还没数据：告诉用户别的平台有，可以直接切过去 */}}
+<div class="card">
+  <div class="card__body">
+    {{if .PlatformHints}}
+    <div class="alert alert--info" style="margin-bottom:12px">
+      {{template "icon" "info"}}
+      <div class="alert__body">
+        <div class="alert__title">「{{.PlatformLabel}}」还没有导入过账单</div>
+        <div style="margin-top:6px">
+          已导入数据的平台：
+          {{range .PlatformHints}}<a class="btn btn--sm" href="/ecommerce/reconcile?platform={{.Value}}">{{.Label}}（{{.Count}} 份）</a> {{end}}
+        </div>
+      </div>
+    </div>
+    {{end}}
+    <div class="tiny muted">
+      在下面的「导入平台账单」里选好平台，把账单文件传上来即可。
+      淘宝传「收入 + 支出」两个文件夹的 CSV；京东传月度账单 + 对账中心 + 订单明细。
+    </div>
+  </div>
 </div>
 {{end}}
-</div>
+
+{{/* 导入入口：默认收起，用 details 实现，不依赖 JS */}}
+<details class="hint-fold">
+  <summary>
+    {{template "icon" "upload"}}
+    <span>导入平台账单</span>
+    <span class="hint-fold__more">点开导入</span>
+  </summary>
+  <div class="hint-fold__body">
+    <form method="post" action="/ecommerce/reconcile/import" enctype="multipart/form-data">
+      <div class="field">
+        <label class="field__label" for="stmt-platform">平台</label>
+        <select class="select" id="stmt-platform" name="platform">
+          {{range .PlatformOptions}}<option value="{{.Value}}"{{if eq .Value $.Platform}} selected{{end}}>{{.Label}}</option>{{end}}
+        </select>
+        <div class="field__hint">已跑通：淘宝 / 天猫、京东；其余平台接账单格式后逐个开放。</div>
+      </div>
+      <div class="field" style="margin-top:10px">
+        <label class="field__label" for="stmt-files">账单文件（.csv / .xlsx，可多选）</label>
+        <input class="input" id="stmt-files" name="files" type="file" multiple
+               accept=".csv,.xlsx,.xlsm,.txt" required>
+        <div class="field__hint">
+          淘宝：把「收入」与「支出」两个文件夹里的账单一起选上。<br>
+          京东：月度账单 + 对账中心 + 订单明细 三份一起选。<br>
+          GBK 编码自动识别；同账期同类型重复导入会整体覆盖，不会重复计账。
+        </div>
+      </div>
+      <button class="btn btn--primary" type="submit" style="margin-top:12px">
+        {{template "icon" "upload"}}<span>开始导入</span>
+      </button>
+    </form>
+  </div>
+</details>
+{{end}}

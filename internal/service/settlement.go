@@ -412,11 +412,10 @@ func (s *Service) BuildSettlementFor(ctx context.Context, platform string, perio
 		merged.Periods = append(merged.Periods, PeriodSlice{Period: p, Total: one.Total, FeeByKind: one.FeeByKind})
 		merged.Orders = append(merged.Orders, one.Orders...)
 		merged.Products = append(merged.Products, one.Products...)
+		// Add 已经累加了 PlatformFee 与 CreditableFee，
+		// 这里不能再加一遍——之前多加了导致平台费用正好翻倍
+		// （京东显示成 76.26 而实际是 38.13）。
 		merged.Total.Add(one.Total)
-		// Total.Add 只累加金额，平台费用单独合并（Add 也累加了 PlatformFee，
-		// 但合并口径要保证两项都在）
-		merged.Total.PlatformFee += one.Total.PlatformFee
-		merged.Total.CreditableFee += one.Total.CreditableFee
 		merged.FeeRows += one.FeeRows
 		for k, v := range one.FeeByKind {
 			merged.FeeByKind[k] += v

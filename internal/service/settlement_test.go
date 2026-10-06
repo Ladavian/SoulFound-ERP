@@ -382,3 +382,52 @@ func TestOneProductManyEcIDs(t *testing.T) {
 		t.Error("同一个商品ID 绑给第二个产品时应被拒绝")
 	}
 }
+
+// TestMultiPeriodSettlementNoDoubleFee 多账期合并时平台费用不能翻倍。
+//
+// 踩过：BuildSettlementFor 里先调 Total.Add(one)（Add 已经累加
+// PlatformFee / CreditableFee），然后又 += 了一遍，
+// 结果页面上的平台费用正好是实际的两倍（京东显示 76.26 实际 38.13）。
+func TestMultiPeriodSettlementNoDoubleFee(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+	admin := adminUser(t, svc)
+
+	// 两个账期，各有一个基础软件服务费 60（可抵扣）
+	for _, p := range []string{"202608", "202609"} {
+		items := []model.EcStatementItem{{
+			Period: p, Kind: model.StmtBaseService, Direction: "expense",
+			OrderNo: "O-" + p, Amount: model.MustMoney("60"),
+		}}
+		if err := svc.ImportStatement(ctx, &model.EcStatement{
+			Platform: model.EcJD, Period: p, Kind: model.StmtBaseService,
+			Source: model.StmtSourceBill, Direction: "expense"}, items, admin); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	settings, _ := svc.Store.Settings(ctx)
+	// 单账期
+	one, err := svc.BuildSettlementFor(ctx, model.EcJD, []string{"202608"}, settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if one.Total.PlatformFee != model.MustMoney("60") {
+		t.Errorf("单账期平台费用应为 60，实际 %s", one.Total.PlatformFee)
+	}
+	// 两个账期合并：应为 120，不能是 120 的两倍
+	two, err := svc.BuildSettlementFor(ctx, model.EcJD, []string{"202608", "202609"}, settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if two.Total.PlatformFee != model.MustMoney("120") {
+		t.Errorf("两账期合并平台费用应为 120，实际 %s（翻倍说明重复累加）", two.Total.PlatformFee)
+	}
+	if two.Total.CreditableFee != model.MustMoney("120") {
+		t.Errorf("两账期合并可抵扣费用应为 120，实际 %s", two.Total.CreditableFee)
+	}
+	// 逐账期小计也要留着
+	if len(two.Periods) != 2 {
+		t.Errorf("应保留 2 条逐账期小计，实际 %d", len(two.Periods))
+	}
+}

@@ -201,6 +201,14 @@ type EcReconcile struct {
 	MatchedOrders int
 	TotalOrders   int
 	UnmatchedShip int // 运费单里找不到对应订单的运单数
+
+	// 结算口径（与结算单保持一致，页面直接用，避免两处各算一遍）
+	Advance     Money // 平台代付垫支（从货款扣回，不是费用、不开票）
+	RealRevenue Money // 实际销售收入 = 货款 + 补贴 − 垫支
+	Vat         Money // 应交增值税
+	Profit      Money // 净利 = 实际销售收入 − 供货成本 − 应交增值税
+	Cost        Money // 供货成本（= CostTotal）
+	Fee         Money // 平台费用合计（= ExpenseTotal）
 }
 
 // Net 净得 = 收入 − 支出（平台实际结算给商家的钱）。
