@@ -374,7 +374,10 @@ func (s *Store) StatementSettlement(ctx context.Context, platform, period string
 			row.ProductName = productName
 			row.UnitCost = unitCost
 		}
-		if qty > 0 {
+		// 数量只认「交易货款」行：
+		// 费用行也有数量（基础软件服务费、消费券等各是 1），
+		// 如果让它们覆盖，2 瓶的订单会被改成 1 瓶，成本就少算一半。
+		if qty > 0 && kind == model.StmtGoodsPayment {
 			row.Qty = qty
 		}
 		switch {
