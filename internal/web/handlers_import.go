@@ -339,12 +339,15 @@ func (s *Server) handleImportEcOrders(w http.ResponseWriter, r *http.Request) {
 // handleEcBind 把电商商品ID 绑到 ERP 产品。
 func (s *Server) handleEcBind(w http.ResponseWriter, r *http.Request) {
 	ecID := strings.TrimSpace(r.FormValue("ec_product_id"))
+	platform := strings.TrimSpace(r.FormValue("platform"))
 	productID := formID(r, "product_id")
 	if productID <= 0 {
 		s.fail(w, r, "/ecommerce", service.UserErrf("请选择要绑定的产品"))
 		return
 	}
-	fixed, err := s.svc.BindEcProduct(r.Context(), ecID, productID, userFrom(r))
+	fixed, err := s.svc.BindEcLink(r.Context(), platform, ecID,
+		strings.TrimSpace(r.FormValue("ec_sku_id")),
+		strings.TrimSpace(r.FormValue("title")), productID, userFrom(r))
 	if err != nil {
 		s.fail(w, r, "/ecommerce", err)
 		return
@@ -370,4 +373,14 @@ func (s *Server) handleEcBindItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.ok(w, r, back, "已绑定这一行（只影响这一行，产品的电商商品ID 未改动）")
+}
+
+// handleEcUnbind 解除一条平台商品绑定。
+func (s *Server) handleEcUnbind(w http.ResponseWriter, r *http.Request) {
+	id := formID(r, "link_id")
+	if err := s.svc.UnbindEcLink(r.Context(), id, userFrom(r)); err != nil {
+		s.fail(w, r, "/ecommerce", err)
+		return
+	}
+	s.ok(w, r, "/ecommerce", "已解绑，对应订单明细的绑定也一起松开了")
 }

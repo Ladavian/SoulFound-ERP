@@ -94,66 +94,141 @@ func TestImportEcOrders(t *testing.T) {
 	}
 }
 
-// TestBindEcProduct 绑定电商商品ID：写回产品、补齐历史行、被重复绑定要拦住。
-func TestBindEcProduct(t *testing.T) {
+// TestBindEcLink 平台商品绑定：可绑多个、补齐历史行、冲突与解绑。
+func TestBindEcLink(t *testing.T) {
 	svc := newTestService(t)
 	ctx := context.Background()
 	admin := adminUser(t, svc)
 
-	if _, err := svc.ImportEcOrders(ctx, model.EcTaobao, ecTestRows(), admin); err != nil {
+	rows := ecTestRows()
+	// 再加一个淘宝链接，验证一个产品能绑多个商品ID
+	rows = append(rows, EcOrderRow{
+		OrderNo: "T4", SubOrderNo: "T4-1", Title: "威代尔冰酒200ml（另一个链接）",
+		EcProductID: "777", Qty: "1", UnitPrice: "429", PaidAmt: "399",
+		ItemStatus: "交易成功", RefundStatus: "没有申请退款", CreatedAt: "2026-10-06 10:00",
+	})
+	if _, err := svc.ImportEcOrders(ctx, model.EcTaobao, rows, admin); err != nil {
 		t.Fatal(err)
 	}
 	product, err := svc.Store.CreateProduct(ctx, &model.Product{
-		SKU: "EC-1", Name: "威代尔冰酒200ml", Unit: "瓶", IsActive: true,
+		SKU: "EC-1", Name: "威代尔冰酒200ml", Unit: "瓶", IsActive: true, IsWine: true,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	other, _ := svc.Store.CreateProduct(ctx, &model.Product{
-		SKU: "EC-2", Name: "另一个产品", Unit: "瓶", IsActive: true,
+		SKU: "EC-2", Name: "另一个产品", Unit: "瓶", IsActive: true, IsWine: true,
 	})
 
-	fixed, err := svc.BindEcProduct(ctx, "999", product, admin)
+	// 绑第一个商品ID：应顺带补齐 2 行历史明细（T1、T3）
+	fixed, err := svc.BindEcLink(ctx, model.EcTaobao, "999", "", "威代尔链接A", product, admin)
 	if err != nil {
-		t.Fatalf("绑定失败: %v", err)
+		t.Fatalf("绑第一个链接失败: %v", err)
 	}
 	if fixed != 2 {
-		t.Errorf("应顺带补齐 2 行历史明细，实际 %d", fixed)
+		t.Errorf("应补齐 2 行历史明细，实际 %d", fixed)
 	}
-	got, _ := svc.Store.ProductByID(ctx, product)
-	if got.EcProductID != "999" {
-		t.Errorf("产品的电商商品ID 应写成 999，实际 %q", got.EcProductID)
+	// 再绑第二个商品ID：一个产品两条绑定
+	if _, err := svc.BindEcLink(ctx, model.EcTaobao, "777", "", "威代尔链接B", product, admin); err != nil {
+		t.Fatalf("绑第二个链接失败: %v", err)
 	}
-	// 已绑定的行要能查出成本来源
+	links, _ := svc.Store.ProductLinks(ctx, product)
+	if len(links) != 2 {
+		t.Fatalf("一个产品应能绑 2 条，实际 %d", len(links))
+	}
+	// 再绑一个别的平台的商品ID
+	if _, err := svc.BindEcLink(ctx, model.EcDouyin, "DY-001", "", "抖音链接", product, admin); err != nil {
+		t.Fatalf("绑抖音商品失败: %v", err)
+	}
+	links, _ = svc.Store.ProductLinks(ctx, product)
+	if len(links) != 3 {
+		t.Fatalf("跨平台后应有 3 条绑定，实际 %d", len(links))
+	}
+
+	// 同一个平台商品ID 不能绑给第二个产品
+	if _, err := svc.BindEcLink(ctx, model.EcTaobao, "999", "", "", other, admin); err == nil {
+		t.Error("同一个平台商品ID 绑给第二个产品时应报错")
+	}
+	// 这两个商品ID 的订单行都应绑到这个产品上
 	orders, _ := svc.Store.ListEcOrders(ctx, store.EcOrderFilter{Platform: model.EcTaobao})
 	bound := 0
 	for _, o := range orders {
 		for _, it := range o.Items {
-			if it.EcProductID == "999" && it.Matched() {
-				bound++
+			if it.EcProductID == "999" || it.EcProductID == "777" {
+				if it.Matched() {
+					bound++
+				}
 			}
 		}
 	}
-	if bound != 2 {
-		t.Errorf("商品ID 999 应有 2 行绑定上，实际 %d", bound)
+	if bound != 3 {
+		t.Errorf("两个商品ID 共 3 行应都绑上，实际 %d", bound)
 	}
 
-	// 同一个电商商品ID 不能再绑给别的产品
-	if _, err := svc.BindEcProduct(ctx, "999", other, admin); err == nil {
-		t.Error("同一个电商商品ID 绑给第二个产品时应报错")
+	// 解绑其中一条：只有它对应的行松绑，另一个商品ID 的行不受影响
+	var target int64
+	for _, l := range links {
+		if l.EcProductID == "999" {
+			target = l.ID
+		}
 	}
-
-	// 解绑后订单明细也应跟着松绑
-	if err := svc.UnbindEcProduct(ctx, product, admin); err != nil {
+	if err := svc.UnbindEcLink(ctx, target, admin); err != nil {
 		t.Fatalf("解绑失败: %v", err)
 	}
-	got2, _ := svc.Store.ProductByID(ctx, product)
-	if got2.EcProductID != "" {
-		t.Errorf("解绑后产品不应还带着电商商品ID，实际 %q", got2.EcProductID)
+	after, _ := svc.Store.ListEcOrders(ctx, store.EcOrderFilter{Platform: model.EcTaobao})
+	var stillMatched, freed int
+	for _, o := range after {
+		for _, it := range o.Items {
+			if it.EcProductID == "999" && !it.Matched() {
+				freed++
+			}
+			if it.EcProductID == "777" && it.Matched() {
+				stillMatched++
+			}
+		}
 	}
-	left, _ := svc.Store.CountEcUnmatched(ctx, model.EcTaobao)
-	if left != 3 {
-		t.Errorf("解绑后 3 行都应回到未匹配，实际 %d", left)
+	if freed != 2 {
+		t.Errorf("解绑后商品ID 999 的 2 行应松开，实际 %d", freed)
+	}
+	if stillMatched != 1 {
+		t.Errorf("另一个商品ID 的绑定不应受影响，实际仍有 %d 行", stillMatched)
+	}
+}
+
+// TestNonWineProduct 非酒类产品：不填年份容量也能正常保存与读取。
+func TestNonWineProduct(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+
+	id, err := svc.Store.CreateProduct(ctx, &model.Product{
+		SKU: "ACC-1", Name: "多功能红酒开瓶器", Category: "酒具",
+		Unit: "把", IsActive: true, IsWine: false,
+		SalePrice: model.MustMoney("68"), EcCost: model.MustMoney("18"),
+	})
+	if err != nil {
+		t.Fatalf("创建非酒类产品失败: %v", err)
+	}
+	got, _ := svc.Store.ProductByID(ctx, id)
+	if got == nil {
+		t.Fatal("应能读回产品")
+	}
+	if got.IsWine {
+		t.Error("开瓶器不应被当成酒类")
+	}
+	if got.Vintage != 0 || got.VolumeML != 0 || got.ABV != 0 {
+		t.Errorf("非酒类不该有年份/容量/酒精度，实际 %d/%d/%d", got.Vintage, got.VolumeML, got.ABV)
+	}
+	if got.Unit != "把" || got.Category != "酒具" {
+		t.Errorf("单位与品类应保留，实际 %q / %q", got.Unit, got.Category)
+	}
+	// 酒类默认值要保持
+	wine, _ := svc.Store.CreateProduct(ctx, &model.Product{
+		SKU: "WINE-1", Name: "威代尔冰酒", Category: "冰酒", Unit: "瓶",
+		IsActive: true, IsWine: true, Vintage: 2019, VolumeML: 375, ABV: 1150,
+	})
+	wg, _ := svc.Store.ProductByID(ctx, wine)
+	if !wg.IsWine || wg.Vintage != 2019 || wg.VolumeML != 375 || wg.ABV != 1150 {
+		t.Errorf("酒类字段应完整保存，实际 %+v", wg)
 	}
 }
 
@@ -258,5 +333,76 @@ func TestVirtualBundle(t *testing.T) {
 	}
 	if canMake != model.MustQty("3") {
 		t.Errorf("可做套数应为 3，实际 %s", canMake)
+	}
+}
+
+// TestPerProductNegativeStock 单个产品的负库存开关覆盖系统设置。
+func TestPerProductNegativeStock(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+	admin := adminUser(t, svc)
+
+	mk := func(sku, name string, neg int) int64 {
+		id, err := svc.Store.CreateProduct(ctx, &model.Product{
+			SKU: sku, Name: name, Unit: "瓶", IsActive: true, IsWine: true,
+			AllowNegative: neg,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	follow := mk("N-FOLLOW", "跟随系统", model.NegativeFollowSystem)
+	allow := mk("N-ALLOW", "允许负库存", model.NegativeAllow)
+	forbid := mk("N-FORBID", "禁止负库存", model.NegativeForbid)
+
+	// 策略要能存下来
+	for id, want := range map[int64]int{
+		follow: model.NegativeFollowSystem,
+		allow:  model.NegativeAllow,
+		forbid: model.NegativeForbid,
+	} {
+		got, _ := svc.Store.ProductByID(ctx, id)
+		if got.AllowNegative != want {
+			t.Errorf("产品 %s 的策略应为 %d，实际 %d", got.Name, want, got.AllowNegative)
+		}
+	}
+
+	// 出库超过库存：系统不允许时
+	//   跟随 → 拦住；允许 → 放过；禁止 → 拦住
+	outs := func(id int64) error {
+		return svc.AdjustStock(ctx, AdjustInput{
+			ProductID: id, Reason: model.ReasonAdjustOut, Qty: model.MustQty("-3"),
+			OccurredOn: "2026-03-01",
+		}, admin)
+	}
+	if err := outs(follow); err == nil {
+		t.Error("系统不允许负库存时，跟随的产品出库超量应被拦住")
+	}
+	if err := outs(allow); err != nil {
+		t.Errorf("单独允许负库存的产品应放过，实际 %v", err)
+	}
+	if err := outs(forbid); err == nil {
+		t.Error("单独禁止负库存的产品应被拦住")
+	}
+	allowed, _ := svc.Store.ProductByID(ctx, allow)
+	if allowed.StockQty != model.MustQty("-3") {
+		t.Errorf("允许负库存的产品库存应变成 -3，实际 %s", allowed.StockQty)
+	}
+
+	// 系统打开全局开关后：跟随的应放过，单独禁止的仍要拦住
+	settings, err := svc.Store.Settings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.AllowNegative = true
+	if err := svc.Store.SaveSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	if err := outs(follow); err != nil {
+		t.Errorf("系统打开开关后，跟随的产品应放过，实际 %v", err)
+	}
+	if err := outs(forbid); err == nil {
+		t.Error("系统打开开关后，单独禁止的产品仍应被拦住")
 	}
 }

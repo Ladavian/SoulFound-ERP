@@ -2,6 +2,7 @@ package web
 
 import (
 	"net/http"
+	"sort"
 	"strings"
 
 	"icewine-erp/internal/model"
@@ -43,14 +44,22 @@ func (s *Server) handleEcommerce(w http.ResponseWriter, r *http.Request) {
 
 	// 绑定用的产品候选（顺带把已有电商商品ID 带上，方便显示"已绑定"）
 	products, _ := s.svc.Store.ListProducts(ctx, store.ProductFilter{Sort: "name"})
+	links, _ := s.svc.Store.AllProductLinks(ctx)
 	opts := make([]map[string]any, 0, len(products))
 	for _, p := range products {
 		opts = append(opts, map[string]any{
 			"id":    p.ID,
 			"label": p.Name + " · " + p.SKU,
-			"ec":    p.EcProductID,
+			"links": len(links[p.ID]),
 		})
 	}
+
+	allLinks, _ := s.svc.Store.AllProductLinks(ctx)
+	var flat []model.ProductEcLink
+	for _, list := range allLinks {
+		flat = append(flat, list...)
+	}
+	sort.Slice(flat, func(i, j int) bool { return flat[i].ID < flat[j].ID })
 
 	// 汇总：有效销售的实收 / 成本 / 毛利。
 	//
@@ -97,6 +106,8 @@ func (s *Server) handleEcommerce(w http.ResponseWriter, r *http.Request) {
 	page["UnmatchedLines"] = unmatchedLines
 	page["Statuses"] = statuses
 	page["ProductOptions"] = opts
+	page["Links"] = flat
+	page["PlatformOptions"] = model.EcPlatformOptions()
 	page["Revenue"] = revenue
 	page["Cost"] = cost
 	page["Profit"] = knownRevenue - cost

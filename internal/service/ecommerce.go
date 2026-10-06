@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"icewine-erp/internal/model"
-	"icewine-erp/internal/store"
 )
 
 // EcOrderRow 平台导出表格里的一行（子订单）。
@@ -94,7 +93,7 @@ func (s *Service) ImportEcOrders(ctx context.Context, platform string, rows []Ec
 				return v
 			}
 			var id *int64
-			if p, err := s.Store.ProductByEcID(ctx, ecID); err == nil && p != nil {
+			if p, err := s.Store.ProductByEcLink(ctx, platform, ecID); err == nil && p != nil {
 				v := p.ID
 				id = &v
 			}
@@ -232,14 +231,19 @@ func (s *Service) ImportEcOrders(ctx context.Context, platform string, rows []Ec
 	return summary, nil
 }
 
-// BindEcProduct 把某个电商商品ID绑到 ERP 产品上。
+// BindEcLink 把一个平台商品ID 绑到 ERP 产品上。
 //
-// 绑定会写回产品档案（下次导入自动匹配），并把该 ID 下
-// 所有历史未匹配的订单明细一起对上。
-func (s *Service) BindEcProduct(ctx context.Context, ecProductID string, productID int64, user *model.User) (int, error) {
+// 一个产品可以绑多个平台商品ID（淘宝多个链接、以及抖音京东等），
+// 所以这里是"新增一条绑定关系"，不是覆盖字段。
+// 绑定后会把该商品ID 下所有历史未匹配的订单明细一起补齐。
+func (s *Service) BindEcLink(ctx context.Context, platform, ecProductID, ecSKUId, title string, productID int64, user *model.User) (int, error) {
+	platform = strings.TrimSpace(platform)
 	ecProductID = strings.TrimSpace(ecProductID)
+	if platform == "" {
+		platform = model.EcTaobao
+	}
 	if ecProductID == "" {
-		return 0, UserErrf("缺少电商商品ID")
+		return 0, UserErrf("缺少平台商品ID")
 	}
 	product, err := s.Store.ProductByID(ctx, productID)
 	if err != nil {
@@ -248,20 +252,35 @@ func (s *Service) BindEcProduct(ctx context.Context, ecProductID string, product
 	if product == nil {
 		return 0, UserErrf("产品不存在")
 	}
-	// 一个电商商品ID 只能绑一个产品
-	if other, err := s.Store.ProductByEcID(ctx, ecProductID); err == nil && other != nil && other.ID != productID {
-		return 0, UserErrf("电商商品ID「%s」已经绑给「%s」了，请先解绑", ecProductID, other.Name)
+	// 同一个平台商品ID 只能属于一个产品
+	if existing, err := s.Store.EcLinkByEcID(ctx, platform, ecProductID); err != nil {
+		return 0, err
+	} else if existing != nil && existing.ProductID != productID {
+		return 0, UserErrf("%s的商品ID「%s」已经绑给「%s」了，请先解绑",
+			model.EcPlatformLabel(platform), ecProductID, existing.ProductName)
 	}
 
 	var fixed int
 	err = s.Store.Tx(ctx, func(tx *sql.Tx) error {
-		n, err := s.Store.BindEcProductID(ctx, tx, ecProductID, productID)
+		conflict, err := s.Store.AddEcLink(ctx, tx, model.ProductEcLink{
+			ProductID: productID, Platform: platform,
+			EcProductID: ecProductID, EcSKUId: ecSKUId, Title: title,
+		})
+		if err != nil {
+			return err
+		}
+		if conflict != nil {
+			return UserErrf("%s的商品ID「%s」已经绑给「%s」了",
+				model.EcPlatformLabel(platform), ecProductID, conflict.ProductName)
+		}
+		n, err := s.Store.BindEcOrderItems(ctx, tx, platform, ecProductID, productID)
 		if err != nil {
 			return err
 		}
 		fixed = n
-		return s.Store.Log(ctx, tx, user, "绑定电商商品", "product", &productID,
-			fmt.Sprintf("%s → %s（补齐 %d 行订单明细）", ecProductID, product.Name, n))
+		return s.Store.Log(ctx, tx, user, "绑定平台商品", "product", &productID,
+			fmt.Sprintf("%s %s → %s（补齐 %d 行订单明细）",
+				model.EcPlatformLabel(platform), ecProductID, product.Name, n))
 	})
 	if err != nil {
 		return 0, err
@@ -269,31 +288,21 @@ func (s *Service) BindEcProduct(ctx context.Context, ecProductID string, product
 	return fixed, nil
 }
 
-// UnbindEcProduct 解除产品的电商商品ID 绑定（订单明细的绑定也一并清掉）。
-func (s *Service) UnbindEcProduct(ctx context.Context, productID int64, user *model.User) error {
-	product, err := s.Store.ProductByID(ctx, productID)
+// UnbindEcLink 解除一条平台商品绑定。
+func (s *Service) UnbindEcLink(ctx context.Context, linkID int64, user *model.User) error {
+	link, err := s.Store.EcLinkByID(ctx, linkID)
 	if err != nil {
 		return err
 	}
-	if product == nil {
-		return UserErrf("产品不存在")
+	if link == nil {
+		return UserErrf("绑定不存在")
 	}
-	if product.EcProductID == "" {
-		return UserErrf("这个产品还没有绑定电商商品ID")
-	}
-	ecID := product.EcProductID
 	return s.Store.Tx(ctx, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx,
-			`UPDATE ec_order_items SET product_id = NULL WHERE ec_product_id = ?`, ecID); err != nil {
+		if err := s.Store.DeleteEcLink(ctx, tx, linkID); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx,
-			`UPDATE products SET ec_product_id = '', updated_at = ? WHERE id = ?`,
-			store.Now(), productID); err != nil {
-			return err
-		}
-		return s.Store.Log(ctx, tx, user, "解绑电商商品", "product", &productID,
-			ecID+" 已解除绑定")
+		return s.Store.Log(ctx, tx, user, "解绑平台商品", "product", &link.ProductID,
+			fmt.Sprintf("%s %s（原属 %s）", link.PlatformLabel(), link.EcProductID, link.ProductName))
 	})
 }
 
@@ -385,6 +394,73 @@ func appendErr(list []string, format string, args ...any) []string {
 		return list
 	}
 	return append(list, fmt.Sprintf(format, args...))
+}
+
+// SaveLinks 覆盖保存某个产品的平台商品绑定。
+//
+// 表单里一次提交产品的全部绑定行，这里按行重建：
+// 先校验有没有把别的产品的商品ID 抢过来，再整体替换。
+func (s *Service) SaveLinks(ctx context.Context, productID int64, links []model.ProductEcLink, user *model.User) error {
+	product, err := s.Store.ProductByID(ctx, productID)
+	if err != nil {
+		return err
+	}
+	if product == nil {
+		return UserErrf("产品不存在")
+	}
+	seen := map[string]bool{}
+	for i := range links {
+		links[i].ProductID = productID
+		if links[i].Platform == "" {
+			links[i].Platform = model.EcTaobao
+		}
+		links[i].EcProductID = strings.TrimSpace(links[i].EcProductID)
+		if links[i].EcProductID == "" {
+			return UserErrf("第 %d 行还没填平台商品ID", i+1)
+		}
+		key := links[i].Platform + "|" + links[i].EcProductID
+		if seen[key] {
+			return UserErrf("第 %d 行的商品ID 重复了", i+1)
+		}
+		seen[key] = true
+		// 同一个平台商品ID 只能属于一个产品
+		if existing, err := s.Store.EcLinkByEcID(ctx, links[i].Platform, links[i].EcProductID); err != nil {
+			return err
+		} else if existing != nil && existing.ProductID != productID {
+			return UserErrf("%s的商品ID「%s」已经绑给「%s」了",
+				model.EcPlatformLabel(links[i].Platform), links[i].EcProductID, existing.ProductName)
+		}
+	}
+
+	// 旧绑定在事务外查好（事务里不能走连接池）
+	old, err := s.Store.ProductLinks(ctx, productID)
+	if err != nil {
+		return err
+	}
+	return s.Store.Tx(ctx, func(tx *sql.Tx) error {
+		// 先删掉本产品原有的绑定（DeleteEcLink 会顺带松绑对应订单明细）
+		for _, l := range old {
+			if err := s.Store.DeleteEcLink(ctx, tx, l.ID); err != nil {
+				return err
+			}
+		}
+		fixed := 0
+		for _, l := range links {
+			if conflict, err := s.Store.AddEcLink(ctx, tx, l); err != nil {
+				return err
+			} else if conflict != nil {
+				return UserErrf("%s的商品ID「%s」已经绑给「%s」了",
+					model.EcPlatformLabel(l.Platform), l.EcProductID, conflict.ProductName)
+			}
+			n, err := s.Store.BindEcOrderItems(ctx, tx, l.Platform, l.EcProductID, productID)
+			if err != nil {
+				return err
+			}
+			fixed += n
+		}
+		return s.Store.Log(ctx, tx, user, "设置电商绑定", "product", &productID,
+			fmt.Sprintf("%s：%d 条绑定，补齐 %d 行订单明细", product.Name, len(links), fixed))
+	})
 }
 
 // ---------------------------------------------------------------- 虚拟组套

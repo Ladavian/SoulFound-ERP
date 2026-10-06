@@ -318,18 +318,197 @@ func (s *Store) UpsertEcItem(ctx context.Context, tx DBTX, it *model.EcOrderItem
 	return id, true, err
 }
 
-// ProductByEcID 按电商商品ID找产品。
-func (s *Store) ProductByEcID(ctx context.Context, ecID string) (*model.Product, error) {
+// ---------------------------------------------------------------- 平台商品绑定
+
+const ecLinkCols = `l.id, l.product_id, l.platform, l.ec_product_id, l.ec_sku_id,
+	l.title, l.note, l.created_at, p.name, p.sku`
+
+const ecLinkFrom = ` FROM product_ec_links l
+	JOIN products p ON p.id = l.product_id`
+
+func scanEcLink(row interface{ Scan(...any) error }) (*model.ProductEcLink, error) {
+	var l model.ProductEcLink
+	if err := row.Scan(&l.ID, &l.ProductID, &l.Platform, &l.EcProductID, &l.EcSKUId,
+		&l.Title, &l.Note, &l.CreatedAt, &l.ProductName, &l.ProductSKU); err != nil {
+		return nil, err
+	}
+	return &l, nil
+}
+
+// ProductLinks 某个产品绑定的全部平台商品。
+func (s *Store) ProductLinks(ctx context.Context, productID int64) ([]model.ProductEcLink, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT `+ecLinkCols+ecLinkFrom+` WHERE l.product_id = ?
+		  ORDER BY l.platform, l.id`, productID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []model.ProductEcLink
+	for rows.Next() {
+		l, err := scanEcLink(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *l)
+	}
+	return out, rows.Err()
+}
+
+// AllProductLinks 全部绑定关系（按产品分组，列表页显示"已绑 N 个链接"）。
+func (s *Store) AllProductLinks(ctx context.Context) (map[int64][]model.ProductEcLink, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+ecLinkCols+ecLinkFrom+` ORDER BY l.product_id, l.id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64][]model.ProductEcLink{}
+	for rows.Next() {
+		l, err := scanEcLink(rows)
+		if err != nil {
+			return nil, err
+		}
+		out[l.ProductID] = append(out[l.ProductID], *l)
+	}
+	return out, rows.Err()
+}
+
+// ProductByEcLink 按平台商品ID 找绑定的产品。
+func (s *Store) ProductByEcLink(ctx context.Context, platform, ecID string) (*model.Product, error) {
 	ecID = strings.TrimSpace(ecID)
 	if ecID == "" {
 		return nil, nil
 	}
-	row := s.db.QueryRowContext(ctx, `SELECT `+productCols+productFrom+` WHERE p.ec_product_id = ?`, ecID)
+	row := s.db.QueryRowContext(ctx,
+		`SELECT `+productCols+productFrom+`
+		  WHERE p.id = (SELECT product_id FROM product_ec_links
+		                 WHERE platform = ? AND ec_product_id = ? LIMIT 1)`, platform, ecID)
 	p, err := scanProduct(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	return p, err
+}
+
+// EcLinkByID 单条绑定。
+func (s *Store) EcLinkByID(ctx context.Context, id int64) (*model.ProductEcLink, error) {
+	return ecLinkByID(ctx, s.db, id)
+}
+
+// EcLinkByIDTx 事务内单条绑定。
+func (s *Store) EcLinkByIDTx(ctx context.Context, tx DBTX, id int64) (*model.ProductEcLink, error) {
+	return ecLinkByID(ctx, tx, id)
+}
+
+func ecLinkByID(ctx context.Context, q DBTX, id int64) (*model.ProductEcLink, error) {
+	row := q.QueryRowContext(ctx, `SELECT `+ecLinkCols+ecLinkFrom+` WHERE l.id = ?`, id)
+	l, err := scanEcLink(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return l, err
+}
+
+// EcLinkByEcID 按平台 + 商品ID 查绑定。
+func (s *Store) EcLinkByEcID(ctx context.Context, platform, ecID string) (*model.ProductEcLink, error) {
+	return ecLinkByEcID(ctx, s.db, platform, ecID)
+}
+
+func ecLinkByEcID(ctx context.Context, q DBTX, platform, ecID string) (*model.ProductEcLink, error) {
+	ecID = strings.TrimSpace(ecID)
+	if ecID == "" {
+		return nil, nil
+	}
+	row := q.QueryRowContext(ctx,
+		`SELECT `+ecLinkCols+ecLinkFrom+`
+		  WHERE l.platform = ? AND l.ec_product_id = ? LIMIT 1`, platform, ecID)
+	l, err := scanEcLink(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return l, err
+}
+
+// ProductLinksTx 事务内查某个产品的绑定。
+func (s *Store) ProductLinksTx(ctx context.Context, tx DBTX, productID int64) ([]model.ProductEcLink, error) {
+	rows, err := tx.QueryContext(ctx,
+		`SELECT `+ecLinkCols+ecLinkFrom+` WHERE l.product_id = ? ORDER BY l.platform, l.id`, productID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []model.ProductEcLink
+	for rows.Next() {
+		l, err := scanEcLink(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *l)
+	}
+	return out, rows.Err()
+}
+
+// AddEcLink 新增一条产品与平台商品的绑定。
+//
+// 同一个平台商品ID 只能属于一个产品，冲突时返回已有的那条，
+// 让上层给出"已绑给谁"的提示。
+func (s *Store) AddEcLink(ctx context.Context, tx DBTX, l model.ProductEcLink) (*model.ProductEcLink, error) {
+	// 查重必须走 tx：连接池只有 1 个连接，事务占着它，
+	// 这里再走 s.db 会自死锁（第一版就是这么挂的）。
+	if existing, err := ecLinkByEcID(ctx, tx, l.Platform, l.EcProductID); err != nil {
+		return nil, err
+	} else if existing != nil && existing.ProductID != l.ProductID {
+		return existing, nil
+	}
+	_, err := tx.ExecContext(ctx,
+		`INSERT INTO product_ec_links(product_id, platform, ec_product_id, ec_sku_id, title, note, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(platform, ec_product_id, ec_sku_id)
+		 DO UPDATE SET product_id = excluded.product_id, title = excluded.title, note = excluded.note`,
+		l.ProductID, l.Platform, l.EcProductID, l.EcSKUId, l.Title, l.Note, Now())
+	if err != nil {
+		return nil, err
+	}
+	return nil, nil
+}
+
+// DeleteEcLink 解除一条绑定，并把它匹配过的订单明细松绑。
+func (s *Store) DeleteEcLink(ctx context.Context, tx DBTX, id int64) error {
+	l, err := ecLinkByID(ctx, tx, id)
+	if err != nil || l == nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM product_ec_links WHERE id = ?`, id); err != nil {
+		return err
+	}
+	// 该商品ID 可能还有别的产品也绑着（同ID不同规格的情况），确认没有才松绑
+	var still int
+	if err := tx.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM product_ec_links WHERE platform = ? AND ec_product_id = ?`,
+		l.Platform, l.EcProductID).Scan(&still); err != nil {
+		return err
+	}
+	if still > 0 {
+		return nil
+	}
+	_, err = tx.ExecContext(ctx,
+		`UPDATE ec_order_items SET product_id = NULL
+		  WHERE platform = ? AND ec_product_id = ? AND product_id = ?`,
+		l.Platform, l.EcProductID, l.ProductID)
+	return err
+}
+
+// BindEcOrderItems 把某个平台商品ID 下未匹配的订单明细一次性绑到产品。
+func (s *Store) BindEcOrderItems(ctx context.Context, tx DBTX, platform, ecID string, productID int64) (int, error) {
+	res, err := tx.ExecContext(ctx,
+		`UPDATE ec_order_items SET product_id = ?
+		  WHERE product_id IS NULL AND platform = ? AND ec_product_id = ?`,
+		productID, platform, ecID)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
 }
 
 // EcItemByID 单条订单明细。

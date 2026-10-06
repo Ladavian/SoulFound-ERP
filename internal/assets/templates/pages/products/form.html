@@ -24,13 +24,32 @@
 {{/* 图片要跟产品一起提交，所以整个表单是 multipart；
     注意：表单不能嵌套（嵌套时浏览器会忽略内层 form），所以图片
     的输入框与删除开关都放在本表单里，不再单独开 form。 */}}
-<form method="post" action="{{.FormAction}}" enctype="multipart/form-data">
+{{/* wine 控制酒类专属字段的显隐：礼盒、海马刀这些非酒类
+     不该被逼着填年份/容量/酒精度。 */}}
+<form method="post" action="{{.FormAction}}" x-data="{ wine: {{if $p.IsWine}}true{{else}}false{{end}} }" enctype="multipart/form-data">
   <div class="card">
     <div class="card__head">
       <div class="card__title">基本信息</div>
     </div>
     <div class="card__body">
       <div class="form-grid">
+        <div class="field span-2">
+          <label class="field__label">产品类型</label>
+          <div class="seg" role="radiogroup" aria-label="产品类型">
+            <label class="seg__item" :class="wine && 'is-active'">
+              <input type="radio" name="is_wine" value="1" x-model="wine" :value="true" class="sr-only">
+              <span>酒类</span>
+            </label>
+            <label class="seg__item" :class="!wine && 'is-active'">
+              <input type="radio" name="is_wine" value="0" x-model="wine" :value="false" class="sr-only">
+              <span>非酒类</span>
+            </label>
+          </div>
+          <div class="field__hint">
+            礼盒、开瓶器、手拎袋、包装物料这类选「非酒类」，
+            年份 / 容量 / 酒精度会自动隐藏，不用填。
+          </div>
+        </div>
         <div class="field">
           <label class="field__label" for="sku">产品编码<span class="req">*</span></label>
           <input class="input mono" id="sku" name="sku" type="text" value="{{$p.SKU}}" required
@@ -115,7 +134,7 @@
 
   <div class="card">
     <div class="card__head">
-      <div class="card__title">规格<span class="card__sub">酒类与非酒类都适用，用不到的留空即可</span></div>
+      <div class="card__title">规格<span class="card__sub">按品类填，用不到的留空即可</span></div>
     </div>
     <div class="card__body">
       <div class="form-grid">
@@ -134,19 +153,19 @@
                  value="{{$p.BottlesPerCase}}" placeholder="例如：12">
           <div class="field__hint">一箱等于几个计量单位，散装填 1。</div>
         </div>
-        <div class="field">
+        <div class="field" x-show="wine" x-cloak>
           <label class="field__label" for="vintage">年份 / 批次</label>
           <input class="input input--num" id="vintage" name="vintage" type="number" min="0" max="2100" step="1"
                  value="{{if $p.Vintage}}{{$p.Vintage}}{{end}}" placeholder="例如：2020">
           <div class="field__hint">非年份产品或其它品类可以留空。</div>
         </div>
-        <div class="field">
+        <div class="field" x-show="wine" x-cloak>
           <label class="field__label" for="volume_ml">容量（ml）</label>
           <input class="input input--num" id="volume_ml" name="volume_ml" type="number" min="0" max="100000" step="1"
                  value="{{if $p.VolumeML}}{{$p.VolumeML}}{{end}}" placeholder="例如：375">
           <div class="field__hint">常见：200 / 375 / 750。</div>
         </div>
-        <div class="field">
+        <div class="field" x-show="wine" x-cloak>
           <label class="field__label" for="abv">酒精度（%）</label>
           <input class="input input--num" id="abv" name="abv" type="text" inputmode="decimal"
                  value="{{$p.ABVText}}" placeholder="例如：11.5">
@@ -198,6 +217,33 @@
                  value="{{qtyInput $p.LowStockQty}}" placeholder="6">
           <div class="field__hint">库存低于或等于这个数量时，列表会提示补货。</div>
         </div>
+        <div class="field span-2">
+          <label class="field__label">负库存</label>
+          <div class="seg">
+            {{$neg := $p.AllowNegative}}
+            <label class="seg__item{{if eq $neg 0}} is-active{{end}}">
+              <input type="radio" name="allow_negative" value="0" class="sr-only"{{if eq $neg 0}} checked{{end}}>
+              <span>跟随系统设置</span>
+            </label>
+            <label class="seg__item{{if eq $neg 1}} is-active{{end}}">
+              <input type="radio" name="allow_negative" value="1" class="sr-only"{{if eq $neg 1}} checked{{end}}>
+              <span>允许负库存</span>
+            </label>
+            <label class="seg__item{{if eq $neg 0}} is-active{{end}}">
+              <input type="radio" name="allow_negative" value="2" class="sr-only"{{if eq $neg 2}} checked{{end}}>
+              <span>禁止负库存</span>
+            </label>
+          </div>
+          <div class="field__hint">
+            默认跟随「系统设置」里的全局开关。
+            单个产品可以覆盖：礼盒、赠品、配件这类经常先卖后补的，
+            可以单独设为「允许」；正装酒想盯紧库存就设为「禁止」。
+            {{if .SystemAllowsNegative}}<br>当前系统设置：<strong>允许</strong>负库存。
+            {{else}}<br>当前系统设置：<strong>不允许</strong>负库存。
+            {{end}}
+          </div>
+        </div>
+        <div class="field span-2"></div>
         <div class="field">
           <label class="field__label" for="supplier_id">供应商</label>
           {{$curSupID := deref $p.SupplierID}}
@@ -210,36 +256,27 @@
     </div>
   </div>
 
-  <div class="card">
+  <div class="card" x-data="ecLinks({{.LinksJSON}}, {{.PlatformsJSON}})">
     <div class="card__head">
-      <div class="card__title">电商<span class="card__sub">平台订单导入时靠商品ID 自动对到本产品</span></div>
+      <div class="card__title">
+        电商平台绑定
+        <span class="card__sub">平台商品ID 对到本产品；一个产品可以绑多个（同一平台多个链接也行）</span>
+      </div>
+      <div class="card__actions">
+        <button class="btn btn--sm" type="button" @click="add()">
+          {{template "icon" "plus"}}<span>添加绑定</span>
+        </button>
+      </div>
     </div>
     <div class="card__body">
       <div class="form-grid">
-        <div class="field">
-          <label class="field__label" for="ec_product_id">电商商品ID</label>
-          <input class="input" id="ec_product_id" name="ec_product_id" type="text"
-                 value="{{$p.EcProductID}}" placeholder="例如 1039451180802">
-          <div class="field__hint">
-            淘宝后台的商品ID（导出订单表里的「商品ID」列）。
-            平台导出的<strong>商家编码经常是空的</strong>，只有这个 ID 稳定，
-            所以绑定靠它。
-          </div>
-        </div>
-        <div class="field">
-          <label class="field__label" for="ec_sku_id">平台规格ID</label>
-          <input class="input" id="ec_sku_id" name="ec_sku_id" type="text"
-                 value="{{$p.EcSKUId}}" placeholder="选填，同一商品有多个规格时用">
-          <div class="field__hint">同一个商品ID 下分了不同规格（口味、包装）时填。</div>
-        </div>
         <div class="field">
           <label class="field__label" for="ec_cost">电商成本价</label>
           <input class="input input--num" id="ec_cost" name="ec_cost" type="text" inputmode="decimal"
                  value="{{moneyInput2 $p.EcCost}}" placeholder="0.00">
           <div class="field__hint">
-            电商口径的成本单价（含平台扣点、活动价摊薄等），
-            <strong>算电商毛利只用这个数</strong>，不会用平均成本。
-            留空则电商毛利显示为"—"，避免算出一个口径不对的数。
+            电商口径的成本单价（含平台扣点、活动价摊薄等）。
+            <strong>算电商毛利只用这个数</strong>，不会用平均成本；留空则电商毛利显示为「缺成本」。
           </div>
         </div>
         <div class="field">
@@ -248,9 +285,46 @@
             {{if .IsNew}}<span class="muted">保存后显示</span>
             {{else}}<span>{{$p.StockQty}} {{$p.Unit}} · 均价 {{money4 $p.AvgCost}}</span>{{end}}
           </div>
-          <div class="field__hint">仅作参考，电商成本与它无关，需要单独维护。</div>
+          <div class="field__hint">仅作参考。电商成本与它无关，需要单独维护。</div>
         </div>
       </div>
+
+      <div class="ec-links">
+        <template x-for="(row, index) in rows" :key="index">
+          <div class="ec-link-row">
+            <select class="select" x-model="row.platform">
+              <template x-for="p in platforms" :key="p.value">
+                <option :value="p.value" x-text="p.label"></option>
+              </template>
+            </select>
+            <input class="input mono" type="text" inputmode="numeric" x-model="row.ecProductId"
+                   placeholder="平台商品ID" required>
+            <input class="input" type="text" x-model="row.ecSkuId" placeholder="规格ID（选填）">
+            <input class="input" type="text" x-model="row.title" placeholder="链接标题（选填，便于辨认）">
+            <button class="btn btn--ghost btn--icon" type="button"
+                    @click="rows.splice(index, 1)" title="删除">
+              {{template "icon" "trash"}}
+            </button>
+          </div>
+        </template>
+        <template x-for="(row, index) in rows" :key="'h' + index">
+          <span>
+            <input type="hidden" name="link_platform" :value="row.platform">
+            <input type="hidden" name="link_ec_product_id" :value="row.ecProductId">
+            <input type="hidden" name="link_ec_sku_id" :value="row.ecSkuId">
+            <input type="hidden" name="link_title" :value="row.title">
+          </span>
+        </template>
+        <div class="tiny muted" x-show="rows.length === 0" x-cloak>
+          还没有绑定。可以先保存产品，再到「电商平台账单」导入订单后一键绑定，
+          也可以在这里直接填。
+        </div>
+      </div>
+      {{if not .IsNew}}
+      <div class="tiny muted" style="margin-top:10px">
+        提示：绑定关系保存后立即生效，历史未匹配的订单明细会自动补齐。
+      </div>
+      {{end}}
     </div>
   </div>
 
@@ -333,6 +407,23 @@
 
 
 <script>
+/* 电商平台绑定：一个产品可以有多条（同平台多个链接 / 多平台） */
+window.ecLinks = function (initial, platforms) {
+  return {
+    rows: (initial || []).map(function (l) {
+      return {
+        platform: l.platform || 'taobao',
+        ecProductId: l.ecProductId || '',
+        ecSkuId: l.ecSkuId || '',
+        title: l.title || ''
+      };
+    }),
+    platforms: platforms || [],
+    add: function () {
+      this.rows.push({ platform: 'taobao', ecProductId: '', ecSkuId: '', title: '' });
+    }
+  };
+};
 window.__ERP_BUNDLE_PRODUCTS__ = {{.BundleProductsJSON}};
 /* 虚拟组套：选组成产品 + 用量 */
 window.bundleRows = function (initial) {

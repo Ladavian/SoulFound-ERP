@@ -1916,3 +1916,59 @@ tr:nth-child(3) .rank-badge { background: var(--ice-100); border-color: var(--ic
 }
 .bundle-row .select { flex: 1 1 auto; min-width: 0; }
 .bundle-row .input--num { flex: 0 0 92px; }
+
+/* 分段控件（酒类 / 非酒类这类二选一） */
+.seg {
+  display: inline-flex;
+  padding: 3px;
+  gap: 3px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.seg__item {
+  padding: 7px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+  cursor: pointer;
+  user-select: none;
+}
+.seg__item.is-active {
+  background: var(--surface);
+  color: var(--brand-700);
+  box-shadow: var(--shadow-sm);
+}
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* 电商绑定行：平台 + 商品ID + 规格 + 标题 */
+.ec-links { margin-top: 12px; }
+.ec-link-row {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+@media (max-width: 900px) {
+  .ec-link-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .ec-link-row > *:not(.btn) { grid-column: 1 / -1; }
+}
+.bind-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px dashed var(--line);
+}
+.bind-item:last-child { border-bottom: 0; }

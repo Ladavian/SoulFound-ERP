@@ -271,6 +271,56 @@ CREATE INDEX IF NOT EXISTS idx_ec_items_product ON ec_order_items(product_id);
 CREATE INDEX IF NOT EXISTS idx_ec_items_ecid    ON ec_order_items(ec_product_id);
 `
 
+// migrationV12 电商绑定改成一张关联表 + 非酒类产品。
+//
+// 为什么要把 products.ec_product_id 换成 product_ec_links：
+//   - 同一个产品在淘宝上可能有多个链接（不同标题、不同活动），
+//     一个字段装不下，必须 1:N；
+//   - 后面还要接抖音、京东、小红书、微信小店，
+//     每个平台一个商品ID，靠 platform 区分。
+//
+// 所以绑定关系独立成表，(platform, ec_product_id, ec_sku_id) 唯一，
+// 同一个平台商品ID 只能属于一个 ERP 产品。
+//
+// is_wine 用来区分酒类与非酒类：礼盒、海马刀、手拎袋这些
+// 没有年份/容量/酒精度，表单不该逼着人填酒类参数。
+const migrationV12 = `
+CREATE TABLE IF NOT EXISTS product_ec_links (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id    INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    platform      TEXT    NOT NULL DEFAULT 'taobao',
+    ec_product_id TEXT    NOT NULL,
+    ec_sku_id     TEXT    NOT NULL DEFAULT '',
+    title         TEXT    NOT NULL DEFAULT '',
+    note          TEXT    NOT NULL DEFAULT '',
+    created_at    TEXT    NOT NULL DEFAULT '',
+    UNIQUE (platform, ec_product_id, ec_sku_id)
+);
+CREATE INDEX IF NOT EXISTS idx_pel_product ON product_ec_links(product_id);
+CREATE INDEX IF NOT EXISTS idx_pel_lookup  ON product_ec_links(platform, ec_product_id);
+
+-- 把已有的单个绑定搬进关联表，然后不再使用产品上的那个字段
+INSERT OR IGNORE INTO product_ec_links(product_id, platform, ec_product_id, ec_sku_id, created_at)
+    SELECT id, 'taobao', ec_product_id, ec_sku_id, datetime('now')
+      FROM products WHERE ec_product_id <> '';
+UPDATE products SET ec_product_id = '', ec_sku_id = '';
+
+ALTER TABLE products ADD COLUMN is_wine INTEGER NOT NULL DEFAULT 1;
+`
+
+// migrationV13 单个产品的负库存开关。
+//
+// 原来只有系统级开关，一刀切不合适：正装酒通常不允许卖超，
+// 但礼盒、赠品、配件这些经常先卖后补，或者干脆不记库存。
+// 所以每个产品加一个三态开关：
+//
+//	-1 跟随系统设置（默认，保持原来的行为）
+//	 1 这个产品允许负库存
+//	 0 这个产品禁止负库存（即使系统允许）
+const migrationV13 = `
+ALTER TABLE products ADD COLUMN allow_negative INTEGER NOT NULL DEFAULT -1;
+`
+
 // migrations 按顺序执行的迁移脚本。新增结构或数据变更时在末尾追加一段 SQL，
 // 已执行过的版本不会重复执行（版本号记录在 schema_meta 表）。
 var migrations = []string{
@@ -285,4 +335,6 @@ var migrations = []string{
 	migrationV9,
 	migrationV10,
 	migrationV11,
+	migrationV12,
+	migrationV13,
 }

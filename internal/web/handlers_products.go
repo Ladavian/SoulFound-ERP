@@ -218,9 +218,9 @@ func (s *Server) handleProductSave(w http.ResponseWriter, r *http.Request) {
 		SupplierID:     f.OptionalID("supplier_id"),
 		Barcode:        f.Str("barcode"),
 		ImageURL:       f.Str("image_url"),
-		EcProductID:    strings.TrimSpace(f.Str("ec_product_id")),
-		EcSKUId:        strings.TrimSpace(f.Str("ec_sku_id")),
 		EcCost:         f.Money("ec_cost", "电商成本"),
+		IsWine:         f.Str("is_wine") != "0",
+		AllowNegative:  negativeFromForm(f.Str("allow_negative")),
 		Notes:          f.Str("notes"),
 		IsActive:       f.Bool("is_active"),
 	}
@@ -278,6 +278,10 @@ func (s *Server) handleProductSave(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, r, fallback, err)
 			return
 		}
+		if err := s.svc.SaveLinks(ctx, id, parseLinks(r), userFrom(r)); err != nil {
+			s.fail(w, r, fallback, err)
+			return
+		}
 		s.logAction(r, "修改产品", "product", &id, product.SKU+" "+product.Name)
 		if !ok {
 			s.fail(w, r, fallback, service.UserErrf("%s（产品其它信息已保存）", note))
@@ -298,6 +302,10 @@ func (s *Server) handleProductSave(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.svc.SaveBundles(ctx, newID, s.parseBundles(r, newID), userFrom(r)); err != nil {
 		s.fail(w, r, fallback, service.UserErrf("产品已创建，但组套保存失败：%v", err))
+		return
+	}
+	if err := s.svc.SaveLinks(ctx, newID, parseLinks(r), userFrom(r)); err != nil {
+		s.fail(w, r, fallback, service.UserErrf("产品已创建，但电商绑定保存失败：%v", err))
 		return
 	}
 	s.logAction(r, "新建产品", "product", &newID, product.SKU+" "+product.Name)
@@ -337,6 +345,50 @@ func (s *Server) parseBundles(r *http.Request, productID int64) []model.ProductB
 			}
 		}
 		out = append(out, model.ProductBundle{ComponentID: cid, Qty: qty})
+	}
+	return out
+}
+
+// negativeFromForm 解析负库存开关。
+//
+// 空值按"跟随系统设置"处理（0），这样不影响没带这个字段的提交路径。
+func negativeFromForm(raw string) int {
+	switch strings.TrimSpace(raw) {
+	case "1":
+		return model.NegativeAllow
+	case "2":
+		return model.NegativeForbid
+	default:
+		return model.NegativeFollowSystem
+	}
+}
+
+// parseLinks 解析产品表单里的电商绑定行。
+//
+// 四个列表按顺序对齐（平台 / 商品ID / 规格ID / 标题），
+// 空行跳过；商品ID 是必填，为空的行交给服务层报错。
+func parseLinks(r *http.Request) []model.ProductEcLink {
+	_ = r.ParseMultipartForm(8 << 20)
+	platforms := r.Form["link_platform"]
+	ids := r.Form["link_ec_product_id"]
+	skus := r.Form["link_ec_sku_id"]
+	titles := r.Form["link_title"]
+	var out []model.ProductEcLink
+	for i, raw := range ids {
+		platform := model.EcTaobao
+		if i < len(platforms) && strings.TrimSpace(platforms[i]) != "" {
+			platform = strings.TrimSpace(platforms[i])
+		}
+		link := model.ProductEcLink{
+			Platform:    platform,
+			EcProductID: strings.TrimSpace(raw),
+			EcSKUId:     at(skus, i),
+			Title:       at(titles, i),
+		}
+		if link.EcProductID == "" {
+			continue
+		}
+		out = append(out, link)
 	}
 	return out
 }

@@ -14,7 +14,7 @@ const productCols = `p.id, p.sku, p.name, p.name_en, p.category, p.brand, p.orig
 	p.vintage, p.volume_ml, p.abv, p.unit, p.bottles_per_case, p.sale_price,
 	p.cost_price, p.specs, p.low_stock_qty, p.supplier_id,
 	COALESCE(s.name, ''), p.image_url, p.notes, p.barcode, p.is_active,
-	p.ec_product_id, p.ec_sku_id, p.ec_cost,
+	p.ec_cost, p.is_wine, p.allow_negative,
 	p.stock_qty, p.avg_cost, p.stock_value, p.created_at, p.updated_at`
 
 const productFrom = ` FROM products p LEFT JOIN suppliers s ON s.id = p.supplier_id`
@@ -24,18 +24,20 @@ func scanProduct(row interface{ Scan(...any) error }) (*model.Product, error) {
 		p          model.Product
 		supplierID sql.NullInt64
 		isActive   int64
+		isWine     int64
 	)
 	err := row.Scan(&p.ID, &p.SKU, &p.Name, &p.NameEn, &p.Category, &p.Brand, &p.Origin,
 		&p.Vintage, &p.VolumeML, &p.ABV, &p.Unit, &p.BottlesPerCase, &p.SalePrice,
 		&p.CostPrice, &p.Specs, &p.LowStockQty, &supplierID,
 		&p.SupplierName, &p.ImageURL, &p.Notes, &p.Barcode, &isActive,
-		&p.EcProductID, &p.EcSKUId, &p.EcCost,
+		&p.EcCost, &isWine, &p.AllowNegative,
 		&p.StockQty, &p.AvgCost, &p.StockValue, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
 	p.SupplierID = ptrInt(supplierID)
 	p.IsActive = i2b(isActive)
+	p.IsWine = i2b(isWine)
 	return &p, nil
 }
 
@@ -198,13 +200,13 @@ func (s *Store) CreateProduct(ctx context.Context, p *model.Product) (int64, err
 		`INSERT INTO products(sku, name, name_en, category, brand, origin, vintage, volume_ml, abv,
 		        unit, bottles_per_case, sale_price, cost_price, specs, low_stock_qty,
 		        supplier_id, image_url, notes, barcode, is_active,
-		        ec_product_id, ec_sku_id, ec_cost,
+		        ec_cost, is_wine, allow_negative,
 		        stock_qty, avg_cost, stock_value, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?)`,
 		p.SKU, p.Name, p.NameEn, p.Category, p.Brand, p.Origin, p.Vintage, p.VolumeML, p.ABV,
 		p.Unit, p.BottlesPerCase, int64(p.SalePrice), int64(p.CostPrice), p.Specs, int64(p.LowStockQty),
 		p.SupplierID, p.ImageURL, p.Notes, p.Barcode, b2i(p.IsActive),
-		p.EcProductID, p.EcSKUId, int64(p.EcCost), now, now)
+		int64(p.EcCost), b2i(p.IsWine), p.AllowNegative, now, now)
 	if err != nil {
 		return 0, err
 	}
@@ -218,14 +220,14 @@ func (s *Store) UpdateProduct(ctx context.Context, p *model.Product) error {
 		        vintage = ?, volume_ml = ?, abv = ?, unit = ?, bottles_per_case = ?,
 		        sale_price = ?, cost_price = ?, specs = ?, low_stock_qty = ?,
 		        supplier_id = ?, image_url = ?, notes = ?, barcode = ?,
-		        is_active = ?, ec_product_id = ?, ec_sku_id = ?, ec_cost = ?,
+		        is_active = ?, ec_cost = ?, is_wine = ?, allow_negative = ?,
 		        updated_at = ?
 		 WHERE id = ?`,
 		p.SKU, p.Name, p.NameEn, p.Category, p.Brand, p.Origin,
 		p.Vintage, p.VolumeML, p.ABV, p.Unit, p.BottlesPerCase,
 		int64(p.SalePrice), int64(p.CostPrice), p.Specs, int64(p.LowStockQty),
 		p.SupplierID, p.ImageURL, p.Notes, p.Barcode, b2i(p.IsActive),
-		p.EcProductID, p.EcSKUId, int64(p.EcCost), Now(), p.ID)
+		int64(p.EcCost), b2i(p.IsWine), p.AllowNegative, Now(), p.ID)
 	return err
 }
 

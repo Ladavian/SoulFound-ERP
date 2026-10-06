@@ -87,7 +87,8 @@ func (p *Poster) Post(req PostRequest) (*model.StockMovement, error) {
 
 	cost := req.UnitCost
 	if req.Qty < 0 {
-		if !p.allowNeg && -req.Qty > prod.StockQty {
+		// 负库存：先看这个产品自己的设置，没设才跟随系统开关
+		if !prod.AllowsNegative(p.allowNeg) && -req.Qty > prod.StockQty {
 			return nil, UserErrf("「%s」库存不足：当前库存 %s %s，本次需要出库 %s %s",
 				prod.Name, prod.StockQty, prod.Unit, -req.Qty, prod.Unit)
 		}

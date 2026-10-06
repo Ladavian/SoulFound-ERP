@@ -75,6 +75,9 @@
         {{range .Unmatched}}
         <form class="bind-row" method="post" action="/ecommerce/bind">
           <input type="hidden" name="ec_product_id" value="{{.EcProductID}}">
+          <input type="hidden" name="platform" value="{{$.Platform}}">
+          <input type="hidden" name="ec_sku_id" value="{{.EcSKU}}">
+          <input type="hidden" name="title" value="{{.Title}}">
           <div class="bind-row__info">
             <div class="strong">{{default "（无商品ID）" .EcProductID}}</div>
             <div class="tiny muted">{{.Title}}</div>
@@ -86,7 +89,7 @@
             <select class="select" name="product_id" required>
               <option value="">— 选择 ERP 产品 —</option>
               {{range $.ProductOptions}}
-              <option value="{{.id}}">{{.label}}{{if .ec}}（已绑 {{.ec}}）{{end}}</option>
+              <option value="{{.id}}">{{.label}}{{if .links}}（已绑 {{.links}} 个链接）{{end}}</option>
               {{end}}
             </select>
             <button class="btn btn--primary" type="submit">绑定</button>
@@ -112,8 +115,17 @@
       <div class="card__body">
         <form class="import-form" x-show="exporting" x-cloak
               method="post" action="/import/ec-orders" enctype="multipart/form-data">
-          <input type="hidden" name="platform" value="{{.Platform}}">
           <div class="field">
+            <label class="field__label" for="platform">平台</label>
+            <select class="select" id="platform" name="platform">
+              {{range .PlatformOptions}}<option value="{{.Value}}"{{if eq .Value $.Platform}} selected{{end}}>{{.Label}}</option>{{end}}
+            </select>
+            <div class="field__hint">
+              已跑通：淘宝 / 天猫。抖音、京东、小红书、微信小店已预留，
+              导出格式确认后逐个接。
+            </div>
+          </div>
+          <div class="field span-2">
             <label class="field__label" for="ec-file">平台导出的订单表格</label>
             <input class="input" id="ec-file" name="file" type="file" accept=".xlsx,.xlsm,.csv" required>
             <div class="field__hint">
@@ -240,6 +252,32 @@
         </ol>
       </div>
     </div>
+    {{if .Links}}
+    <div class="card">
+      <div class="card__head">
+        <div class="card__title">已绑定<span class="card__sub">{{len .Links}} 条</span></div>
+      </div>
+      <div class="card__body">
+        {{range .Links}}
+        <div class="bind-item">
+          <div>
+            <div class="strong">{{.ProductName}}</div>
+            <div class="tiny muted">
+              {{.PlatformLabel}} · <span class="mono">{{.EcProductID}}</span>
+              {{if .EcSKUId}} · {{.EcSKUId}}{{end}}
+            </div>
+            {{if .Title}}<div class="tiny muted">{{.Title}}</div>{{end}}
+          </div>
+          <form method="post" action="/ecommerce/unbind"
+                onsubmit="return confirm('解除这条绑定？对应订单明细的绑定也会一起松开。')">
+            <input type="hidden" name="link_id" value="{{.ID}}">
+            <button class="btn btn--sm btn--ghost" type="submit">解绑</button>
+          </form>
+        </div>
+        {{end}}
+      </div>
+    </div>
+    {{end}}
     <div class="card">
       <div class="card__head"><div class="card__title">口径说明</div></div>
       <div class="card__body tiny muted" style="line-height:1.75">

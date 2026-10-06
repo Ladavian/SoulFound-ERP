@@ -7,6 +7,37 @@ import (
 	"time"
 )
 
+// 负库存策略取值。
+const (
+	NegativeFollowSystem = 0
+	NegativeAllow        = 1
+	NegativeForbid       = 2
+)
+
+// AllowsNegative 结合系统设置，判断这个产品能否出现负库存。
+func (p Product) AllowsNegative(systemAllows bool) bool {
+	switch p.AllowNegative {
+	case NegativeAllow:
+		return true
+	case NegativeForbid:
+		return false
+	default:
+		return systemAllows
+	}
+}
+
+// NegativeLabel 负库存策略的中文说明（列表与详情用）。
+func (p Product) NegativeLabel() string {
+	switch p.AllowNegative {
+	case NegativeAllow:
+		return "允许负库存"
+	case NegativeForbid:
+		return "禁止负库存"
+	default:
+		return ""
+	}
+}
+
 // EcCostOrAvg 算电商毛利时的成本单价：优先电商成本，没填才退回平均成本。
 func (p Product) EcCostOrAvg() Money {
 	if p.EcCost > 0 {
@@ -180,9 +211,19 @@ type Product struct {
 	// EcProductID 是平台上的商品ID，订单导入时靠它把平台商品对到 ERP 产品；
 	// EcCost 是电商口径的成本单价（平台扣点、活动价、赠品摊薄跟市场不一样），
 	// 算电商毛利时优先用它。
-	EcProductID string
-	EcSKUId     string
-	EcCost      Money
+	EcCost Money
+
+	// IsWine 是否是酒类。礼盒、开瓶器、手拎袋这类非酒类没有
+	// 年份/容量/酒精度，表单与列表都不该按酒类展示。
+	IsWine bool
+
+	// AllowNegative 该产品的负库存策略：
+	//   0 跟随系统设置（零值，默认）
+	//   1 允许负库存
+	//   2 禁止负库存
+	// 用 0 表示"跟随"是为了让未设置的产品天然沿用全局开关，
+	// 任何新建产品的代码路径都不需要额外赋值。
+	AllowNegative int
 
 	StockQty   Qty
 	AvgCost    Money
@@ -207,7 +248,7 @@ func (p Product) Label() string {
 const DefaultCategory = "未分类"
 
 // DefaultUnits 计量单位的常见取值（表单里可自由输入其它值）。
-var DefaultUnits = []string{"瓶", "支", "罐", "盒", "袋", "套", "礼盒", "箱", "公斤", "克"}
+var DefaultUnits = []string{"瓶", "支", "罐", "盒", "袋", "套", "礼盒", "箱", "个", "把", "张", "条", "公斤", "克"}
 
 // ABVText 酒精度文本，未填返回空字符串。
 func (p Product) ABVText() string {
@@ -323,7 +364,8 @@ func (p Product) Margin() float64 {
 }
 
 // Categories 产品品类选项。
-var Categories = []string{"冰酒", "晚收甜酒", "红酒", "白酒", "起泡酒", "其他"}
+var Categories = []string{"冰酒", "晚收甜酒", "红酒", "白酒", "起泡酒",
+	"礼盒", "包装物料", "酒具", "周边", "其他"}
 
 // ---------------------------------------------------------------- 库存流水
 

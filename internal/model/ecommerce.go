@@ -4,15 +4,60 @@ import "strings"
 
 // EcPlatform 平台标识。
 const (
-	EcTaobao = "taobao"
-	EcOther  = "other"
+	EcTaobao      = "taobao"
+	EcDouyin      = "douyin"
+	EcJD          = "jd"
+	EcXiaohongshu = "xiaohongshu"
+	EcWechat      = "wechat"
+	EcOther       = "other"
 )
 
 // EcPlatformLabels 平台中文名。
 var EcPlatformLabels = map[string]string{
-	EcTaobao: "淘宝 / 天猫",
-	EcOther:  "其它平台",
+	EcTaobao:      "淘宝 / 天猫",
+	EcDouyin:      "抖音小店",
+	EcJD:          "京东",
+	EcXiaohongshu: "小红书",
+	EcWechat:      "微信小店",
+	EcOther:       "其它平台",
 }
+
+// EcPlatforms 平台顺序（界面下拉用）。先做淘宝，其余已预留。
+var EcPlatforms = []string{EcTaobao, EcDouyin, EcJD, EcXiaohongshu, EcWechat, EcOther}
+
+// EcPlatformOptions 下拉选项。
+func EcPlatformOptions() []Option {
+	out := make([]Option, 0, len(EcPlatforms))
+	for _, p := range EcPlatforms {
+		out = append(out, Option{Value: p, Label: EcPlatformLabel(p)})
+	}
+	return out
+}
+
+// EcPlatformSupported 是否已经跑通的平台（导入解析按平台区分）。
+func EcPlatformSupported(p string) bool { return p == EcTaobao }
+
+// ProductEcLink 产品与平台商品的绑定关系。
+//
+// 一个 ERP 产品可以绑多个平台商品ID：
+// 同一个产品在淘宝可能有好几个链接，再加上抖音、京东等各一个。
+type ProductEcLink struct {
+	ID          int64
+	ProductID   int64
+	Platform    string
+	EcProductID string
+	EcSKUId     string
+	Title       string
+	Note        string
+	CreatedAt   string
+
+	// 关联查询
+	ProductName string
+	ProductSKU  string
+}
+
+// PlatformLabel 该绑定的平台中文名。
+func (l ProductEcLink) PlatformLabel() string { return EcPlatformLabel(l.Platform) }
 
 // EcPlatformLabel 平台中文名。
 func EcPlatformLabel(p string) string {
