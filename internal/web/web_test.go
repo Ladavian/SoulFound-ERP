@@ -3355,3 +3355,81 @@ func TestGroupOrderEditIsUsable(t *testing.T) {
 		t.Errorf("HTTP 保存没生效，客户名仍是 %q", final.CustomerName)
 	}
 }
+
+// TestProductEditorsRenderExistingData 产品编辑页的组套/电商绑定编辑器要带上已有数据。
+//
+// 踩过两次，都是"页面上什么都看不到、按钮点了没反应"：
+//  1. 处理器忘了给模板设 BundleJSON / LinksJSON / PlatformsJSON，
+//     模板输出 null，前端拿到空数组；
+//  2. 把 JSON 直接写进 x-data 属性 —— Go 模板不允许这么做，
+//     值会被丢掉，渲染成 x-data="ecLinks(, )"。
+//
+// 后果不只是看不到：保存时会用空列表覆盖，**把已有绑定清空**。
+// 所以这里直接检查渲染出来的 HTML 里带没带上已有数据。
+func TestProductEditorsRenderExistingData(t *testing.T) {
+	h, svc, cfg := testApp(t)
+	ctx := context.Background()
+	cookie := doLogin(t, h, cfg, "admin", "admin123")
+	admin := mustUser(t, svc, "admin")
+
+	products, _ := svc.Store.ListProducts(ctx, store.ProductFilter{})
+	if len(products) < 2 {
+		t.Fatal("测试数据不足")
+	}
+	target, component := products[0], products[1]
+
+	// 给目标产品加两条绑定（跨平台）与一条组套组成
+	if _, err := svc.BindEcLink(ctx, model.EcTaobao, "EC-AAA", "1瓶装", "淘宝链接", target.ID, admin); err != nil {
+		t.Fatalf("绑定失败: %v", err)
+	}
+	if _, err := svc.BindEcLink(ctx, model.EcDouyin, "DY-BBB", "", "抖音链接", target.ID, admin); err != nil {
+		t.Fatalf("绑定失败: %v", err)
+	}
+	if err := svc.SaveBundles(ctx, target.ID, []model.ProductBundle{
+		{ComponentID: component.ID, Qty: model.MustQty("2")},
+	}, admin); err != nil {
+		t.Fatalf("保存组套失败: %v", err)
+	}
+
+	code, body := get(t, h, "/products/"+strconv.FormatInt(target.ID, 10)+"/edit", cookie)
+	if code != http.StatusOK {
+		t.Fatalf("编辑页应 200，实际 %d", code)
+	}
+	page := html.UnescapeString(body)
+
+	// 已有绑定与平台列表必须出现在脚本里
+	for _, want := range []string{"EC-AAA", "DY-BBB", "1瓶装", "taobao", "douyin", "jd"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("编辑页的编辑器数据里应包含 %q（否则已有绑定看不到，保存还会被清空）", want)
+		}
+	}
+	// 组套组成也要带上组成产品
+	if !strings.Contains(page, "__ERP_BUNDLE_ROWS__ = [{\"componentId\":"+strconv.FormatInt(component.ID, 10)) {
+		t.Errorf("组套编辑器应带上已有组成，实际没有\n片段: %s", snippetAround(page, "__ERP_BUNDLE_ROWS__", 160))
+	}
+	// 不能出现"JSON 被属性吞掉"的痕迹
+	for _, bad := range []string{"ecLinks(,", "ecLinks( ,", "= null", "ZgotmplZ"} {
+		if strings.Contains(page, bad) {
+			t.Errorf("编辑器数据渲染异常（出现 %q）：JSON 不能写进 x-data 属性，要走 <script> 全局变量", bad)
+		}
+	}
+	// 两个编辑器都要有"确实渲染过"的标记，避免保存时被空列表覆盖
+	for _, marker := range []string{`name="links_editor"`, `name="bundles_editor"`} {
+		if !strings.Contains(page, marker) {
+			t.Errorf("缺少编辑器标记 %s：缺了它，表单一旦渲染异常就会清空已有绑定", marker)
+		}
+	}
+}
+
+// snippetAround 取关键字附近的一小段，便于失败时定位。
+func snippetAround(s, key string, n int) string {
+	i := strings.Index(s, key)
+	if i < 0 {
+		return "(未找到 " + key + ")"
+	}
+	end := i + n
+	if end > len(s) {
+		end = len(s)
+	}
+	return s[i:end]
+}

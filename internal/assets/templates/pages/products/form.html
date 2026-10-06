@@ -260,7 +260,7 @@
     </div>
   </div>
 
-  <div class="card" x-data="ecLinks({{.LinksJSON}}, {{.PlatformsJSON}})">
+  <div class="card" x-data="ecLinks(window.__ERP_EC_LINKS__, window.__ERP_PLATFORMS__)">
     <div class="card__head">
       <div class="card__title">
         电商平台绑定
@@ -293,6 +293,9 @@
         </div>
       </div>
 
+      {{/* 这个标记让服务端知道"表单确实带上了绑定编辑器"；
+           没有它就不动数据库里的绑定，避免渲染异常时把绑定清空。 */}}
+      <input type="hidden" name="links_editor" value="1">
       <div class="ec-links">
         <template x-for="(row, index) in rows" :key="index">
           <div class="ec-link-row">
@@ -341,7 +344,7 @@
     </div>
   </div>
 
-  <div class="card" x-data="bundleRows({{if .IsNew}}[]{{else}}{{json .BundleJSON}}{{end}})">
+  <div class="card" x-data="bundleRows(window.__ERP_BUNDLE_ROWS__)">
     <div class="card__head">
       <div class="card__title">
         虚拟组套
@@ -374,6 +377,7 @@
         </div>
       </template>
       {{/* 提交时按列拆开，服务端按顺序对齐 */}}
+      <input type="hidden" name="bundles_editor" value="1">
       <template x-for="(row, index) in rows" :key="'h' + index">
         <span>
           <input type="hidden" name="bundle_component_id" :value="row.componentId">
@@ -419,6 +423,15 @@
 </form>
 
 
+{{/* 数据必须在这里赋值，不能写进 x-data 属性：
+     Go 模板不允许把 JSON 放进 HTML 属性，会被直接丢掉，
+     结果就是 x-data="ecLinks(, )"——编辑器渲染成空、
+     按钮点了没反应，保存时还会把已有绑定清空。 */}}
+<script>
+window.__ERP_EC_LINKS__ = {{.LinksJSON}};
+window.__ERP_PLATFORMS__ = {{.PlatformsJSON}};
+window.__ERP_BUNDLE_ROWS__ = {{if .IsNew}}[]{{else}}{{.BundleJSON}}{{end}};
+</script>
 <script>
 /* 电商平台绑定：一个产品可以有多条（同平台多个链接 / 多平台） */
 window.ecLinks = function (initial, platforms) {

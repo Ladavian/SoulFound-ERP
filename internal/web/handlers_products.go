@@ -3,6 +3,7 @@ package web
 import (
 	"errors"
 	"fmt"
+	"html/template"
 	"io"
 	"net/http"
 	"strconv"
@@ -172,6 +173,63 @@ func (s *Server) handleProductForm(w http.ResponseWriter, r *http.Request) {
 	if !isNew {
 		page["FormAction"] = "/products/" + strconv.FormatInt(id, 10) + "/edit"
 	}
+
+	// 虚拟组套：已有组成 + 可选的组成产品。
+	// 这些值必须真的设上：模板把它们输出到 <script> 里的全局变量，
+	// 没设的话前端拿到 null，编辑器就是空的（按钮点了也没东西可选）。
+	bundles, err := s.svc.Store.BundlesOf(ctx, id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	bundleRows := make([]map[string]any, 0, len(bundles))
+	for _, b := range bundles {
+		bundleRows = append(bundleRows, map[string]any{
+			"componentId": b.ComponentID,
+			"qty":         b.Qty.Float(),
+			"unit":        b.ComponentUnit,
+		})
+	}
+	page["BundleJSON"] = template.JS(jsonEncode(bundleRows))
+
+	// 组成产品的候选：不能选自己，也不能把组套当组成（不做嵌套）
+	all, err := s.svc.Store.ListProducts(ctx, store.ProductFilter{Sort: "name"})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	bundleMap, _ := s.svc.Store.AllBundles(ctx)
+	bundleOpts := make([]map[string]any, 0, len(all))
+	for _, ap := range all {
+		if ap.ID == id || len(bundleMap[ap.ID]) > 0 {
+			continue
+		}
+		bundleOpts = append(bundleOpts, map[string]any{
+			"id":    ap.ID,
+			"label": ap.Name + " · " + ap.SKU,
+			"unit":  ap.Unit,
+		})
+	}
+	page["BundleProductsJSON"] = template.JS(jsonEncode(bundleOpts))
+
+	// 电商平台绑定（一个产品可以多条：同平台多个链接 / 多平台）
+	links, err := s.svc.Store.ProductLinks(ctx, id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	linkRows := make([]map[string]any, 0, len(links))
+	for _, l := range links {
+		linkRows = append(linkRows, map[string]any{
+			"platform":    l.Platform,
+			"ecProductId": l.EcProductID,
+			"ecSkuId":     l.EcSKUId,
+			"title":       l.Title,
+		})
+	}
+	page["LinksJSON"] = template.JS(jsonEncode(linkRows))
+	page["PlatformsJSON"] = template.JS(jsonEncode(model.EcPlatformOptions()))
+
 	if err := s.rnd.Render(w, "products/form", page); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
@@ -282,13 +340,19 @@ func (s *Server) handleProductSave(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, r, fallback, err)
 			return
 		}
-		if err := s.svc.SaveBundles(ctx, id, s.parseBundles(r, id), userFrom(r)); err != nil {
-			s.fail(w, r, fallback, err)
-			return
+		// 只有表单确实带上了编辑器才覆盖，避免编辑器渲染异常时
+		// 用空列表把已有的组套/绑定清掉（踩过一次，丢了绑定）
+		if r.FormValue("bundles_editor") == "1" {
+			if err := s.svc.SaveBundles(ctx, id, s.parseBundles(r, id), userFrom(r)); err != nil {
+				s.fail(w, r, fallback, err)
+				return
+			}
 		}
-		if err := s.svc.SaveLinks(ctx, id, parseLinks(r), userFrom(r)); err != nil {
-			s.fail(w, r, fallback, err)
-			return
+		if r.FormValue("links_editor") == "1" {
+			if err := s.svc.SaveLinks(ctx, id, parseLinks(r), userFrom(r)); err != nil {
+				s.fail(w, r, fallback, err)
+				return
+			}
 		}
 		s.logAction(r, "修改产品", "product", &id, product.SKU+" "+product.Name)
 		if !ok {
@@ -308,13 +372,17 @@ func (s *Server) handleProductSave(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, fallback, err)
 		return
 	}
-	if err := s.svc.SaveBundles(ctx, newID, s.parseBundles(r, newID), userFrom(r)); err != nil {
-		s.fail(w, r, fallback, service.UserErrf("产品已创建，但组套保存失败：%v", err))
-		return
+	if r.FormValue("bundles_editor") == "1" {
+		if err := s.svc.SaveBundles(ctx, newID, s.parseBundles(r, newID), userFrom(r)); err != nil {
+			s.fail(w, r, fallback, service.UserErrf("产品已创建，但组套保存失败：%v", err))
+			return
+		}
 	}
-	if err := s.svc.SaveLinks(ctx, newID, parseLinks(r), userFrom(r)); err != nil {
-		s.fail(w, r, fallback, service.UserErrf("产品已创建，但电商绑定保存失败：%v", err))
-		return
+	if r.FormValue("links_editor") == "1" {
+		if err := s.svc.SaveLinks(ctx, newID, parseLinks(r), userFrom(r)); err != nil {
+			s.fail(w, r, fallback, service.UserErrf("产品已创建，但电商绑定保存失败：%v", err))
+			return
+		}
 	}
 	s.logAction(r, "新建产品", "product", &newID, product.SKU+" "+product.Name)
 	// 新建时是先有产品 ID 才能存图片，没有旧文件需要清理
