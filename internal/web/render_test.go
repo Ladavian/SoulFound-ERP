@@ -918,3 +918,58 @@ func TestStackCardGridHasNoHoles(t *testing.T) {
 	}
 	t.Logf("已检查 %d 张卡片的网格排布", checked)
 }
+
+// TestRadioModelUsesStringValue radio 的 x-model 不能配 :value 动态值。
+//
+// 踩过一次：产品表单的「酒类 / 非酒类」写成
+//
+//	<input type="radio" x-model="wine" :value="true">
+//
+// Alpine 会把绑定值设成字符串 "true" / "false"，而字符串 "false"
+// 在 JS 里是**真值**，于是点一次之后再点另一个也没用——
+// 状态一直为真，按钮看起来就"卡死了"。
+//
+// 正确写法是只留原生 value="1"/"0"，x-model 绑字符串，
+// 判断时用 wineType === '1'（出入库登记的"方向"就是这么写的）。
+// 所以这里固定成检查：radio 上不允许同时出现 x-model 和 :value。
+func TestRadioModelUsesStringValue(t *testing.T) {
+	root := "templates"
+	if _, err := os.Stat(root); err != nil {
+		root = "../assets/templates"
+	}
+	radioRe := regexp.MustCompile(`(?is)<input[^>]*type="radio"[^>]*>`)
+	checked := 0
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".html") {
+			return err
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		src := string(raw)
+		if !strings.Contains(src, `type="radio"`) {
+			return nil
+		}
+		rel := strings.TrimPrefix(path, root+string(filepath.Separator))
+		for _, m := range radioRe.FindAllStringIndex(src, -1) {
+			tag := src[m[0]:m[1]]
+			checked++
+			if strings.Contains(tag, "x-model") && strings.Contains(tag, ":value") {
+				line := strings.Count(src[:m[0]], "\n") + 1
+				t.Errorf("%s:%d 的 radio 同时用了 x-model 和 :value："+
+					"Alpine 会把绑定值设成字符串 \"false\"（真值），点了就切不回来；"+
+					"请只保留原生 value，x-model 绑字符串并用 === '1' 判断",
+					rel, line)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("遍历模板失败: %v", err)
+	}
+	if checked < 6 {
+		t.Fatalf("只检查到 %d 个 radio，范围异常", checked)
+	}
+	t.Logf("已检查 %d 个 radio 的绑定方式", checked)
+}

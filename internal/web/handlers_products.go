@@ -256,6 +256,14 @@ func (s *Server) handleProductSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 非酒类不留年份/容量/酒精度：这几个字段在表单里被隐藏了，
+	// 但隐藏的输入框照样会把旧值提交上来，所以在这里清掉。
+	if !product.IsWine {
+		product.Vintage = 0
+		product.VolumeML = 0
+		product.ABV = 0
+	}
+
 	if id > 0 {
 		if _, err := s.svc.Store.ProductByID(ctx, id); err != nil {
 			s.fail(w, r, fallback, err)

@@ -26,7 +26,7 @@
     的输入框与删除开关都放在本表单里，不再单独开 form。 */}}
 {{/* wine 控制酒类专属字段的显隐：礼盒、海马刀这些非酒类
      不该被逼着填年份/容量/酒精度。 */}}
-<form method="post" action="{{.FormAction}}" x-data="{ wine: {{if $p.IsWine}}true{{else}}false{{end}} }" enctype="multipart/form-data">
+<form method="post" action="{{.FormAction}}" x-data="{ wineType: '{{if $p.IsWine}}1{{else}}0{{end}}', neg: '{{$p.AllowNegative}}' }" enctype="multipart/form-data">
   <div class="card">
     <div class="card__head">
       <div class="card__title">基本信息</div>
@@ -36,12 +36,12 @@
         <div class="field span-2">
           <label class="field__label">产品类型</label>
           <div class="seg" role="radiogroup" aria-label="产品类型">
-            <label class="seg__item" :class="wine && 'is-active'">
-              <input type="radio" name="is_wine" value="1" x-model="wine" :value="true" class="sr-only">
+            <label class="seg__item" :class="wineType === '1' ? 'is-active' : ''">
+              <input type="radio" name="is_wine" value="1" x-model="wineType" class="sr-only">
               <span>酒类</span>
             </label>
-            <label class="seg__item" :class="!wine && 'is-active'">
-              <input type="radio" name="is_wine" value="0" x-model="wine" :value="false" class="sr-only">
+            <label class="seg__item" :class="wineType === '0' ? 'is-active' : ''">
+              <input type="radio" name="is_wine" value="0" x-model="wineType" class="sr-only">
               <span>非酒类</span>
             </label>
           </div>
@@ -153,19 +153,19 @@
                  value="{{$p.BottlesPerCase}}" placeholder="例如：12">
           <div class="field__hint">一箱等于几个计量单位，散装填 1。</div>
         </div>
-        <div class="field" x-show="wine" x-cloak>
+        <div class="field" x-show="wineType === '1'" x-cloak>
           <label class="field__label" for="vintage">年份 / 批次</label>
           <input class="input input--num" id="vintage" name="vintage" type="number" min="0" max="2100" step="1"
                  value="{{if $p.Vintage}}{{$p.Vintage}}{{end}}" placeholder="例如：2020">
           <div class="field__hint">非年份产品或其它品类可以留空。</div>
         </div>
-        <div class="field" x-show="wine" x-cloak>
+        <div class="field" x-show="wineType === '1'" x-cloak>
           <label class="field__label" for="volume_ml">容量（ml）</label>
           <input class="input input--num" id="volume_ml" name="volume_ml" type="number" min="0" max="100000" step="1"
                  value="{{if $p.VolumeML}}{{$p.VolumeML}}{{end}}" placeholder="例如：375">
           <div class="field__hint">常见：200 / 375 / 750。</div>
         </div>
-        <div class="field" x-show="wine" x-cloak>
+        <div class="field" x-show="wineType === '1'" x-cloak>
           <label class="field__label" for="abv">酒精度（%）</label>
           <input class="input input--num" id="abv" name="abv" type="text" inputmode="decimal"
                  value="{{$p.ABVText}}" placeholder="例如：11.5">
@@ -221,16 +221,21 @@
           <label class="field__label">负库存</label>
           <div class="seg">
             {{$neg := $p.AllowNegative}}
-            <label class="seg__item{{if eq $neg 0}} is-active{{end}}">
-              <input type="radio" name="allow_negative" value="0" class="sr-only"{{if eq $neg 0}} checked{{end}}>
+            {{/* radio 的 x-model 必须绑字符串，并且不能同时写 :value，
+                 否则 Alpine 拿到的是字符串 "false"（真值），切一次就回不去 */}}
+            <label class="seg__item" :class="neg === '0' ? 'is-active' : ''">
+              <input type="radio" name="allow_negative" value="0" x-model="neg" class="sr-only"
+                     {{if eq $neg 0}} checked{{end}}>
               <span>跟随系统设置</span>
             </label>
-            <label class="seg__item{{if eq $neg 1}} is-active{{end}}">
-              <input type="radio" name="allow_negative" value="1" class="sr-only"{{if eq $neg 1}} checked{{end}}>
+            <label class="seg__item" :class="neg === '1' ? 'is-active' : ''">
+              <input type="radio" name="allow_negative" value="1" x-model="neg" class="sr-only"
+                     {{if eq $neg 1}} checked{{end}}>
               <span>允许负库存</span>
             </label>
-            <label class="seg__item{{if eq $neg 0}} is-active{{end}}">
-              <input type="radio" name="allow_negative" value="2" class="sr-only"{{if eq $neg 2}} checked{{end}}>
+            <label class="seg__item" :class="neg === '2' ? 'is-active' : ''">
+              <input type="radio" name="allow_negative" value="2" x-model="neg" class="sr-only"
+                     {{if eq $neg 2}} checked{{end}}>
               <span>禁止负库存</span>
             </label>
           </div>
@@ -243,7 +248,6 @@
             {{end}}
           </div>
         </div>
-        <div class="field span-2"></div>
         <div class="field">
           <label class="field__label" for="supplier_id">供应商</label>
           {{$curSupID := deref $p.SupplierID}}
