@@ -52,13 +52,15 @@ func (s *Store) ReplaceStatement(ctx context.Context, tx DBTX, st *model.EcState
 			`INSERT INTO ec_statement_items(statement_id, platform, period, kind, direction,
 			        order_no, sub_order_no, ec_product_id, ec_sku, title, qty, unit_price,
 			        amount, fee_base, fee_rate, refund_amount, tracking_no, occurred_at,
-			        pay_time, raw, imported_at, advance_amount, gross_amount)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			        pay_time, raw, imported_at, advance_amount, gross_amount,
+			        sku_id, sku_label)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			st.ID, st.Platform, st.Period, st.Kind, st.Direction,
 			it.OrderNo, it.SubOrderNo, it.EcProductID, it.EcSKU, it.Title,
 			int64(it.Qty), int64(it.UnitPrice), int64(it.Amount), int64(it.FeeBase),
 			it.FeeRate, int64(it.RefundAmount), it.TrackingNo, it.OccurredAt,
-			it.PayTime, it.Raw, Now(), int64(it.Advance), int64(it.GrossAmount)); err != nil {
+			it.PayTime, it.Raw, Now(), int64(it.Advance), int64(it.GrossAmount),
+			it.SKUId, it.SKULabel); err != nil {
 			return err
 		}
 	}
@@ -176,15 +178,47 @@ const stmtItemCols = `si.id, si.statement_id, si.platform, si.period, si.kind, s
 	si.order_no, si.sub_order_no, si.ec_product_id, si.ec_sku, si.title, si.qty,
 	si.unit_price, si.amount, si.fee_base, si.fee_rate, si.refund_amount,
 	si.tracking_no, si.occurred_at, si.pay_time, si.raw, si.imported_at,
-	si.advance_amount, si.gross_amount,
+	si.advance_amount, si.gross_amount, si.sku_id, si.sku_label,
 	oi.product_id, COALESCE(p.name, ''), COALESCE(p.sku, ''), COALESCE(p.ec_cost, 0)`
 
-const stmtItemFrom = ` FROM ec_statement_items si
-	LEFT JOIN ec_order_items oi
-	       ON oi.platform = si.platform
-	      AND ( (si.sub_order_no <> '' AND oi.sub_order_no = si.sub_order_no)
-	         OR (si.sub_order_no = '' AND si.order_no <> '' AND oi.sub_order_no = si.order_no) )
+// statementOrderJoin 账单行 → 订单明细的关联。
+//
+// 关键：平台账单里的「订单号」是**主订单号**，不是子订单号，
+// 一张主订单可能有多条子订单（多商品/多规格）。
+// 所以先按主订单号找到订单，再在订单内按优先级挑一条明细：
+//
+//	子订单号（最精确）→ 规格标签 → 空规格。
+//
+// 之前直接拿主订单号去比子订单号，多商品订单永远匹配不上，
+// 成本被算成 0——用户就是在 1010091951049 这个礼盒上发现的。
+const statementOrderJoin = `
+	LEFT JOIN ec_orders eo
+	       ON eo.platform = si.platform AND eo.order_no = si.order_no
+	LEFT JOIN ec_order_items oi ON oi.id = (
+	    SELECT x.id FROM ec_order_items x
+	     WHERE x.order_id = eo.id
+	       AND ( (si.sub_order_no <> '' AND x.sub_order_no = si.sub_order_no)
+	          -- 用绑定的 SKU ID / 规格标签反查产品，再挑出属于该产品的明细行。
+	          -- 比对比规格文本可靠：账单写「…|商品规格#3B1瓶装礼盒」，
+	          -- 订单导出写「商品规格:1瓶装礼盒」，文本形式并不一致。
+	          OR (x.product_id IS NOT NULL AND x.product_id = (
+	                SELECT l.product_id FROM product_ec_links l
+	                 WHERE l.platform = si.platform
+	                   AND l.ec_product_id = si.ec_product_id
+	                   AND ( (si.sku_id <> '' AND l.ec_sku_id = si.sku_id)
+	                      OR (si.sku_label <> '' AND (l.ec_sku_id = si.sku_label OR l.sku_label = si.sku_label))
+	                      OR (si.sku_id = '' AND si.sku_label = '' AND l.ec_sku_id = '' AND l.sku_label = '') )
+	                 LIMIT 1 ) )
+	          OR (si.sku_label = '' AND x.ec_sku = '') )
+	     ORDER BY CASE
+	         WHEN si.sub_order_no <> '' AND x.sub_order_no = si.sub_order_no THEN 0
+	         WHEN si.ec_product_id <> '' AND x.product_id IS NOT NULL THEN 1
+	         ELSE 2 END
+	     LIMIT 1 )
 	LEFT JOIN products p ON p.id = oi.product_id`
+
+const stmtItemFrom = ` FROM ec_statement_items si
+	` + statementOrderJoin
 
 func scanStmtItem(row interface{ Scan(...any) error }) (*model.EcStatementItem, error) {
 	var it model.EcStatementItem
@@ -192,7 +226,7 @@ func scanStmtItem(row interface{ Scan(...any) error }) (*model.EcStatementItem, 
 		&it.OrderNo, &it.SubOrderNo, &it.EcProductID, &it.EcSKU, &it.Title, &it.Qty,
 		&it.UnitPrice, &it.Amount, &it.FeeBase, &it.FeeRate, &it.RefundAmount,
 		&it.TrackingNo, &it.OccurredAt, &it.PayTime, &it.Raw, &it.ImportedAt,
-		&it.Advance, &it.GrossAmount,
+		&it.Advance, &it.GrossAmount, &it.SKUId, &it.SKULabel,
 		&it.ProductID, &it.ProductName, &it.ProductSKU, &it.EcCost); err != nil {
 		return nil, err
 	}
@@ -249,11 +283,7 @@ func (s *Store) Reconcile(ctx context.Context, platform, period string) (model.E
 		        COALESCE(SUM(CASE WHEN oi.product_id IS NOT NULL AND p.ec_cost > 0 THEN 1 ELSE 0 END), 0),
 		        COALESCE(SUM(CASE WHEN oi.product_id IS NULL OR p.ec_cost <= 0 THEN 1 ELSE 0 END), 0)
 		   FROM ec_statement_items si
-		   LEFT JOIN ec_order_items oi
-		          ON oi.platform = si.platform
-		         AND ( (si.sub_order_no <> '' AND oi.sub_order_no = si.sub_order_no)
-	            OR (si.sub_order_no = '' AND si.order_no <> '' AND oi.sub_order_no = si.order_no) )
-		   LEFT JOIN products p ON p.id = oi.product_id
+		   `+statementOrderJoin+`
 		  WHERE si.platform = ? AND si.period = ?`, platform, period)
 	if err != nil {
 		return r, err
@@ -324,11 +354,7 @@ func (s *Store) StatementSettlement(ctx context.Context, platform, period string
 		       COALESCE(si.qty, 0), si.amount, si.advance_amount,
 		       oi.product_id, COALESCE(p.name, ''), COALESCE(p.ec_cost, 0)
 		  FROM ec_statement_items si
-		  LEFT JOIN ec_order_items oi
-		         ON oi.platform = si.platform
-		        AND ( (si.sub_order_no <> '' AND oi.sub_order_no = si.sub_order_no)
-		           OR (si.sub_order_no = '' AND si.order_no <> '' AND oi.sub_order_no = si.order_no) )
-		  LEFT JOIN products p ON p.id = oi.product_id
+		  `+statementOrderJoin+`
 		 WHERE si.platform = ? AND si.period = ?
 		 ORDER BY si.id`, platform, period)
 	if err != nil {
@@ -407,11 +433,7 @@ func (s *Store) StatementSettlementProducts(ctx context.Context, platform, perio
 		       COALESCE(SUM(si.qty), 0), COALESCE(SUM(si.amount), 0),
 		       COALESCE(SUM(si.qty * COALESCE(p.ec_cost, 0) / 1000), 0)
 		  FROM ec_statement_items si
-		  LEFT JOIN ec_order_items oi
-		         ON oi.platform = si.platform
-		        AND ( (si.sub_order_no <> '' AND oi.sub_order_no = si.sub_order_no)
-		           OR (si.sub_order_no = '' AND si.order_no <> '' AND oi.sub_order_no = si.order_no) )
-		  LEFT JOIN products p ON p.id = oi.product_id
+		  `+statementOrderJoin+`
 		 WHERE si.platform = ? AND si.period = ? AND si.kind = ?
 		 GROUP BY COALESCE(CAST(oi.product_id AS TEXT), ''), si.ec_product_id, COALESCE(p.name, '')
 		 ORDER BY SUM(si.amount) DESC`, platform, period, model.StmtGoodsPayment)

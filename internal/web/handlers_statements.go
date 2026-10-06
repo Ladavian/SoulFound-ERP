@@ -96,6 +96,11 @@ func stmtItemsFromSheet(sh importSheet, kind string) (period string, items []mod
 			OccurredAt:  sh.cell(row, "扣费日期", "时间", "确认收货时间", "打款时间"),
 			PayTime:     sh.cell(row, "打款时间"),
 		}
+		// 平台规格：账单写「6177628402264|商品规格#3B1瓶装礼盒」，
+		// 订单导出写「商品规格:1瓶装礼盒」。拆成 SKU ID 与标签，
+		// 分别用于跟账单、跟订单匹配。
+		rawSKU := sh.cell(row, "sku", "商品属性")
+		it.SKUId, it.SKULabel = model.ParseEcSKU(rawSKU)
 		it.Qty = parseQtyLoose(sh.cell(row, "数量"))
 		it.UnitPrice = parseMoneyLoose(sh.cell(row, "单价（元）", "单价"))
 		it.Amount = parseMoneyLoose(sh.cell(row, "订单实际金额（元）", "扣费金额", "账单金额",

@@ -113,6 +113,8 @@ type EcStatementItem struct {
 	FeeBase      Money
 	FeeRate      string
 	RefundAmount Money
+	SKUId        string // 平台 SKU ID（账单里有，如 6177628402264）
+	SKULabel     string // 规格标签（两边都有，如 1瓶装礼盒）
 	TrackingNo   string
 	Advance      Money // 平台代付垫支（新享垫给消费者的钱），要从货款扣回
 	GrossAmount  Money // 原始金额（如抽佣金额，含垫付），仅备查

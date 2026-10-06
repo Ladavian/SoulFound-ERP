@@ -405,6 +405,23 @@ ALTER TABLE settings ADD COLUMN vat_input_rate TEXT NOT NULL DEFAULT '13';
 ALTER TABLE settings ADD COLUMN vat_platform_rate TEXT NOT NULL DEFAULT '6';
 `
 
+// migrationV16 账单行拆出 sku 的平台ID 与规格标签。
+//
+// 两个来源的 sku 写法完全不同：
+//
+//	订单导出：商品规格:1瓶装礼盒        （只有标签）
+//	账期账单：6177628402264|商品规格#3B1瓶装礼盒  （平台SKU ID + 标签）
+//
+// SKU ID 才是平台的正经标识，但订单侧拿不到，所以两边都要能对上：
+//
+//	ec_sku_id  存平台 SKU ID（有就存）
+//	sku_label  存规格标签（两边都有，用来跨来源匹配）
+const migrationV16 = `
+ALTER TABLE ec_statement_items ADD COLUMN sku_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE ec_statement_items ADD COLUMN sku_label TEXT NOT NULL DEFAULT '';
+ALTER TABLE product_ec_links ADD COLUMN sku_label TEXT NOT NULL DEFAULT '';
+`
+
 // migrations 按顺序执行的迁移脚本。新增结构或数据变更时在末尾追加一段 SQL，
 // 已执行过的版本不会重复执行（版本号记录在 schema_meta 表）。
 var migrations = []string{
@@ -423,4 +440,5 @@ var migrations = []string{
 	migrationV13,
 	migrationV14,
 	migrationV15,
+	migrationV16,
 }

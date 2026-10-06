@@ -60,6 +60,48 @@ func NormalizeEcSKU(raw string) string {
 	return s
 }
 
+// ParseEcSKU 把平台规格拆成「SKU ID」与「标签」。
+//
+// 订单导出写的是「商品规格:1瓶装礼盒」——只有标签；
+// 账期账单写的是「6177628402264|商品规格#3B1瓶装礼盒」——ID + 标签。
+// SKU ID 是平台的正经标识，但它只在账单里有，
+// 所以要拆开存：ID 用来跟账单精确匹配，标签用来跨来源匹配。
+func ParseEcSKU(raw string) (skuID, label string) {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return "", ""
+	}
+	// 「<数字ID>|其余」形式：前面是 SKU ID
+	if i := strings.Index(s, "|"); i > 0 {
+		head := strings.TrimSpace(s[:i])
+		if isDigits(head) {
+			skuID = head
+			s = strings.TrimSpace(s[i+1:])
+		}
+	}
+	// 剩下的部分去掉「商品规格:」「商品规格#3B」这类前缀
+	label = NormalizeEcSKU(s)
+	if i := strings.LastIndexAny(label, ":#"); i >= 0 && i < len(label)-1 {
+		head := label[:i]
+		if len([]rune(head)) <= 8 && !strings.ContainsAny(head, " \t") {
+			label = strings.TrimSpace(label[i+1:])
+		}
+	}
+	return skuID, label
+}
+
+func isDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 // ProductEcLink 产品与平台商品的绑定关系。
 //
 // 一个 ERP 产品可以绑多个平台商品ID：
@@ -70,6 +112,7 @@ type ProductEcLink struct {
 	Platform    string
 	EcProductID string
 	EcSKUId     string
+	SKULabel    string
 	Title       string
 	Note        string
 	CreatedAt   string

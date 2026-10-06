@@ -239,6 +239,11 @@ func (s *Service) ImportEcOrders(ctx context.Context, platform string, rows []Ec
 // 所以这里是"新增一条绑定关系"，不是覆盖字段。
 // 绑定后会把该商品ID 下所有历史未匹配的订单明细一起补齐。
 func (s *Service) BindEcLink(ctx context.Context, platform, ecProductID, ecSKUId, title string, productID int64, user *model.User) (int, error) {
+	// 规格框允许填两种：平台 SKU ID（如 6177628402264）或规格标签（如 1瓶装礼盒）。
+	// 填 ID 时能顺带拆出标签；填标签时 SKU ID 留空。
+	if id, label := model.ParseEcSKU(ecSKUId); id != "" {
+		ecSKUId, _ = id, label
+	}
 	platform = strings.TrimSpace(platform)
 	ecProductID = strings.TrimSpace(ecProductID)
 	if platform == "" {
