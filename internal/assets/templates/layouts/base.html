@@ -55,6 +55,7 @@
         {{if .Perms.Has "report.view"}}
         {{template "nav_item" (dict "Href" "/ecommerce/reconcile" "Icon" "chart" "Label" "平台账单" "Page" .Nav "Key" "reconcile")}}
         {{template "nav_item" (dict "Href" "/ecommerce/settlement" "Icon" "cash" "Label" "结算单" "Page" .Nav "Key" "settlement")}}
+        {{template "nav_item" (dict "Href" "/ecommerce/summary" "Icon" "chart" "Label" "总对账单" "Page" .Nav "Key" "summary")}}
         {{end}}
       </div>
 

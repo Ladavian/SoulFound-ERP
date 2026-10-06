@@ -61,13 +61,13 @@ func (s *Server) handleEcommerce(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Slice(flat, func(i, j int) bool { return flat[i].ID < flat[j].ID })
 
-	// 汇总：有效销售的实收 / 成本 / 毛利。
-	//
-	// 关键口径：毛利只统计"已绑定产品且填了电商成本"的行。
-	// 没成本的行不能按 0 成本算成毛利，否则毛利会虚高成全额收入；
-	// 这部分单独用 MissingCostAmount 提示，让人去补。
-	var revenue, cost, knownRevenue, missing model.Money
+	// 这一页是「订单列表」，所以金额按订单算：
+	// 实收 = 各行实付（扣退款）之和，成本 = 各行 数量 × 电商成本。
+	// 成本必须逐行累加一次——之前按账单行算，一张订单有货款/服务费/
+	// 礼金/淘金币好几行账单，成本被重复算了五六遍，净利显示成 -9685。
+	var revenue, cost, missing model.Money
 	var lines int
+	orderRolled := map[int64]bool{}
 	for _, o := range orders {
 		for _, it := range o.Items {
 			if !it.Counts() {
@@ -76,11 +76,13 @@ func (s *Server) handleEcommerce(w http.ResponseWriter, r *http.Request) {
 			lines++
 			revenue += it.NetPaid()
 			if it.Matched() && it.EcCost > 0 {
-				cost += it.ItemCost()
-				knownRevenue += it.NetPaid()
+				if !orderRolled[o.ID] {
+					cost += model.MulQty(it.Qty, it.EcCost)
+				}
 			} else {
 				missing += it.NetPaid()
 			}
+			orderRolled[o.ID] = true
 		}
 	}
 
@@ -88,6 +90,7 @@ func (s *Server) handleEcommerce(w http.ResponseWriter, r *http.Request) {
 	page := s.newPage(r, "电商平台账单", "ecommerce")
 	page["Platform"] = platform
 	page["PlatformLabel"] = model.EcPlatformLabel(platform)
+	page["PlatformOptions"] = model.EcPlatformOptions()
 	page["Orders"] = orders
 	page["Total"] = total
 	page["Page"] = pageNo
@@ -107,11 +110,10 @@ func (s *Server) handleEcommerce(w http.ResponseWriter, r *http.Request) {
 	page["Statuses"] = statuses
 	page["ProductOptions"] = opts
 	page["Links"] = flat
-	page["PlatformOptions"] = model.EcPlatformOptions()
 	page["Revenue"] = revenue
 	page["Cost"] = cost
-	page["Profit"] = knownRevenue - cost
-	page["KnownRevenue"] = knownRevenue
+	page["Profit"] = revenue - cost
+	page["KnownRevenue"] = revenue - missing
 	page["MissingCostAmount"] = missing
 	page["LineCount"] = lines
 	if msg := fr.Str("msg"); msg != "" {

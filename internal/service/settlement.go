@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"icewine-erp/internal/model"
+	"icewine-erp/internal/store"
 )
 
 // SettlementReport 一个账期的完整结算报表。
@@ -142,6 +143,49 @@ func (s *Service) BuildSettlement(ctx context.Context, platform, period string, 
 	rep.Total.PlatformFee = 0
 	for _, amt := range rep.FeeByKind {
 		rep.Total.PlatformFee += amt
+	}
+	return rep, nil
+}
+
+// PlatformSettlement 单个平台在一个账期的结算结果。
+type PlatformSettlement struct {
+	Platform  string
+	Period    string
+	Label     string
+	Total     model.Settlement
+	FeeByKind map[string]model.Money
+	Rows      int
+}
+
+// SummaryReport 多平台合并对账单。
+//
+// 各平台结算节奏不同（淘宝按月，其它平台可能两三个月一次），
+// 所以合并表按「平台 + 账期」逐行列示，再给一行总计。
+type SummaryReport struct {
+	Rates    model.VatRates
+	Items    []PlatformSettlement
+	Total    model.Settlement
+	FeeTotal model.Money
+}
+
+// BuildSummary 合并多个平台/账期的结算。
+func (s *Service) BuildSummary(ctx context.Context, keys []store.StatementKey, settings *model.Settings) (*SummaryReport, error) {
+	rates := VatRatesFromSettings(settings)
+	rep := &SummaryReport{Rates: rates}
+	for _, k := range keys {
+		st, err := s.BuildSettlement(ctx, k.Platform, k.Period, settings)
+		if err != nil {
+			return nil, err
+		}
+		rep.Items = append(rep.Items, PlatformSettlement{
+			Platform: k.Platform, Period: k.Period,
+			Label:     model.EcPlatformLabel(k.Platform),
+			Total:     st.Total,
+			FeeByKind: st.FeeByKind,
+			Rows:      st.FeeRows,
+		})
+		rep.Total.Add(st.Total)
+		rep.FeeTotal += st.Total.PlatformFee
 	}
 	return rep, nil
 }

@@ -412,3 +412,58 @@ func urlEncode(s string) string {
 	}
 	return b.String()
 }
+
+// handleSummary 多平台合并对账单。
+func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	keys, err := s.svc.Store.StatementKeys(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	settings, _ := s.svc.Store.Settings(ctx)
+	rep, err := s.svc.BuildSummary(ctx, keys, settings)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	noCache(w)
+	page := s.newPage(r, "总对账单", "summary")
+	page["Rep"] = rep
+	page["Rates"] = rep.Rates
+	page["Keys"] = keys
+	page["Kinds"] = model.StmtKinds
+	if msg := newFormReader(r).Str("msg"); msg != "" {
+		page["Flash"] = []Flash{{Level: "info", Text: msg}}
+	}
+	if err := s.rnd.Render(w, "summary", page); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// handleSummaryExport 导出合并对账单 Excel。
+func (s *Server) handleSummaryExport(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	keys, err := s.svc.Store.StatementKeys(ctx)
+	if err != nil {
+		s.fail(w, r, "/ecommerce/summary", err)
+		return
+	}
+	settings, _ := s.svc.Store.Settings(ctx)
+	rep, err := s.svc.BuildSummary(ctx, keys, settings)
+	if err != nil {
+		s.fail(w, r, "/ecommerce/summary", err)
+		return
+	}
+	f, err := buildSummaryWorkbook(rep)
+	if err != nil {
+		s.fail(w, r, "/ecommerce/summary", err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	w.Header().Set("Content-Disposition", "attachment; filename*=UTF-8''"+urlEncode("总对账单.xlsx"))
+	w.Header().Set("Cache-Control", "no-store")
+	if err := f.Write(w); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}

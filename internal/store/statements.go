@@ -277,14 +277,19 @@ func (s *Store) Reconcile(ctx context.Context, platform, period string) (model.E
 		return r, err
 	}
 
-	// 产品成本：只算匹配到产品且填了电商成本的行
+	// 产品成本：只按「交易货款」行算一次。
+	// 账单里一张订单有多行（货款/服务费/礼金/淘金币），
+	// 如果每行都乘一次数量，成本会被重复累加好几倍——
+	// 之前对账单页显示 -9685 就是这个原因。
+	// 另外「缺成本」只在货款行上统计，否则每张订单会被报好几次。
 	costRows, err := s.db.QueryContext(ctx,
-		`SELECT COALESCE(SUM(oi.qty * p.ec_cost / 1000), 0),
+		`SELECT COALESCE(SUM(si.qty * COALESCE(p.ec_cost, 0) / 1000), 0),
 		        COALESCE(SUM(CASE WHEN oi.product_id IS NOT NULL AND p.ec_cost > 0 THEN 1 ELSE 0 END), 0),
 		        COALESCE(SUM(CASE WHEN oi.product_id IS NULL OR p.ec_cost <= 0 THEN 1 ELSE 0 END), 0)
 		   FROM ec_statement_items si
 		   `+statementOrderJoin+`
-		  WHERE si.platform = ? AND si.period = ?`, platform, period)
+		  WHERE si.platform = ? AND si.period = ? AND si.kind = ?`,
+		platform, period, model.StmtGoodsPayment)
 	if err != nil {
 		return r, err
 	}
@@ -451,6 +456,34 @@ func (s *Store) StatementSettlementProducts(ctx context.Context, platform, perio
 			r.Name = "商品ID " + r.EcProductID + "（未绑定产品）"
 		}
 		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// StatementKey 已导入的账单标识。
+type StatementKey struct {
+	Platform string
+	Period   string
+}
+
+// StatementKeys 所有已导入的账单（按平台 + 账期）。
+//
+// 不同平台的结算节奏不一样：淘宝按月，别的平台可能两三个月结一次，
+// 所以合并对账单要能一次把「各平台各自的账期」都装进来。
+func (s *Store) StatementKeys(ctx context.Context) ([]StatementKey, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT DISTINCT platform, period FROM ec_statements ORDER BY period DESC, platform`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []StatementKey
+	for rows.Next() {
+		var k StatementKey
+		if err := rows.Scan(&k.Platform, &k.Period); err != nil {
+			return nil, err
+		}
+		out = append(out, k)
 	}
 	return out, rows.Err()
 }

@@ -1,0 +1,158 @@
+{{define "content"}}
+{{$rep := .Rep}}
+{{$rates := .Rates}}
+{{$t := $rep.Total}}
+<div class="page-head">
+  <div>
+    <h1 class="page-head__title">总对账单</h1>
+    <div class="page-head__sub">
+      各平台各自的账期汇总在一起 · 共 {{len $rep.Items}} 份账单
+      {{if not $rep.Items}}· 还没有导入过平台账单{{end}}
+    </div>
+  </div>
+  <div class="page-head__actions">
+    {{if $rep.Items}}
+    <a class="btn btn--primary" href="/ecommerce/summary/export">
+      {{template "icon" "download"}}<span>导出总对账单</span>
+    </a>
+    {{end}}
+  </div>
+</div>
+
+{{if not $rep.Items}}
+{{template "empty" (dict "Title" "还没有平台账单"
+  "Text" "先在「数据导入 → 平台账单导入」里把各平台的账单传上来。不同平台结算节奏不同没关系，这里会按平台 + 账期分别列示。")}}
+{{else}}
+
+<div class="stat-grid">
+  <div class="stat">
+    <div class="stat__label">销售收入</div>
+    <div class="stat__value">{{money $t.Revenue}}</div>
+    <div class="stat__hint">货款 + 补贴 − 垫支扣回</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">供货成本</div>
+    <div class="stat__value">−{{money $t.Cost}}</div>
+    <div class="stat__hint">上游结算价 × 数量</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">应交增值税</div>
+    <div class="stat__value">−{{money ($t.VatPayable $rates)}}</div>
+    <div class="stat__hint">只承担成本以上的税</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">应结金额</div>
+    {{$netAll := $t.Net $rates}}
+    <div class="stat__value {{if $netAll.IsNeg}}neg{{else}}pos{{end}}">{{money $netAll}}</div>
+    <div class="stat__hint">向上游结算的金额</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__head">
+    <div class="card__title">
+      各平台结算
+      <span class="card__sub">不同平台结算周期不同，按各自账期分别列示</span>
+    </div>
+  </div>
+  <div class="card__body">
+    <div class="table-wrap">
+      <table class="data data--stack data--roomy">
+        <thead>
+          <tr>
+            <th>平台 / 账期</th>
+            <th class="num">销量</th>
+            <th class="num">销售收入</th>
+            <th class="num">供货成本</th>
+            <th class="num">增值税</th>
+            <th class="num">应结金额</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range $rep.Items}}
+          <tr>
+            <td class="row-cell--main">
+              {{.Label}}
+              <div class="tiny muted">{{periodLabel .Period}}</div>
+            </td>
+            <td class="num" data-label="销量">{{.Total.Qty}}</td>
+            <td class="num" data-label="销售收入">{{money .Total.Revenue}}</td>
+            <td class="num" data-label="供货成本">{{money .Total.Cost}}</td>
+            <td class="num" data-label="增值税">{{money (.Total.VatPayable $rates)}}</td>
+            <td class="num span-2" data-label="应结金额">
+              <span class="cell-num">{{money (.Total.Net $rates)}}</span>
+              <div class="cell-sub">{{pct (.Total.Margin $rates)}}</div>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td>合计 {{len $rep.Items}} 份</td>
+            <td class="num">{{$t.Qty}}</td>
+            <td class="num">{{money $t.Revenue}}</td>
+            <td class="num">{{money $t.Cost}}</td>
+            <td class="num">{{money ($t.VatPayable $rates)}}</td>
+            <td class="num">{{money ($t.Net $rates)}}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__head">
+    <div class="card__title">收入与费用构成<span class="card__sub">合计口径</span></div>
+  </div>
+  <div class="card__body">
+    <div class="settle">
+      <div class="settle__row"><span>① 货款（平台打款）</span><span class="settle__num">{{money $t.Goods}}</span></div>
+      <div class="settle__row"><span>② 平台补贴</span><span class="settle__num">{{money $t.Subsidy}}</span></div>
+      {{if $t.Advance}}
+      <div class="settle__row">
+        <span>③ 平台代付垫支<em class="tiny muted">平台替商家垫给消费者的钱，从货款扣回</em></span>
+        <span class="settle__num neg">−{{money $t.Advance}}</span>
+      </div>
+      {{end}}
+      <div class="settle__row settle__row--sum"><span>④ 销售收入</span><span class="settle__num">{{money $t.Revenue}}</span></div>
+      <div class="settle__row"><span>⑤ 供货成本</span><span class="settle__num neg">−{{money $t.Cost}}</span></div>
+      <div class="settle__row"><span>⑥ 应交增值税</span><span class="settle__num neg">−{{money ($t.VatPayable $rates)}}</span></div>
+      <div class="settle__row settle__row--final"><span>⑦ 应结金额</span><span class="settle__num">{{money ($t.Net $rates)}}</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__head">
+    <div class="card__title">平台费用明细<span class="card__sub">开票部分可抵扣增值税；运费仅列示不计入结算</span></div>
+  </div>
+  <div class="card__body">
+    <div class="table-wrap">
+      <table class="data data--stack">
+        <thead>
+          <tr><th>平台 / 账期</th><th>费用类型</th><th class="num">金额</th></tr>
+        </thead>
+        <tbody>
+          {{range $item := $rep.Items}}
+            {{range $kind := $.Kinds}}
+              {{$amt := index $item.FeeByKind $kind}}
+              {{if $amt}}
+              <tr>
+                <td class="row-cell--main">{{$item.Label}} · {{periodLabel $item.Period}}</td>
+                <td data-label="费用类型">{{stmtKind $kind}}</td>
+                <td class="num" data-label="金额">{{money $amt}}</td>
+              </tr>
+              {{end}}
+            {{end}}
+          {{end}}
+        </tbody>
+        <tfoot>
+          <tr><td>合计</td><td></td><td class="num">{{money $rep.FeeTotal}}</td></tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+</div>
+{{end}}
+{{end}}
