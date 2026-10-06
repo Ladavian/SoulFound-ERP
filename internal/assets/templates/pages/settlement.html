@@ -1,0 +1,190 @@
+{{define "content"}}
+{{$rep := .Rep}}
+{{$rates := .Rates}}
+{{$t := $rep.Total}}
+<div class="page-head">
+  <div>
+    <h1 class="page-head__title">结算单</h1>
+    <div class="page-head__sub">
+      {{.PlatformLabel}}{{if .Period}} · 账期 {{.PeriodLabel}}{{end}}
+      · 向平台/上游结算应得利润
+    </div>
+  </div>
+  <div class="page-head__actions">
+    <a class="btn" href="/ecommerce/reconcile?platform={{.Platform}}&period={{.Period}}">
+      {{template "icon" "list"}}<span>账单明细</span>
+    </a>
+    {{if .Period}}
+    <a class="btn btn--primary" href="/ecommerce/settlement/export?platform={{.Platform}}&period={{.Period}}">
+      {{template "icon" "download"}}<span>导出结算单</span>
+    </a>
+    {{end}}
+  </div>
+</div>
+
+{{if not .Period}}
+{{template "empty" (dict "Title" "还没有账单" "Text" "先在「电商对账单」里导入平台的账期账单。")}}
+{{else}}
+
+<div class="card">
+  <div class="card__body">
+    <div class="period-bar">
+      <span class="tiny muted">账期</span>
+      {{range .Periods}}
+      <a class="chip{{if eq . $.Period}} is-active{{end}}" href="/ecommerce/settlement?platform={{$.Platform}}&period={{.}}">{{periodLabel .}}</a>
+      {{end}}
+    </div>
+  </div>
+</div>
+
+{{/* 结算表：一条一条往下减，看出来钱是怎么算的 */}}
+<div class="card">
+  <div class="card__head">
+    <div class="card__title">
+      结算金额
+      <span class="card__sub">收入 − 供货成本 − 应交增值税</span>
+    </div>
+  </div>
+  <div class="card__body">
+    <div class="settle">
+      <div class="settle__row">
+        <span>① 货款（平台打款）</span>
+        <span class="settle__num">{{money $t.Goods}}</span>
+      </div>
+      <div class="settle__row">
+        <span>② 平台补贴</span>
+        <span class="settle__num">{{money $t.Subsidy}}</span>
+      </div>
+      {{if $t.Advance}}
+      <div class="settle__row">
+        <span>③ 平台代付垫支<em class="tiny muted">平台替商家垫给消费者的钱，从货款扣回</em></span>
+        <span class="settle__num neg">−{{money $t.Advance}}</span>
+      </div>
+      {{end}}
+      <div class="settle__row settle__row--sum">
+        <span>④ 销售收入</span>
+        <span class="settle__num">{{money $t.Revenue}}</span>
+      </div>
+      <div class="settle__row">
+        <span>⑤ 供货成本<em class="tiny muted">上游结算价 × 数量</em></span>
+        <span class="settle__num neg">−{{money $t.Cost}}</span>
+      </div>
+      <div class="settle__row">
+        <span>
+          ⑥ 应交增值税
+          <em class="tiny muted">
+            销项 {{money ($t.OutputVat $rates)}} − 进项 {{money ($t.InputVat $rates)}}
+            − 平台费抵扣 {{money ($t.PlatformVat $rates)}}
+          </em>
+        </span>
+        <span class="settle__num neg">−{{money ($t.VatPayable $rates)}}</span>
+      </div>
+      <div class="settle__row settle__row--final">
+        <span>⑦ 应结金额</span>
+        {{$net := $t.Net $rates}}
+        <span class="settle__num {{if $net.IsNeg}}neg{{else}}pos{{end}}">{{money $net}}</span>
+      </div>
+    </div>
+    <div class="tiny muted" style="margin-top:10px;line-height:1.8">
+      税率：销项 {{fixed 0 $rates.Output}}% · 进项 {{fixed 0 $rates.Input}}% ·
+      平台费专票 {{fixed 0 $rates.Platform}}%
+      （在<a href="/settings">系统设置</a>里改）。
+      只承担<strong>成本以上</strong>的增值税；<strong>运费不计入</strong>结算。
+    </div>
+  </div>
+</div>
+
+<div class="stat-grid">
+  <div class="stat">
+    <div class="stat__label">销售数量</div>
+    <div class="stat__value">{{$t.Qty}}</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">平台费用</div>
+    <div class="stat__value">{{money $t.PlatformFee}}</div>
+    <div class="stat__hint">开票部分可抵扣，已在上面的增值税里扣</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">毛利率</div>
+    <div class="stat__value">{{pct ($t.Margin $rates)}}</div>
+    <div class="stat__hint">应结金额 ÷ 销售收入</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__head">
+    <div class="card__title">按商品汇总<span class="card__sub">{{len $rep.Products}} 个商品</span></div>
+  </div>
+  <div class="card__body">
+    <div class="table-wrap">
+      <table class="data data--stack data--roomy">
+        <thead>
+          <tr>
+            <th>商品</th>
+            <th class="num">销量</th>
+            <th class="num">销售金额</th>
+            <th class="num">供货成本</th>
+            <th class="num">应交增值税</th>
+            <th class="num">结算金额</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range $rep.Products}}
+          <tr>
+            <td class="row-cell--main">{{.Name}}</td>
+            <td class="num" data-label="销量">{{.S.Qty}}</td>
+            <td class="num" data-label="销售金额">{{money .S.Revenue}}</td>
+            <td class="num" data-label="供货成本">{{money .S.Cost}}</td>
+            <td class="num" data-label="应交增值税">{{money (.S.VatPayable $rates)}}</td>
+            <td class="num span-2" data-label="结算金额">
+              <span class="cell-num">{{money (sub3 .S.Revenue .S.Cost (.S.VatPayable $rates))}}</span>
+              <div class="cell-sub">{{pct (.S.Margin $rates)}}</div>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__head">
+    <div class="card__title">订单明细<span class="card__sub">{{len $rep.Orders}} 单</span></div>
+  </div>
+  <div class="card__body">
+    <div class="table-wrap">
+      <table class="data data--stack data--roomy">
+        <thead>
+          <tr>
+            <th>订单 / 商品</th>
+            <th class="num">销售金额</th>
+            <th class="num">供货成本</th>
+            <th class="num">增值税</th>
+            <th class="num">结算金额</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range $rep.Orders}}
+          <tr>
+            <td class="row-cell--main">
+              <span class="mono">{{.OrderNo}}</span>
+              <div class="tiny muted">{{if .Product}}{{.Product}}{{else}}商品ID {{.EcID}}{{end}}</div>
+            </td>
+            <td class="num" data-label="销售金额">{{money .S.Revenue}}</td>
+            <td class="num" data-label="供货成本">{{money .S.Cost}}</td>
+            <td class="num span-2" data-label="增值税">{{money (.S.VatPayable $rates)}}</td>
+            <td class="num span-2" data-label="结算金额">
+              <span class="cell-num">{{money (.S.Net $rates)}}</span>
+              {{if not .Product}}<div class="cell-sub warn">未绑定产品，供货成本按 0 算</div>{{end}}
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{{end}}
+{{end}}

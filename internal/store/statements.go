@@ -349,7 +349,7 @@ func (s *Store) StatementSettlement(ctx context.Context, platform, period string
 			unitCost                               model.Money
 		)
 		if err := rows.Scan(&kind, &dir, &orderNo, &subNo, &title, &ecID,
-			&qty, &amount, &productID, &productName, &unitCost); err != nil {
+			&qty, &amount, &advance, &productID, &productName, &unitCost); err != nil {
 			return nil, nil, err
 		}
 		// 没有订单号的：整期一笔的费用或收入，单独归集

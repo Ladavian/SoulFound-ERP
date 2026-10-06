@@ -1972,3 +1972,35 @@ tr:nth-child(3) .rank-badge { background: var(--ice-100); border-color: var(--ic
   border-bottom: 1px dashed var(--line);
 }
 .bind-item:last-child { border-bottom: 0; }
+
+/* 结算单：一条一条往下减 */
+.settle { max-width: 720px; }
+.settle__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 0;
+  border-bottom: 1px dashed var(--line);
+}
+.settle__row > span:first-child { min-width: 0; color: var(--text-2); }
+.settle__row em { display: block; font-style: normal; }
+.settle__num {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.settle__row--sum {
+  border-bottom: 1px solid var(--line);
+  font-weight: 600;
+  color: var(--text);
+}
+.settle__row--final {
+  border-bottom: 0;
+  border-top: 2px solid var(--brand-200);
+  margin-top: 4px;
+  padding-top: 12px;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+}

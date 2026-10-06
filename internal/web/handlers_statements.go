@@ -327,3 +327,82 @@ func parseQtyLoose(raw string) model.Qty {
 	}
 	return q
 }
+
+// handleSettlement 单个平台的结算单（含增值税与应结金额）。
+func (s *Server) handleSettlement(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	fr := newFormReader(r)
+	platform := s.ecPlatform(r)
+
+	periods, err := s.svc.Store.StatementPeriods(ctx, platform)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	period := fr.Str("period")
+	if period == "" && len(periods) > 0 {
+		period = periods[0]
+	}
+	settings, _ := s.svc.Store.Settings(ctx)
+	rep, err := s.svc.BuildSettlement(ctx, platform, period, settings)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	noCache(w)
+	page := s.newPage(r, "结算单", "settlement")
+	page["Platform"] = platform
+	page["PlatformLabel"] = model.EcPlatformLabel(platform)
+	page["Periods"] = periods
+	page["Period"] = period
+	page["PeriodLabel"] = model.PeriodLabel(period)
+	page["Rep"] = rep
+	page["Rates"] = rep.Rates
+	page["Kinds"] = model.StmtKinds
+	if msg := fr.Str("msg"); msg != "" {
+		page["Flash"] = []Flash{{Level: "info", Text: msg}}
+	}
+	if err := s.rnd.Render(w, "settlement", page); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// handleSettlementExport 导出结算单 Excel（给上游结算用）。
+func (s *Server) handleSettlementExport(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	platform := s.ecPlatform(r)
+	period := strings.TrimSpace(r.URL.Query().Get("period"))
+	settings, _ := s.svc.Store.Settings(ctx)
+	rep, err := s.svc.BuildSettlement(ctx, platform, period, settings)
+	if err != nil {
+		s.fail(w, r, "/ecommerce/settlement", err)
+		return
+	}
+	f, err := buildSettlementWorkbook(rep, model.EcPlatformLabel(platform))
+	if err != nil {
+		s.fail(w, r, "/ecommerce/settlement", err)
+		return
+	}
+	name := fmt.Sprintf("结算单-%s-%s.xlsx", platform, model.PeriodLabel(period))
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	w.Header().Set("Content-Disposition", "attachment; filename*=UTF-8''"+urlEncode(name))
+	w.Header().Set("Cache-Control", "no-store")
+	if err := f.Write(w); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// urlEncode 文件名编码（Content-Disposition 用）。
+func urlEncode(s string) string {
+	var b strings.Builder
+	for _, c := range []byte(s) {
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+			c == '-' || c == '_' || c == '.' || c == '~' {
+			b.WriteByte(c)
+			continue
+		}
+		fmt.Fprintf(&b, "%%%02X", c)
+	}
+	return b.String()
+}

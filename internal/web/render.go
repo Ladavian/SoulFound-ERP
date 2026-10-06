@@ -115,6 +115,7 @@ func (r *Renderer) funcs() template.FuncMap {
 		"upper":       strings.ToUpper,
 		"contains":    strings.Contains,
 		"stmtKind":    model.StmtKindLabel,
+		"sub3":        func(a, b, c model.Money) model.Money { return a - b - c },
 		"periodLabel": model.PeriodLabel,
 		"stmtHint":    model.StmtKindHint,
 		"hasPrefix":   strings.HasPrefix,

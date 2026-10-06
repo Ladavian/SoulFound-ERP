@@ -318,6 +318,8 @@ func (s *Server) routes() {
 	m.Handle("POST /import/ec-orders", s.guard(PermProductManage, s.handleImportEcOrders))
 	m.Handle("GET /ecommerce/reconcile", s.guard(PermReportView, s.handleReconcile))
 	m.Handle("POST /ecommerce/reconcile/import", s.guard(PermProductManage, s.handleImportStatement))
+	m.Handle("GET /ecommerce/settlement", s.guard(PermReportView, s.handleSettlement))
+	m.Handle("GET /ecommerce/settlement/export", s.guard(PermReportView, s.handleSettlementExport))
 
 	// 产品
 	m.Handle("GET /products", s.guard(PermProductView, s.handleProductList))
