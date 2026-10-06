@@ -13,27 +13,37 @@ import (
 //
 // 同一份账单重复导入时整体替换，避免重复计账。
 func (s *Store) ReplaceStatement(ctx context.Context, tx DBTX, st *model.EcStatement, items []model.EcStatementItem) error {
-	var existing int64
+	var (
+		existing     int64
+		existingFrom string
+	)
 	err := tx.QueryRowContext(ctx,
-		`SELECT id FROM ec_statements WHERE platform = ? AND period = ? AND kind = ?`,
-		st.Platform, st.Period, st.Kind).Scan(&existing)
+		`SELECT id, source FROM ec_statements WHERE platform = ? AND period = ? AND kind = ?`,
+		st.Platform, st.Period, st.Kind).Scan(&existing, &existingFrom)
 	switch {
 	case err == nil:
+		// 月度账单为准：同一账期同一费用项，月度账单已经有的，
+		// 不要拿对账中心的覆盖掉——否则会把月度账单的订单范围冲掉。
+		// 对账中心独有的费用项（月度账单没有的）会走到下面的 INSERT 分支。
+		if existingFrom == model.StmtSourceBill && st.Source == model.StmtSourceReconcile {
+			return nil
+		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM ec_statement_items WHERE statement_id = ?`, existing); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx,
-			`UPDATE ec_statements SET direction = ?, file_name = ?, row_count = ?, amount = ?, imported_at = ?
+			`UPDATE ec_statements SET direction = ?, file_name = ?, source = ?,
+			        row_count = ?, amount = ?, imported_at = ?
 			 WHERE id = ?`,
-			st.Direction, st.FileName, st.RowCount, int64(st.Amount), Now(), existing); err != nil {
+			st.Direction, st.FileName, st.Source, st.RowCount, int64(st.Amount), Now(), existing); err != nil {
 			return err
 		}
 		st.ID = existing
 	case errors.Is(err, sql.ErrNoRows):
 		res, err := tx.ExecContext(ctx,
-			`INSERT INTO ec_statements(platform, period, kind, direction, file_name, row_count, amount, imported_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			st.Platform, st.Period, st.Kind, st.Direction, st.FileName, st.RowCount, int64(st.Amount), Now())
+			`INSERT INTO ec_statements(platform, period, kind, direction, file_name, source, row_count, amount, imported_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			st.Platform, st.Period, st.Kind, st.Direction, st.FileName, st.Source, st.RowCount, int64(st.Amount), Now())
 		if err != nil {
 			return err
 		}
@@ -69,7 +79,7 @@ func (s *Store) ReplaceStatement(ctx context.Context, tx DBTX, st *model.EcState
 
 // ListStatements 某个账期的全部账单。
 func (s *Store) ListStatements(ctx context.Context, platform, period string) ([]model.EcStatement, error) {
-	query := `SELECT id, platform, period, kind, direction, file_name, row_count, amount, imported_at
+	query := `SELECT id, platform, period, kind, direction, file_name, source, row_count, amount, imported_at
 	          FROM ec_statements WHERE platform = ?`
 	args := []any{platform}
 	if period != "" {
@@ -86,7 +96,7 @@ func (s *Store) ListStatements(ctx context.Context, platform, period string) ([]
 	for rows.Next() {
 		var st model.EcStatement
 		if err := rows.Scan(&st.ID, &st.Platform, &st.Period, &st.Kind, &st.Direction,
-			&st.FileName, &st.RowCount, &st.Amount, &st.ImportedAt); err != nil {
+			&st.FileName, &st.Source, &st.RowCount, &st.Amount, &st.ImportedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, st)

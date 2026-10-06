@@ -460,11 +460,11 @@ func (s *Server) importOneSheet(r *http.Request, platform, filename string, sh i
 
 	// 京东：月度账单与对账中心费用明细都是"每行一个费用项"
 	if isJDMonthly(sh) || isJDFees(sh) {
-		jdPeriod, items := jdStatementRows(sh)
+		jdPeriod, jdSource, items := jdStatementRows(sh)
 		if jdPeriod == "" || len(items) == 0 {
 			return []string{label + "：没有可导入的数据行"}
 		}
-		return s.saveStatementGroups(r, model.EcJD, jdPeriod, label, items)
+		return s.saveStatementGroupsSource(r, model.EcJD, jdPeriod, jdSource, label, items)
 	}
 	// 京东订单明细
 	if isJDOrders(sh) {
@@ -492,8 +492,17 @@ func (s *Server) importOneSheet(r *http.Request, platform, filename string, sh i
 	return s.saveStatementGroups(r, platform, period, label, items)
 }
 
-// saveStatementGroups 按账单类型分组落库。
+// saveStatementGroups 按账单类型分组落库（来源默认按平台月度账单）。
 func (s *Server) saveStatementGroups(r *http.Request, platform, period, label string, items []model.EcStatementItem) []string {
+	return s.saveStatementGroupsSource(r, platform, period, model.StmtSourceBill, label, items)
+}
+
+// saveStatementGroupsSource 按账单类型分组落库，并记录来源。
+//
+// 京东一个账期有两份来源：月度账单（订单与数量以它为准）与
+// 对账中心（项目更全）。存储层会保证"月度账单已有的费用项不被
+// 对账中心覆盖"，对账中心独有的费用项照常补进来。
+func (s *Server) saveStatementGroupsSource(r *http.Request, platform, period, source, label string, items []model.EcStatementItem) []string {
 	grouped := map[string][]model.EcStatementItem{}
 	var order []string
 	for _, it := range items {
@@ -506,7 +515,7 @@ func (s *Server) saveStatementGroups(r *http.Request, platform, period, label st
 	for _, k := range order {
 		list := grouped[k]
 		st := &model.EcStatement{
-			Platform: platform, Period: period, Kind: k,
+			Platform: platform, Period: period, Kind: k, Source: source,
 			Direction: list[0].Direction, FileName: label, RowCount: len(list),
 		}
 		for _, it := range list {

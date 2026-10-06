@@ -422,6 +422,20 @@ ALTER TABLE ec_statement_items ADD COLUMN sku_label TEXT NOT NULL DEFAULT '';
 ALTER TABLE product_ec_links ADD COLUMN sku_label TEXT NOT NULL DEFAULT '';
 `
 
+// migrationV17 账期账单记录来源，用于"月度账单为准、对账中心只补缺"。
+//
+// 京东一个账期有两份来源：
+//
+//	月度账单    平台出的月度账单，订单与数量以它为准
+//	对账中心    一单一单的明细，项目更全（商品保险服务费、运费保险服务费…）
+//
+// 合并规则：同一账期同一费用项，如果月度账单已经有了，
+// 就不要再拿对账中心的覆盖掉——否则会把月度账单的订单范围冲掉。
+// 对账中心独有的费用项（月度账单没有的）照常补进来。
+const migrationV17 = `
+ALTER TABLE ec_statements ADD COLUMN source TEXT NOT NULL DEFAULT 'bill';
+`
+
 // migrations 按顺序执行的迁移脚本。新增结构或数据变更时在末尾追加一段 SQL，
 // 已执行过的版本不会重复执行（版本号记录在 schema_meta 表）。
 var migrations = []string{
@@ -441,4 +455,5 @@ var migrations = []string{
 	migrationV14,
 	migrationV15,
 	migrationV16,
+	migrationV17,
 }

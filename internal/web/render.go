@@ -127,6 +127,7 @@ func (r *Renderer) funcs() template.FuncMap {
 		"stmtKind":    model.StmtKindLabel,
 		"sub3":        func(a, b, c model.Money) model.Money { return a - b - c },
 		"periodLabel": model.PeriodLabel,
+		"sourceLabel": model.SourceLabel,
 		"stmtHint":    model.StmtKindHint,
 		"hasPrefix":   strings.HasPrefix,
 		"truncate": func(n int, s string) string {

@@ -115,3 +115,69 @@ func TestSettlementCostNotDuplicated(t *testing.T) {
 		t.Errorf("按商品汇总的成本应为 280，实际 %s", psum)
 	}
 }
+
+// TestMonthlyBillWinsOverReconcile 月度账单为准，对账中心只补缺的费用项。
+//
+// 京东一个账期有两份来源：
+//
+//	月度账单   平台出的月度账单，订单与数量以它为准
+//	对账中心   一单一单的明细，项目更全（商品保险服务费、运费保险服务费…）
+//
+// 合并规则：月度账单已有的费用项，不能被对账中心覆盖
+// （否则会把月度账单的订单范围冲掉）；对账中心独有的照常补进来。
+func TestMonthlyBillWinsOverReconcile(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+	admin := adminUser(t, svc)
+
+	importOne := func(kind, source, amount string, rows int) {
+		items := make([]model.EcStatementItem, 0, rows)
+		for i := 0; i < rows; i++ {
+			items = append(items, model.EcStatementItem{
+				Period: "202609", Kind: kind, Direction: model.StmtDirection(kind),
+				OrderNo: "JD-" + kind + "-" + string(rune('A'+i)),
+				Amount:  model.MustMoney(amount),
+			})
+		}
+		st := &model.EcStatement{
+			Platform: model.EcJD, Period: "202609", Kind: kind, Source: source,
+			Direction: model.StmtDirection(kind), RowCount: len(items),
+		}
+		for _, it := range items {
+			st.Amount += it.Amount
+		}
+		if err := svc.ImportStatement(ctx, st, items, admin); err != nil {
+			t.Fatalf("导入 %s 失败: %v", kind, err)
+		}
+	}
+
+	// 月度账单：货款 2 单 + 佣金
+	importOne(model.StmtGoodsPayment, model.StmtSourceBill, "296", 2)
+	importOne("京东·佣金", model.StmtSourceBill, "8.14", 2) // 合计 16.28
+	// 对账中心：同样的货款（故意用不同数字与行数）+ 它独有的保险服务费
+	importOne(model.StmtGoodsPayment, model.StmtSourceReconcile, "999", 5)
+	importOne("京东·佣金", model.StmtSourceReconcile, "19.8", 5) // 合计 99，不应生效
+	importOne("京东·商品保险服务费", model.StmtSourceReconcile, "0.42", 4)
+
+	stmts, err := svc.Store.ListStatements(ctx, model.EcJD, "202609")
+	if err != nil {
+		t.Fatal(err)
+	}
+	byKind := map[string]model.EcStatement{}
+	for _, st := range stmts {
+		byKind[st.Kind] = st
+	}
+	// 月度账单已有的，必须保持 bill 且行数/金额不变
+	if st := byKind[model.StmtGoodsPayment]; st.Source != model.StmtSourceBill || st.RowCount != 2 {
+		t.Errorf("交易货款应以月度账单为准（bill/2 行），实际 %s/%d 行",
+			model.SourceLabel(st.Source), st.RowCount)
+	}
+	if st := byKind["京东·佣金"]; st.Source != model.StmtSourceBill || st.Amount != model.MustMoney("16.28") {
+		t.Errorf("佣金应以月度账单为准（bill/16.28），实际 %s/%s",
+			model.SourceLabel(st.Source), st.Amount)
+	}
+	// 对账中心独有的，要补进来
+	if st, ok := byKind["京东·商品保险服务费"]; !ok || st.RowCount != 4 {
+		t.Errorf("对账中心独有的商品保险服务费应被补进来，实际 %+v", byKind["京东·商品保险服务费"])
+	}
+}

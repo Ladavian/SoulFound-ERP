@@ -38,7 +38,12 @@ func isJDOrders(sh importSheet) bool {
 //
 // 费用项直接进账单类型（如「京东·佣金」），方向以平台的「收支方向」为准；
 // 没有这一列时按关键字猜（货款是收入，其余是支出）。
-func jdStatementRows(sh importSheet) (period string, items []model.EcStatementItem) {
+func jdStatementRows(sh importSheet) (period string, source string, items []model.EcStatementItem) {
+	if isJDFees(sh) {
+		source = model.StmtSourceReconcile
+	} else {
+		source = model.StmtSourceBill
+	}
 	for _, row := range sh.Rows {
 		feeName := strings.TrimSpace(sh.cell(row, "费用项", "费用名称"))
 		if feeName == "" {
@@ -90,7 +95,7 @@ func jdStatementRows(sh importSheet) (period string, items []model.EcStatementIt
 		}
 		items = append(items, it)
 	}
-	return period, items
+	return period, source, items
 }
 
 // jdKind 京东费用项对应的账单类型。

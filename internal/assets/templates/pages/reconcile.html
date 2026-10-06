@@ -243,6 +243,7 @@
             <div class="tiny muted">
               {{if eq .Direction "income"}}<span class="pos">收入</span>{{else}}<span class="neg">支出</span>{{end}}
               · {{.RowCount}} 行 · {{money .Amount}}
+              · <span title="{{if eq .Source "reconcile"}}对账中心：项目更全，只补月度账单没有的费用项{{else}}平台月度账单：订单与数量以它为准{{end}}">{{sourceLabel .Source}}</span>
             </div>
             <div class="tiny muted mono">{{.FileName}}</div>
           </div>

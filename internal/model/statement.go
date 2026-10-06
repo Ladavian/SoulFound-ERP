@@ -89,9 +89,26 @@ type EcStatement struct {
 	Kind       string
 	Direction  string
 	FileName   string
+	Source     string // bill=平台月度账单（为准）/ reconcile=对账中心（补缺）
 	RowCount   int
 	Amount     Money
 	ImportedAt string
+}
+
+// 账单来源。
+const (
+	StmtSourceBill      = "bill"      // 平台月度账单：订单与数量以它为准
+	StmtSourceReconcile = "reconcile" // 对账中心：项目更全，只补月度账单没有的费用项
+)
+
+// SourceLabel 来源中文名。
+func SourceLabel(src string) string {
+	switch src {
+	case StmtSourceReconcile:
+		return "对账中心"
+	default:
+		return "月度账单"
+	}
 }
 
 // EcStatementItem 账单里的一行。
