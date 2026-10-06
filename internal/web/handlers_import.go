@@ -346,7 +346,7 @@ func (s *Server) handleEcBind(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fixed, err := s.svc.BindEcLink(r.Context(), platform, ecID,
-		strings.TrimSpace(r.FormValue("ec_sku_id")),
+		model.NormalizeEcSKU(r.FormValue("ec_sku_id")),
 		strings.TrimSpace(r.FormValue("title")), productID, userFrom(r))
 	if err != nil {
 		s.fail(w, r, "/ecommerce", err)

@@ -264,7 +264,7 @@
     <div class="card__head">
       <div class="card__title">
         电商平台绑定
-        <span class="card__sub">平台商品ID 对到本产品；一个产品可以绑多个（同一平台多个链接也行）</span>
+        <span class="card__sub">按「平台 + 商品ID + 规格」绑定；一个产品可以绑多条</span>
       </div>
       <div class="card__actions">
         <button class="btn btn--sm" type="button" @click="add()">
@@ -303,7 +303,7 @@
             </select>
             <input class="input mono" type="text" inputmode="numeric" x-model="row.ecProductId"
                    placeholder="平台商品ID" required>
-            <input class="input" type="text" x-model="row.ecSkuId" placeholder="规格ID（选填）">
+            <input class="input" type="text" x-model="row.ecSkuId" placeholder="平台规格（选填）">
             <input class="input" type="text" x-model="row.title" placeholder="链接标题（选填，便于辨认）">
             <button class="btn btn--ghost btn--icon" type="button"
                     @click="rows.splice(index, 1)" title="删除">
@@ -324,9 +324,18 @@
           也可以在这里直接填。
         </div>
       </div>
+      <div class="tiny muted" style="margin-top:10px;line-height:1.7">
+        <strong>一个链接里有多个规格怎么办？</strong>
+        同一商品ID 下淘宝会分不同规格（导出表里的「商品属性」，例如
+        <span class="mono">商品规格:1瓶装</span>、<span class="mono">商品规格:手拎袋</span>）。
+        这种情况填上「平台规格」，就按「商品ID + 规格」分别绑定：
+        同一商品ID 的不同规格可以绑到<strong>不同产品</strong>，
+        也可以把多个规格都绑到同一个产品。
+        规格留空表示这个商品ID 只有一种规格。
+      </div>
       {{if not .IsNew}}
-      <div class="tiny muted" style="margin-top:10px">
-        提示：绑定关系保存后立即生效，历史未匹配的订单明细会自动补齐。
+      <div class="tiny muted" style="margin-top:8px">
+        绑定保存后立即生效，历史未匹配的订单明细会自动补齐。
       </div>
       {{end}}
     </div>

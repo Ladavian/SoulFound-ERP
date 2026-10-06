@@ -406,3 +406,132 @@ func TestPerProductNegativeStock(t *testing.T) {
 		t.Error("系统打开开关后，单独禁止的产品仍应被拦住")
 	}
 }
+
+// TestSameEcIDWithMultipleSKUs 同一个商品ID 下的不同规格分别绑定。
+//
+// 淘宝一个链接里会分规格（导出表的「商品属性」，
+// 例如「商品规格:1瓶装」「商品规格:手拎袋」），
+// 这些规格共用同一个商品ID，但属于不同产品。
+// 所以绑定与匹配的键必须是「平台 + 商品ID + 规格」，
+// 不能只用商品ID——否则第二个规格根本绑不上，或者会认错产品。
+func TestSameEcIDWithMultipleSKUs(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+	admin := adminUser(t, svc)
+
+	// 同一个商品ID "8888" 三种规格：1瓶装、手拎袋、以及空规格
+	rows := []EcOrderRow{
+		{OrderNo: "S1", SubOrderNo: "S1-1", Title: "冰酒包装礼盒", EcProductID: "8888",
+			EcSKU: "商品规格:1瓶装礼盒", Qty: "1", PaidAmt: "60",
+			ItemStatus: "交易成功", RefundStatus: "没有申请退款", CreatedAt: "2026-10-01 10:00"},
+		{OrderNo: "S2", SubOrderNo: "S2-1", Title: "冰酒包装礼盒", EcProductID: "8888",
+			EcSKU: "商品规格:手拎袋", Qty: "2", PaidAmt: "30",
+			ItemStatus: "交易成功", RefundStatus: "没有申请退款", CreatedAt: "2026-10-02 10:00"},
+		{OrderNo: "S3", SubOrderNo: "S3-1", Title: "小冰甜375ML", EcProductID: "9999",
+			EcSKU: "", Qty: "1", PaidAmt: "260",
+			ItemStatus: "交易成功", RefundStatus: "没有申请退款", CreatedAt: "2026-10-03 10:00"},
+	}
+	if _, err := svc.ImportEcOrders(ctx, model.EcTaobao, rows, admin); err != nil {
+		t.Fatal(err)
+	}
+	// 规格文本要规范化（去掉「商品规格:」前缀）
+	orders, _ := svc.Store.ListEcOrders(ctx, store.EcOrderFilter{Platform: model.EcTaobao})
+	specs := map[string]string{}
+	for _, o := range orders {
+		for _, it := range o.Items {
+			specs[it.SubOrderNo] = it.EcSKU
+		}
+	}
+	if specs["S1-1"] != "1瓶装礼盒" || specs["S2-1"] != "手拎袋" {
+		t.Fatalf("规格文本应去掉「商品规格:」前缀，实际 %q / %q", specs["S1-1"], specs["S2-1"])
+	}
+
+	giftBox, _ := svc.Store.CreateProduct(ctx, &model.Product{
+		SKU: "GIFT-BOX", Name: "1瓶装礼盒", Unit: "盒", IsActive: true, IsWine: false})
+	bag, _ := svc.Store.CreateProduct(ctx, &model.Product{
+		SKU: "BAG", Name: "手拎袋", Unit: "个", IsActive: true, IsWine: false})
+	wine, _ := svc.Store.CreateProduct(ctx, &model.Product{
+		SKU: "WINE-X", Name: "小冰甜375ML", Unit: "瓶", IsActive: true, IsWine: true})
+
+	// 同一商品ID 的两个规格绑到**不同产品**——这是关键：不能被判成冲突
+	if _, err := svc.BindEcLink(ctx, model.EcTaobao, "8888", "商品规格:1瓶装礼盒", "", giftBox, admin); err != nil {
+		t.Fatalf("绑第一个规格失败: %v", err)
+	}
+	if _, err := svc.BindEcLink(ctx, model.EcTaobao, "8888", "手拎袋", "", bag, admin); err != nil {
+		t.Fatalf("同一商品ID 的第二个规格应能绑到别的产品，实际 %v", err)
+	}
+	// 换个商品ID 绑第三个
+	if _, err := svc.BindEcLink(ctx, model.EcTaobao, "9999", "", "", wine, admin); err != nil {
+		t.Fatalf("绑无规格商品失败: %v", err)
+	}
+
+	// 每个规格的订单行各自绑到对应产品
+	after, _ := svc.Store.ListEcOrders(ctx, store.EcOrderFilter{Platform: model.EcTaobao})
+	got := map[string]int64{}
+	for _, o := range after {
+		for _, it := range o.Items {
+			if it.ProductID != nil {
+				got[it.SubOrderNo] = *it.ProductID
+			}
+		}
+	}
+	if got["S1-1"] != giftBox {
+		t.Errorf("规格「1瓶装礼盒」的行应绑到礼盒产品，实际 %v", got["S1-1"])
+	}
+	if got["S2-1"] != bag {
+		t.Errorf("规格「手拎袋」的行应绑到袋子产品，实际 %v", got["S2-1"])
+	}
+	if got["S3-1"] != wine {
+		t.Errorf("无规格商品的行应绑到小冰甜，实际 %v", got["S3-1"])
+	}
+
+	// 同一商品ID 同一规格再绑给第二个产品要拦住
+	if _, err := svc.BindEcLink(ctx, model.EcTaobao, "8888", "手拎袋", "", giftBox, admin); err == nil {
+		t.Error("同一商品ID 同一规格绑给第二个产品时应报错")
+	}
+
+	// 歧义保护：给商品ID 8888 再加一个空规格绑定后，
+	// 无规格的订单行不能猜，应该保持未匹配
+	p3, _ := svc.Store.CreateProduct(ctx, &model.Product{
+		SKU: "GIFT-DEF", Name: "礼盒默认规格", Unit: "盒", IsActive: true, IsWine: false})
+	if _, err := svc.BindEcLink(ctx, model.EcTaobao, "8888", "", "", p3, admin); err != nil {
+		t.Fatalf("绑空规格失败: %v", err)
+	}
+	// 解绑手拎袋后，手拎袋那行应松绑，但礼盒那行不受影响
+	links, _ := svc.Store.ProductLinks(ctx, bag)
+	if len(links) != 1 {
+		t.Fatalf("袋子产品应有 1 条绑定，实际 %d", len(links))
+	}
+	if err := svc.UnbindEcLink(ctx, links[0].ID, admin); err != nil {
+		t.Fatal(err)
+	}
+	final, _ := svc.Store.ListEcOrders(ctx, store.EcOrderFilter{Platform: model.EcTaobao})
+	for _, o := range final {
+		for _, it := range o.Items {
+			if it.SubOrderNo == "S2-1" && it.Matched() {
+				t.Error("解绑手拎袋后，它对应那行应松开")
+			}
+			if it.SubOrderNo == "S1-1" && !it.Matched() {
+				t.Error("解绑手拎袋不应影响同一商品ID 另一个规格（1瓶装礼盒）的绑定")
+			}
+		}
+	}
+}
+
+// TestNormalizeEcSKU 规格文本规范化。
+func TestNormalizeEcSKU(t *testing.T) {
+	cases := map[string]string{
+		"商品规格:1瓶装":      "1瓶装",
+		"商品规格：手拎袋":      "手拎袋",
+		"1瓶装":           "1瓶装",
+		"":              "",
+		"  商品规格:1瓶装礼盒 ": "1瓶装礼盒",
+		// 冒号前不是短标签时保持原样，避免把规格本身切坏
+		"规格 说明:很长的一段文字": "规格 说明:很长的一段文字",
+	}
+	for in, want := range cases {
+		if got := model.NormalizeEcSKU(in); got != want {
+			t.Errorf("NormalizeEcSKU(%q) = %q，期望 %q", in, got, want)
+		}
+	}
+}

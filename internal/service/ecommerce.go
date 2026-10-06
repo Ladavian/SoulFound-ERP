@@ -86,14 +86,15 @@ func (s *Service) ImportEcOrders(ctx context.Context, platform string, rows []Ec
 	// 同一个商品ID / 编码往往重复出现，这里顺便缓存，避免逐行查库。
 	type matchKey struct{ kind, val string }
 	matchCache := map[matchKey]*int64{}
-	resolve := func(ecID, merchantCode string) *int64 {
+	resolve := func(ecID, sku, merchantCode string) *int64 {
 		if ecID != "" {
-			k := matchKey{"ec", ecID}
+			sku = model.NormalizeEcSKU(sku)
+			k := matchKey{"ec", ecID + "|" + sku}
 			if v, ok := matchCache[k]; ok {
 				return v
 			}
 			var id *int64
-			if p, err := s.Store.ProductByEcLink(ctx, platform, ecID); err == nil && p != nil {
+			if p, err := s.Store.ProductByEcLink(ctx, platform, ecID, sku); err == nil && p != nil {
 				v := p.ID
 				id = &v
 			}
@@ -119,7 +120,7 @@ func (s *Service) ImportEcOrders(ctx context.Context, platform string, rows []Ec
 	}
 	for _, g := range groups {
 		for _, r := range g.rows {
-			resolve(strings.TrimSpace(r.EcProductID), strings.TrimSpace(r.MerchantCode))
+			resolve(strings.TrimSpace(r.EcProductID), strings.TrimSpace(r.EcSKU), strings.TrimSpace(r.MerchantCode))
 		}
 	}
 
@@ -195,7 +196,8 @@ func (s *Service) ImportEcOrders(ctx context.Context, platform string, rows []Ec
 				item.RefundAmount = parseMoneyLoose(r.RefundAmt)
 
 				// 用预解析好的匹配结果（电商商品ID 优先，其次商家编码当 SKU）
-				item.ProductID = resolve(item.EcProductID, item.MerchantCode)
+				item.EcSKU = model.NormalizeEcSKU(item.EcSKU)
+				item.ProductID = resolve(item.EcProductID, item.EcSKU, item.MerchantCode)
 
 				if _, _, err := s.Store.UpsertEcItem(ctx, tx, item); err != nil {
 					summary.Errors = appendErr(summary.Errors, "%s：写入明细失败 %v", item.SubOrderNo, err)
@@ -253,11 +255,14 @@ func (s *Service) BindEcLink(ctx context.Context, platform, ecProductID, ecSKUId
 		return 0, UserErrf("产品不存在")
 	}
 	// 同一个平台商品ID 只能属于一个产品
-	if existing, err := s.Store.EcLinkByEcID(ctx, platform, ecProductID); err != nil {
+	ecSKUId = model.NormalizeEcSKU(ecSKUId)
+	// 同一个（商品ID + 规格）只能属于一个产品；
+	// 同一商品ID 的**不同规格**可以绑到不同产品。
+	if existing, err := s.Store.EcLinkByEcID(ctx, platform, ecProductID, ecSKUId); err != nil {
 		return 0, err
 	} else if existing != nil && existing.ProductID != productID {
-		return 0, UserErrf("%s的商品ID「%s」已经绑给「%s」了，请先解绑",
-			model.EcPlatformLabel(platform), ecProductID, existing.ProductName)
+		return 0, UserErrf("%s的商品ID「%s」%s已经绑给「%s」了，请先解绑",
+			model.EcPlatformLabel(platform), ecProductID, skuSuffix(ecSKUId), existing.ProductName)
 	}
 
 	var fixed int
@@ -273,14 +278,14 @@ func (s *Service) BindEcLink(ctx context.Context, platform, ecProductID, ecSKUId
 			return UserErrf("%s的商品ID「%s」已经绑给「%s」了",
 				model.EcPlatformLabel(platform), ecProductID, conflict.ProductName)
 		}
-		n, err := s.Store.BindEcOrderItems(ctx, tx, platform, ecProductID, productID)
+		n, err := s.Store.BindEcOrderItems(ctx, tx, platform, ecProductID, ecSKUId, productID)
 		if err != nil {
 			return err
 		}
 		fixed = n
 		return s.Store.Log(ctx, tx, user, "绑定平台商品", "product", &productID,
-			fmt.Sprintf("%s %s → %s（补齐 %d 行订单明细）",
-				model.EcPlatformLabel(platform), ecProductID, product.Name, n))
+			fmt.Sprintf("%s %s%s → %s（补齐 %d 行订单明细）",
+				model.EcPlatformLabel(platform), ecProductID, skuSuffix(ecSKUId), product.Name, n))
 	})
 	if err != nil {
 		return 0, err
@@ -418,17 +423,19 @@ func (s *Service) SaveLinks(ctx context.Context, productID int64, links []model.
 		if links[i].EcProductID == "" {
 			return UserErrf("第 %d 行还没填平台商品ID", i+1)
 		}
-		key := links[i].Platform + "|" + links[i].EcProductID
+		links[i].EcSKUId = model.NormalizeEcSKU(links[i].EcSKUId)
+		key := links[i].Platform + "|" + links[i].EcProductID + "|" + links[i].EcSKUId
 		if seen[key] {
-			return UserErrf("第 %d 行的商品ID 重复了", i+1)
+			return UserErrf("第 %d 行的商品ID 与规格重复了", i+1)
 		}
 		seen[key] = true
-		// 同一个平台商品ID 只能属于一个产品
-		if existing, err := s.Store.EcLinkByEcID(ctx, links[i].Platform, links[i].EcProductID); err != nil {
+		// 同一个（商品ID + 规格）只能属于一个产品
+		if existing, err := s.Store.EcLinkByEcID(ctx, links[i].Platform, links[i].EcProductID, links[i].EcSKUId); err != nil {
 			return err
 		} else if existing != nil && existing.ProductID != productID {
-			return UserErrf("%s的商品ID「%s」已经绑给「%s」了",
-				model.EcPlatformLabel(links[i].Platform), links[i].EcProductID, existing.ProductName)
+			return UserErrf("%s的商品ID「%s」%s已经绑给「%s」了",
+				model.EcPlatformLabel(links[i].Platform), links[i].EcProductID,
+				skuSuffix(links[i].EcSKUId), existing.ProductName)
 		}
 	}
 
@@ -449,10 +456,11 @@ func (s *Service) SaveLinks(ctx context.Context, productID int64, links []model.
 			if conflict, err := s.Store.AddEcLink(ctx, tx, l); err != nil {
 				return err
 			} else if conflict != nil {
-				return UserErrf("%s的商品ID「%s」已经绑给「%s」了",
-					model.EcPlatformLabel(l.Platform), l.EcProductID, conflict.ProductName)
+				return UserErrf("%s的商品ID「%s」%s已经绑给「%s」了",
+					model.EcPlatformLabel(l.Platform), l.EcProductID,
+					skuSuffix(l.EcSKUId), conflict.ProductName)
 			}
-			n, err := s.Store.BindEcOrderItems(ctx, tx, l.Platform, l.EcProductID, productID)
+			n, err := s.Store.BindEcOrderItems(ctx, tx, l.Platform, l.EcProductID, l.EcSKUId, productID)
 			if err != nil {
 				return err
 			}
@@ -545,4 +553,12 @@ func (s *Service) BundleStock(ctx context.Context, productID int64) (model.Qty, 
 		min = 0
 	}
 	return min, nil
+}
+
+// skuSuffix 拼错误提示里的规格部分。
+func skuSuffix(sku string) string {
+	if strings.TrimSpace(sku) == "" {
+		return ""
+	}
+	return "（规格 " + sku + "）"
 }

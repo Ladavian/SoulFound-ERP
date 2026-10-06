@@ -37,6 +37,29 @@ func EcPlatformOptions() []Option {
 // EcPlatformSupported 是否已经跑通的平台（导入解析按平台区分）。
 func EcPlatformSupported(p string) bool { return p == EcTaobao }
 
+// NormalizeEcSKU 规范化平台规格文本。
+//
+// 淘宝导出的「商品属性」形如「商品规格:1瓶装」「商品规格:手拎袋」，
+// 同一个商品ID 下会有多个规格。绑定与匹配都要用同一个规范值，
+// 所以统一把前面的「键:」前缀去掉，只留规格本身。
+// 全角冒号也一起处理。
+func NormalizeEcSKU(raw string) string {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return ""
+	}
+	for _, sep := range []string{":", "："} {
+		if i := strings.Index(s, sep); i > 0 {
+			key := s[:i]
+			// 前缀必须是短标签（没有空格），避免把规格里本身带冒号的内容切坏
+			if len([]rune(key)) <= 8 && !strings.ContainsAny(key, " \t") {
+				s = strings.TrimSpace(s[i+len(sep):])
+			}
+		}
+	}
+	return s
+}
+
 // ProductEcLink 产品与平台商品的绑定关系。
 //
 // 一个 ERP 产品可以绑多个平台商品ID：
