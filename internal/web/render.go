@@ -121,16 +121,17 @@ func (r *Renderer) funcs() template.FuncMap {
 			}
 			return v
 		},
-		"lower":       strings.ToLower,
-		"upper":       strings.ToUpper,
-		"contains":    strings.Contains,
-		"stmtKind":    model.StmtKindLabel,
-		"sub3":        func(a, b, c model.Money) model.Money { return a - b - c },
-		"periodLabel": model.PeriodLabel,
-		"sourceLabel": model.SourceLabel,
-		"checkStatus": model.CheckStatusLabel,
-		"stmtHint":    model.StmtKindHint,
-		"hasPrefix":   strings.HasPrefix,
+		"lower":         strings.ToLower,
+		"upper":         strings.ToUpper,
+		"contains":      strings.Contains,
+		"stmtKind":      model.StmtKindLabel,
+		"sub3":          func(a, b, c model.Money) model.Money { return a - b - c },
+		"periodLabel":   model.PeriodLabel,
+		"sourceLabel":   model.SourceLabel,
+		"checkStatus":   model.CheckStatusLabel,
+		"platformLabel": model.EcPlatformLabel,
+		"stmtHint":      model.StmtKindHint,
+		"hasPrefix":     strings.HasPrefix,
 		"truncate": func(n int, s string) string {
 			runes := []rune(s)
 			if len(runes) <= n {

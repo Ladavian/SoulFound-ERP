@@ -64,6 +64,7 @@
             <th class="num">销量</th>
             <th class="num">销售收入</th>
             <th class="num">供货成本</th>
+            <th class="num">平台费用</th>
             <th class="num">增值税</th>
             <th class="num">应结金额</th>
           </tr>
@@ -78,7 +79,8 @@
             <td class="num" data-label="销量">{{.Total.Qty}}</td>
             <td class="num" data-label="销售收入">{{money .Total.Revenue}}</td>
             <td class="num" data-label="供货成本">{{money .Total.Cost}}</td>
-            <td class="num" data-label="增值税">{{money (.Total.VatPayable $rates)}}</td>
+            <td class="num" data-label="平台费用">{{money .Total.PlatformFee}}</td>
+            <td class="num span-2" data-label="增值税">{{money (.Total.VatPayable $rates)}}</td>
             <td class="num span-2" data-label="应结金额">
               <span class="cell-num">{{money (.Total.Net $rates)}}</span>
               <div class="cell-sub">{{pct (.Total.Margin $rates)}}</div>
@@ -92,6 +94,7 @@
             <td class="num">{{$t.Qty}}</td>
             <td class="num">{{money $t.Revenue}}</td>
             <td class="num">{{money $t.Cost}}</td>
+            <td class="num">{{money $t.PlatformFee}}</td>
             <td class="num">{{money ($t.VatPayable $rates)}}</td>
             <td class="num">{{money ($t.Net $rates)}}</td>
           </tr>
@@ -125,32 +128,52 @@
 
 <div class="card">
   <div class="card__head">
-    <div class="card__title">平台费用明细<span class="card__sub">开票部分可抵扣增值税；运费仅列示不计入结算</span></div>
+    <div class="card__title">
+      平台费用汇总
+      <span class="card__sub">一行一个费用类型，一列一个平台；看得出哪笔钱是哪个平台的</span>
+    </div>
   </div>
   <div class="card__body">
     <div class="table-wrap">
       <table class="data data--stack">
         <thead>
-          <tr><th>平台 / 账期</th><th>费用类型</th><th class="num">金额</th></tr>
+          <tr>
+            <th>费用类型</th>
+            {{range $rep.Fees.Platforms}}<th class="num">{{platformLabel .}}</th>{{end}}
+            <th class="num">合计</th>
+          </tr>
         </thead>
         <tbody>
-          {{range $item := $rep.Items}}
-            {{range $kind := $.Kinds}}
-              {{$amt := index $item.FeeByKind $kind}}
-              {{if $amt}}
-              <tr>
-                <td class="row-cell--main">{{$item.Label}} · {{periodLabel $item.Period}}</td>
-                <td data-label="费用类型">{{stmtKind $kind}}</td>
-                <td class="num" data-label="金额">{{money $amt}}</td>
-              </tr>
-              {{end}}
+          {{range $kind := $rep.Fees.Kinds}}
+          <tr>
+            <td class="row-cell--main">
+              {{stmtKind $kind}}
+              {{if eq $kind "商家寄件服务费"}}<div class="tiny muted">仅列示，不计入结算</div>{{end}}
+            </td>
+            {{range $p := $rep.Fees.Platforms}}
+            {{$amt := index $rep.Fees.Cell (printf "%s|%s" $kind $p)}}
+            <td class="num span-2" data-label="{{platformLabel $p}}">
+              {{if $amt}}{{money $amt}}{{else}}<span class="muted">—</span>{{end}}
+            </td>
             {{end}}
+            <td class="num span-2" data-label="合计"><span class="cell-num">{{money (index $rep.Fees.KindTotal $kind)}}</span></td>
+          </tr>
           {{end}}
         </tbody>
         <tfoot>
-          <tr><td>合计</td><td></td><td class="num">{{money $rep.FeeTotal}}</td></tr>
+          <tr>
+            <td>合计</td>
+            {{range $p := $rep.Fees.Platforms}}
+            <td class="num">{{money (index $rep.Fees.PlatTotal $p)}}</td>
+            {{end}}
+            <td class="num">{{money $rep.Fees.Total}}</td>
+          </tr>
         </tfoot>
       </table>
+    </div>
+    <div class="tiny muted" style="margin-top:10px;line-height:1.8">
+      每笔费用都带了平台前缀（如「京东·佣金」），所以同一个平台用什么费用一目了然。
+      开票部分参与增值税抵扣；<strong>商家寄件服务费</strong>（快递费）只列示、不计入结算。
     </div>
   </div>
 </div>

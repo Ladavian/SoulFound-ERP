@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"sort"
 
 	"icewine-erp/internal/model"
 	"icewine-erp/internal/store"
@@ -158,6 +159,19 @@ type PlatformSettlement struct {
 	Rows      int
 }
 
+// FeeMatrix 费用类型 × 平台的矩阵。
+//
+// 用户要"汇总清楚、分离说清楚哪个平台的什么费用"，
+// 矩阵是最直观的：一行一个费用类型，一列一个平台，最后合计。
+type FeeMatrix struct {
+	Platforms []string               // 列（平台）
+	Kinds     []string               // 行（费用类型）
+	Cell      map[string]model.Money // kind|platform → 金额
+	KindTotal map[string]model.Money // 每行合计
+	PlatTotal map[string]model.Money // 每列合计
+	Total     model.Money            // 总计
+}
+
 // SummaryReport 多平台合并对账单。
 //
 // 各平台结算节奏不同（淘宝按月，其它平台可能两三个月一次），
@@ -167,6 +181,7 @@ type SummaryReport struct {
 	Items    []PlatformSettlement
 	Total    model.Settlement
 	FeeTotal model.Money
+	Fees     FeeMatrix
 }
 
 // BuildSummary 合并多个平台/账期的结算。
@@ -188,7 +203,70 @@ func (s *Service) BuildSummary(ctx context.Context, keys []store.StatementKey, s
 		rep.Total.Add(st.Total)
 		rep.FeeTotal += st.Total.PlatformFee
 	}
+	rep.Fees = buildFeeMatrix(rep.Items)
 	return rep, nil
+}
+
+// buildFeeMatrix 汇总成「费用类型 × 平台」的矩阵。
+func buildFeeMatrix(items []PlatformSettlement) FeeMatrix {
+	m := FeeMatrix{
+		Cell:      map[string]model.Money{},
+		KindTotal: map[string]model.Money{},
+		PlatTotal: map[string]model.Money{},
+	}
+	platSeen, kindSeen := map[string]bool{}, map[string]bool{}
+	for _, it := range items {
+		for _, kind := range model.StmtKinds {
+			amt := it.FeeByKind[kind]
+			if amt == 0 {
+				continue
+			}
+			if !platSeen[it.Platform] {
+				platSeen[it.Platform] = true
+				m.Platforms = append(m.Platforms, it.Platform)
+			}
+			if !kindSeen[kind] {
+				kindSeen[kind] = true
+				m.Kinds = append(m.Kinds, kind)
+			}
+			m.Cell[kind+"|"+it.Platform] += amt
+			m.KindTotal[kind] += amt
+			m.PlatTotal[it.Platform] += amt
+			m.Total += amt
+		}
+	}
+	// 京东等平台的费用项是动态的（京东·佣金、京东·商品保险服务费…），
+	// 不在固定清单里，要补进行里。
+	// 必须排序：Go 的 map 遍历顺序是随机的，不排会导致每次刷新
+	// 费用行的顺序都不一样，对账时容易看漏。
+	var extra []string
+	for _, it := range items {
+		for kind := range it.FeeByKind {
+			if !kindSeen[kind] {
+				kindSeen[kind] = true
+				extra = append(extra, kind)
+			}
+		}
+	}
+	sort.Strings(extra)
+	for _, kind := range extra {
+		m.Kinds = append(m.Kinds, kind)
+		for _, it := range items {
+			amt := it.FeeByKind[kind]
+			if amt == 0 {
+				continue
+			}
+			if !platSeen[it.Platform] {
+				platSeen[it.Platform] = true
+				m.Platforms = append(m.Platforms, it.Platform)
+			}
+			m.Cell[kind+"|"+it.Platform] += amt
+			m.KindTotal[kind] += amt
+			m.PlatTotal[it.Platform] += amt
+			m.Total += amt
+		}
+	}
+	return m
 }
 
 // ---------------------------------------------------------------- 对账校验

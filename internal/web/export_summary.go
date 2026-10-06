@@ -38,12 +38,12 @@ func buildSummaryWorkbook(rep *service.SummaryReport) (*excelize.File, error) {
 		rep.Rates.Output, rep.Rates.Input, rep.Rates.Platform))
 
 	heads := []string{"平台", "账期", "销量", "销售收入", "平台补贴",
-		"垫支扣回", "供货成本", "应交增值税", "应结金额", "毛利率"}
+		"垫支扣回", "供货成本", "平台费用", "应交增值税", "应结金额", "毛利率"}
 	for i, h := range heads {
 		c, _ := excelize.CoordinatesToCellName(i+1, 4)
 		_ = f.SetCellValue(ws, c, h)
 	}
-	_ = f.SetCellStyle(ws, "A4", "J4", head)
+	_ = f.SetCellStyle(ws, "A4", "K4", head)
 
 	r := 5
 	for _, it := range rep.Items {
@@ -56,13 +56,14 @@ func buildSummaryWorkbook(rep *service.SummaryReport) (*excelize.File, error) {
 		_ = f.SetCellValue(ws, fmt.Sprintf("E%d", r), t.Subsidy.Float())
 		_ = f.SetCellValue(ws, fmt.Sprintf("F%d", r), -t.Advance.Float())
 		_ = f.SetCellValue(ws, fmt.Sprintf("G%d", r), t.Cost.Float())
-		_ = f.SetCellValue(ws, fmt.Sprintf("H%d", r), t.VatPayable(rep.Rates).Float())
-		_ = f.SetCellValue(ws, fmt.Sprintf("I%d", r), net.Float())
+		_ = f.SetCellValue(ws, fmt.Sprintf("H%d", r), t.PlatformFee.Float())
+		_ = f.SetCellValue(ws, fmt.Sprintf("I%d", r), t.VatPayable(rep.Rates).Float())
+		_ = f.SetCellValue(ws, fmt.Sprintf("J%d", r), net.Float())
 		if t.Revenue > 0 {
-			_ = f.SetCellValue(ws, fmt.Sprintf("J%d", r), model.Ratio(net, t.Revenue)/100)
+			_ = f.SetCellValue(ws, fmt.Sprintf("K%d", r), model.Ratio(net, t.Revenue)/100)
 		}
-		_ = f.SetCellStyle(ws, fmt.Sprintf("D%d", r), fmt.Sprintf("I%d", r), money)
-		_ = f.SetCellStyle(ws, fmt.Sprintf("J%d", r), fmt.Sprintf("J%d", r), pct)
+		_ = f.SetCellStyle(ws, fmt.Sprintf("D%d", r), fmt.Sprintf("J%d", r), money)
+		_ = f.SetCellStyle(ws, fmt.Sprintf("K%d", r), fmt.Sprintf("K%d", r), pct)
 		r++
 	}
 	tt := rep.Total
@@ -73,9 +74,10 @@ func buildSummaryWorkbook(rep *service.SummaryReport) (*excelize.File, error) {
 	_ = f.SetCellValue(ws, fmt.Sprintf("E%d", r), tt.Subsidy.Float())
 	_ = f.SetCellValue(ws, fmt.Sprintf("F%d", r), -tt.Advance.Float())
 	_ = f.SetCellValue(ws, fmt.Sprintf("G%d", r), tt.Cost.Float())
-	_ = f.SetCellValue(ws, fmt.Sprintf("H%d", r), tt.VatPayable(rep.Rates).Float())
-	_ = f.SetCellValue(ws, fmt.Sprintf("I%d", r), tt.Net(rep.Rates).Float())
-	_ = f.SetCellStyle(ws, fmt.Sprintf("A%d", r), fmt.Sprintf("I%d", r), bold)
+	_ = f.SetCellValue(ws, fmt.Sprintf("H%d", r), tt.PlatformFee.Float())
+	_ = f.SetCellValue(ws, fmt.Sprintf("I%d", r), tt.VatPayable(rep.Rates).Float())
+	_ = f.SetCellValue(ws, fmt.Sprintf("J%d", r), tt.Net(rep.Rates).Float())
+	_ = f.SetCellStyle(ws, fmt.Sprintf("A%d", r), fmt.Sprintf("J%d", r), bold)
 
 	// 增值税计算过程
 	r += 2
@@ -94,37 +96,57 @@ func buildSummaryWorkbook(rep *service.SummaryReport) (*excelize.File, error) {
 		r++
 	}
 	_ = f.SetColWidth(ws, "A", "A", 40)
-	_ = f.SetColWidth(ws, "B", "J", 15)
+	_ = f.SetColWidth(ws, "B", "K", 15)
 
-	// ---------------- 表2 平台费用 ----------------
-	ws2 := "平台费用明细"
+	// ---------------- 表2 平台费用矩阵 ----------------
+	// 一行一个费用类型，一列一个平台，最后合计 ——
+	// 这样"哪个平台的哪笔费用"一眼能看清。
+	ws2 := "平台费用汇总"
 	_, _ = f.NewSheet(ws2)
-	_ = f.SetCellValue(ws2, "A1", "各平台费用（开票部分可抵扣增值税；运费仅列示不计入结算）")
+	_ = f.SetCellValue(ws2, "A1", "平台费用汇总（开票部分可抵扣增值税；商家寄件服务费仅列示不计入结算）")
 	_ = f.SetCellStyle(ws2, "A1", "A1", head)
-	_ = f.SetCellValue(ws2, "A2", "平台 / 账期")
-	_ = f.SetCellValue(ws2, "B2", "费用类型")
-	_ = f.SetCellValue(ws2, "C2", "金额")
-	_ = f.SetCellStyle(ws2, "A2", "C2", head)
-	rr := 3
-	for _, it := range rep.Items {
-		for _, kind := range model.StmtKinds {
-			amt := it.FeeByKind[kind]
-			if amt == 0 {
-				continue
-			}
-			_ = f.SetCellValue(ws2, fmt.Sprintf("A%d", rr), it.Label+" "+model.PeriodLabel(it.Period))
-			_ = f.SetCellValue(ws2, fmt.Sprintf("B%d", rr), model.StmtKindLabel(kind))
-			_ = f.SetCellValue(ws2, fmt.Sprintf("C%d", rr), amt.Float())
-			_ = f.SetCellStyle(ws2, fmt.Sprintf("C%d", rr), fmt.Sprintf("C%d", rr), money)
-			rr++
-		}
+	m := rep.Fees
+	_ = f.SetCellValue(ws2, "A2", "费用类型")
+	col := 2
+	for _, p := range m.Platforms {
+		c, _ := excelize.CoordinatesToCellName(col, 2)
+		_ = f.SetCellValue(ws2, c, model.EcPlatformLabel(p))
+		col++
 	}
-	_ = f.SetCellValue(ws2, fmt.Sprintf("A%d", rr), "合计")
-	_ = f.SetCellValue(ws2, fmt.Sprintf("C%d", rr), rep.FeeTotal.Float())
-	_ = f.SetCellStyle(ws2, fmt.Sprintf("A%d", rr), fmt.Sprintf("C%d", rr), bold)
-	_ = f.SetColWidth(ws2, "A", "A", 26)
-	_ = f.SetColWidth(ws2, "B", "B", 28)
-	_ = f.SetColWidth(ws2, "C", "C", 16)
+	totalCol, _ := excelize.CoordinatesToCellName(col, 2)
+	_ = f.SetCellValue(ws2, totalCol, "合计")
+	_ = f.SetCellStyle(ws2, "A2", totalCol+"2", head)
+
+	row := 3
+	for _, kind := range m.Kinds {
+		_ = f.SetCellValue(ws2, fmt.Sprintf("A%d", row), model.StmtKindLabel(kind))
+		col = 2
+		for _, p := range m.Platforms {
+			amt := m.Cell[kind+"|"+p]
+			c, _ := excelize.CoordinatesToCellName(col, row)
+			if amt != 0 {
+				_ = f.SetCellValue(ws2, c, amt.Float())
+				_ = f.SetCellStyle(ws2, c, c, money)
+			}
+			col++
+		}
+		tc, _ := excelize.CoordinatesToCellName(col, row)
+		_ = f.SetCellValue(ws2, tc, m.KindTotal[kind].Float())
+		_ = f.SetCellStyle(ws2, tc, tc, money)
+		row++
+	}
+	_ = f.SetCellValue(ws2, fmt.Sprintf("A%d", row), "合计")
+	col = 2
+	for _, p := range m.Platforms {
+		c, _ := excelize.CoordinatesToCellName(col, row)
+		_ = f.SetCellValue(ws2, c, m.PlatTotal[p].Float())
+		col++
+	}
+	tc, _ := excelize.CoordinatesToCellName(col, row)
+	_ = f.SetCellValue(ws2, tc, m.Total.Float())
+	_ = f.SetCellStyle(ws2, fmt.Sprintf("A%d", row), tc+fmt.Sprintf("%d", row), bold)
+	_ = f.SetColWidth(ws2, "A", "A", 30)
+	_ = f.SetColWidth(ws2, "B", "Z", 16)
 
 	f.SetActiveSheet(0)
 	return f, nil
