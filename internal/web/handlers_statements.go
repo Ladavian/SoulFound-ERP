@@ -101,6 +101,13 @@ func stmtItemsFromSheet(sh importSheet, kind string) (period string, items []mod
 		it.Amount = parseMoneyLoose(sh.cell(row, "订单实际金额（元）", "扣费金额", "账单金额",
 			"扣费金额(元)", "积分类服务费金额", "金额"))
 		it.FeeBase = parseMoneyLoose(sh.cell(row, "扣费基数", "扣费交易金额"))
+		it.GrossAmount = parseMoneyLoose(sh.cell(row, "抽佣金额"))
+		// 品牌新享礼金：抽佣金额 = 平台代付垫支 + 服务费（账单金额）。
+		// 服务费开票、可抵扣；垫支是平台替商家垫给消费者的钱，
+		// 事后从货款扣回，既不是费用也不开票，必须单独拿出来。
+		if kind == model.StmtBrandGift && it.GrossAmount > it.Amount {
+			it.Advance = it.GrossAmount - it.Amount
+		}
 		it.RefundAmount = parseMoneyLoose(sh.cell(row, "退款金额（元）", "退款金额(元)"))
 		if it.SubOrderNo == "" && it.OrderNo != "" {
 			it.SubOrderNo = it.OrderNo

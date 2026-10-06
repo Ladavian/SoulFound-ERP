@@ -379,6 +379,32 @@ CREATE INDEX IF NOT EXISTS idx_ec_stmt_item_ship  ON ec_statement_items(tracking
 CREATE INDEX IF NOT EXISTS idx_ec_stmt_item_prod  ON ec_statement_items(ec_product_id);
 `
 
+// migrationV15 电商结算的税率与垫付金额。
+//
+// 增值税按"只承担成本以上的税"来算：
+//
+//	应交增值税 = 销项(销售额/1.13×13%) − 进项(成本/1.13×13%)
+//	             − 平台费专票抵扣(平台费/1.06×6%)
+//
+// 税率做成配置，不同品类/平台可能不同。
+//
+// 品牌新享礼金的账期账单里有两个金额：
+//
+//	账单金额 = 平台服务费（开票、可抵扣）
+//	抽佣金额 = 服务费 + 平台替商家垫付给消费者的钱
+//
+// 垫付那部分**已经在货款里扣掉了**，不能再当费用计一次，
+// 否则既多扣钱、又会虚增可抵扣的进项（因为只对服务费开票）。
+// 所以单独存 advance_amount，只做列示与核对，不进费用合计。
+const migrationV15 = `
+ALTER TABLE ec_statement_items ADD COLUMN advance_amount INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE ec_statement_items ADD COLUMN gross_amount INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE settings ADD COLUMN vat_output_rate TEXT NOT NULL DEFAULT '13';
+ALTER TABLE settings ADD COLUMN vat_input_rate TEXT NOT NULL DEFAULT '13';
+ALTER TABLE settings ADD COLUMN vat_platform_rate TEXT NOT NULL DEFAULT '6';
+`
+
 // migrations 按顺序执行的迁移脚本。新增结构或数据变更时在末尾追加一段 SQL，
 // 已执行过的版本不会重复执行（版本号记录在 schema_meta 表）。
 var migrations = []string{
@@ -396,4 +422,5 @@ var migrations = []string{
 	migrationV12,
 	migrationV13,
 	migrationV14,
+	migrationV15,
 }

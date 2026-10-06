@@ -52,13 +52,13 @@ func (s *Store) ReplaceStatement(ctx context.Context, tx DBTX, st *model.EcState
 			`INSERT INTO ec_statement_items(statement_id, platform, period, kind, direction,
 			        order_no, sub_order_no, ec_product_id, ec_sku, title, qty, unit_price,
 			        amount, fee_base, fee_rate, refund_amount, tracking_no, occurred_at,
-			        pay_time, raw, imported_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			        pay_time, raw, imported_at, advance_amount, gross_amount)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			st.ID, st.Platform, st.Period, st.Kind, st.Direction,
 			it.OrderNo, it.SubOrderNo, it.EcProductID, it.EcSKU, it.Title,
 			int64(it.Qty), int64(it.UnitPrice), int64(it.Amount), int64(it.FeeBase),
 			it.FeeRate, int64(it.RefundAmount), it.TrackingNo, it.OccurredAt,
-			it.PayTime, it.Raw, Now()); err != nil {
+			it.PayTime, it.Raw, Now(), int64(it.Advance), int64(it.GrossAmount)); err != nil {
 			return err
 		}
 	}
@@ -176,6 +176,7 @@ const stmtItemCols = `si.id, si.statement_id, si.platform, si.period, si.kind, s
 	si.order_no, si.sub_order_no, si.ec_product_id, si.ec_sku, si.title, si.qty,
 	si.unit_price, si.amount, si.fee_base, si.fee_rate, si.refund_amount,
 	si.tracking_no, si.occurred_at, si.pay_time, si.raw, si.imported_at,
+	si.advance_amount, si.gross_amount,
 	oi.product_id, COALESCE(p.name, ''), COALESCE(p.sku, ''), COALESCE(p.ec_cost, 0)`
 
 const stmtItemFrom = ` FROM ec_statement_items si
@@ -191,6 +192,7 @@ func scanStmtItem(row interface{ Scan(...any) error }) (*model.EcStatementItem, 
 		&it.OrderNo, &it.SubOrderNo, &it.EcProductID, &it.EcSKU, &it.Title, &it.Qty,
 		&it.UnitPrice, &it.Amount, &it.FeeBase, &it.FeeRate, &it.RefundAmount,
 		&it.TrackingNo, &it.OccurredAt, &it.PayTime, &it.Raw, &it.ImportedAt,
+		&it.Advance, &it.GrossAmount,
 		&it.ProductID, &it.ProductName, &it.ProductSKU, &it.EcCost); err != nil {
 		return nil, err
 	}
@@ -281,4 +283,149 @@ func (s *Store) StatementByKindRows(ctx context.Context, platform, period, kind 
 	return s.ListStatementItems(ctx, StatementItemFilter{
 		Platform: platform, Period: period, Kind: kind,
 	})
+}
+
+// SettlementInput 生成结算表所需的数据（一个账期）。
+type SettlementOrder struct {
+	OrderNo     string
+	SubOrderNo  string
+	Title       string
+	EcProductID string
+	ProductID   *int64
+	ProductName string
+	Qty         model.Qty
+	Goods       model.Money // 货款（平台打款的商品款）
+	Subsidy     model.Money // 平台补贴（淘金币等，算收入）
+	Advance     model.Money // 平台代付垫支（要从货款扣回）
+	UnitCost    model.Money // 上游供货价（产品成本）
+	FeePaid     model.Money // 平台费用（开票、可抵扣那部分）
+}
+
+// SettlementCost 按商品的成本与收入汇总行。
+type SettlementProduct struct {
+	ProductID   *int64
+	Name        string
+	EcProductID string
+	Qty         model.Qty
+	Revenue     model.Money
+	Cost        model.Money
+}
+
+// StatementSettlement 取一个账期的结算数据源。
+//
+// 收入与成本按「账单行 → 订单明细 → 产品」关联；
+// 账单里没有订单号的行（如整期一笔的体验服务费）单独作为期间费用返回。
+func (s *Store) StatementSettlement(ctx context.Context, platform, period string) (
+	orders []SettlementOrder, periodFees map[string]model.Money, err error) {
+
+	periodFees = map[string]model.Money{}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT si.kind, si.direction, si.order_no, si.sub_order_no, si.title, si.ec_product_id,
+		       COALESCE(si.qty, 0), si.amount, si.advance_amount,
+		       oi.product_id, COALESCE(p.name, ''), COALESCE(p.ec_cost, 0)
+		  FROM ec_statement_items si
+		  LEFT JOIN ec_order_items oi
+		         ON oi.platform = si.platform
+		        AND ( (si.sub_order_no <> '' AND oi.sub_order_no = si.sub_order_no)
+		           OR (si.sub_order_no = '' AND si.order_no <> '' AND oi.sub_order_no = si.order_no) )
+		  LEFT JOIN products p ON p.id = oi.product_id
+		 WHERE si.platform = ? AND si.period = ?
+		 ORDER BY si.id`, platform, period)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+
+	index := map[string]*SettlementOrder{}
+	var seq []string
+	for rows.Next() {
+		var (
+			kind, dir, orderNo, subNo, title, ecID string
+			qty                                    model.Qty
+			amount                                 model.Money
+			advance                                model.Money
+			productID                              *int64
+			productName                            string
+			unitCost                               model.Money
+		)
+		if err := rows.Scan(&kind, &dir, &orderNo, &subNo, &title, &ecID,
+			&qty, &amount, &productID, &productName, &unitCost); err != nil {
+			return nil, nil, err
+		}
+		// 没有订单号的：整期一笔的费用或收入，单独归集
+		if orderNo == "" {
+			periodFees[kind] += amount
+			continue
+		}
+		row, ok := index[orderNo]
+		if !ok {
+			row = &SettlementOrder{OrderNo: orderNo, SubOrderNo: subNo}
+			index[orderNo] = row
+			seq = append(seq, orderNo)
+		}
+		if title != "" {
+			row.Title = title
+		}
+		if ecID != "" {
+			row.EcProductID = ecID
+		}
+		if productID != nil {
+			row.ProductID = productID
+			row.ProductName = productName
+			row.UnitCost = unitCost
+		}
+		if qty > 0 {
+			row.Qty = qty
+		}
+		switch {
+		case kind == model.StmtGoodsPayment:
+			row.Goods += amount
+		case dir == "income":
+			row.Subsidy += amount
+		default:
+			row.FeePaid += amount
+		}
+		// 平台代付垫支：从收入里扣回（不是费用、不开票）
+		row.Advance += advance
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+	for _, k := range seq {
+		orders = append(orders, *index[k])
+	}
+	return orders, periodFees, nil
+}
+
+// StatementSettlementProducts 按商品汇总（销量/销售额/成本）。
+func (s *Store) StatementSettlementProducts(ctx context.Context, platform, period string) ([]SettlementProduct, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT oi.product_id, COALESCE(p.name, ''), si.ec_product_id,
+		       COALESCE(SUM(si.qty), 0), COALESCE(SUM(si.amount), 0),
+		       COALESCE(SUM(si.qty * COALESCE(p.ec_cost, 0) / 1000), 0)
+		  FROM ec_statement_items si
+		  LEFT JOIN ec_order_items oi
+		         ON oi.platform = si.platform
+		        AND ( (si.sub_order_no <> '' AND oi.sub_order_no = si.sub_order_no)
+		           OR (si.sub_order_no = '' AND si.order_no <> '' AND oi.sub_order_no = si.order_no) )
+		  LEFT JOIN products p ON p.id = oi.product_id
+		 WHERE si.platform = ? AND si.period = ? AND si.kind = ?
+		 GROUP BY COALESCE(CAST(oi.product_id AS TEXT), ''), si.ec_product_id, COALESCE(p.name, '')
+		 ORDER BY SUM(si.amount) DESC`, platform, period, model.StmtGoodsPayment)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SettlementProduct
+	for rows.Next() {
+		var r SettlementProduct
+		if err := rows.Scan(&r.ProductID, &r.Name, &r.EcProductID, &r.Qty, &r.Revenue, &r.Cost); err != nil {
+			return nil, err
+		}
+		if r.Name == "" && r.EcProductID != "" {
+			r.Name = "商品ID " + r.EcProductID + "（未绑定产品）"
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }

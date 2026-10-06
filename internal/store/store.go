@@ -320,12 +320,14 @@ func (s *Store) EnsureSettings(ctx context.Context, def model.Settings) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO settings(id, company_name, currency, currency_symbol,
 		        default_low_qty, default_booth_fee, allow_negative_stock, updated_at,
-		        auto_backup, backup_keep, backup_active_hours, backup_idle_days)
-		 VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		        auto_backup, backup_keep, backup_active_hours, backup_idle_days,
+		        vat_output_rate, vat_input_rate, vat_platform_rate)
+		 VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(id) DO NOTHING`,
 		def.CompanyName, def.Currency, def.CurrencySymbol,
 		int64(def.DefaultLowQty), int64(def.DefaultBoothFee), b2i(def.AllowNegative), Now(),
-		b2i(def.AutoBackup), def.BackupKeepCount(), activeHours(def), idleDays(def))
+		b2i(def.AutoBackup), def.BackupKeepCount(), activeHours(def), idleDays(def),
+		vatOr(def.VatOutputRate, "13"), vatOr(def.VatInputRate, "13"), vatOr(def.VatPlatformRate, "6"))
 	return err
 }
 
@@ -344,11 +346,13 @@ func (s *Store) Settings(ctx context.Context) (*model.Settings, error) {
 	err := s.db.QueryRowContext(ctx,
 		`SELECT company_name, currency, currency_symbol, default_low_qty,
 		        default_booth_fee, allow_negative_stock, updated_at,
-		        auto_backup, backup_keep, backup_active_hours, backup_idle_days
+		        auto_backup, backup_keep, backup_active_hours, backup_idle_days,
+		        vat_output_rate, vat_input_rate, vat_platform_rate
 		 FROM settings WHERE id = 1`).
 		Scan(&out.CompanyName, &out.Currency, &out.CurrencySymbol, &lowQty,
 			&boothFee, &allowNeg, &out.UpdatedAt,
-			&autoBackup, &backupKeep, &backupActiveH, &backupIdleDays)
+			&autoBackup, &backupKeep, &backupActiveH, &backupIdleDays,
+			&out.VatOutputRate, &out.VatInputRate, &out.VatPlatformRate)
 	if errors.Is(err, sql.ErrNoRows) {
 		out = model.Settings{
 			CompanyName:    "SoulFound",
@@ -364,6 +368,15 @@ func (s *Store) Settings(ctx context.Context) (*model.Settings, error) {
 	out.DefaultLowQty = model.Qty(lowQty)
 	out.DefaultBoothFee = model.Money(boothFee)
 	out.AllowNegative = i2b(allowNeg)
+	if out.VatOutputRate == "" {
+		out.VatOutputRate = "13"
+	}
+	if out.VatInputRate == "" {
+		out.VatInputRate = "13"
+	}
+	if out.VatPlatformRate == "" {
+		out.VatPlatformRate = "6"
+	}
 	out.AutoBackup = i2b(autoBackup)
 	out.BackupKeep = int(backupKeep)
 	out.BackupActiveHours = int(backupActiveH)
@@ -377,11 +390,13 @@ func (s *Store) SaveSettings(ctx context.Context, in *model.Settings) error {
 		`UPDATE settings SET company_name = ?, currency = ?, currency_symbol = ?,
 		        default_low_qty = ?, default_booth_fee = ?, allow_negative_stock = ?,
 		        updated_at = ?,
-		        auto_backup = ?, backup_keep = ?, backup_active_hours = ?, backup_idle_days = ?
+		        auto_backup = ?, backup_keep = ?, backup_active_hours = ?, backup_idle_days = ?,
+		        vat_output_rate = ?, vat_input_rate = ?, vat_platform_rate = ?
 		 WHERE id = 1`,
 		in.CompanyName, in.Currency, in.CurrencySymbol,
 		int64(in.DefaultLowQty), int64(in.DefaultBoothFee), b2i(in.AllowNegative), Now(),
-		b2i(in.AutoBackup), in.BackupKeepCount(), activeHours(*in), idleDays(*in))
+		b2i(in.AutoBackup), in.BackupKeepCount(), activeHours(*in), idleDays(*in),
+		vatOr(in.VatOutputRate, "13"), vatOr(in.VatInputRate, "13"), vatOr(in.VatPlatformRate, "6"))
 	return err
 }
 
@@ -798,4 +813,12 @@ func dirWritable(dir string) bool {
 	f.Close()
 	_ = os.Remove(name)
 	return true
+}
+
+// vatOr 税率兜底：空值用默认。
+func vatOr(v, def string) string {
+	if strings.TrimSpace(v) == "" {
+		return def
+	}
+	return strings.TrimSpace(v)
 }

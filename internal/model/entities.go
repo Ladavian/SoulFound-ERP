@@ -1280,6 +1280,11 @@ type Settings struct {
 	DefaultLowQty   Qty
 	DefaultBoothFee Money
 	AllowNegative   bool
+
+	// 电商结算税率（百分数）：销项、进项、平台服务费专票。
+	VatOutputRate   string
+	VatInputRate    string
+	VatPlatformRate string
 	UpdatedAt       string
 
 	// 自动备份策略：有数据变化时按 BackupActiveHours 备，
