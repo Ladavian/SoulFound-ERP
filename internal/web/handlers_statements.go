@@ -593,7 +593,13 @@ func (s *Server) handleSummaryExport(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, "/ecommerce/summary", err)
 		return
 	}
-	f, err := buildSummaryWorkbook(rep)
+	// 明细一起导出：汇总之外必须能看到每一单、每一行费用
+	det, err := s.svc.BuildSummaryDetail(ctx, keys, rep.Rates)
+	if err != nil {
+		s.fail(w, r, "/ecommerce/summary", err)
+		return
+	}
+	f, err := buildSummaryWorkbook(rep, det)
 	if err != nil {
 		s.fail(w, r, "/ecommerce/summary", err)
 		return

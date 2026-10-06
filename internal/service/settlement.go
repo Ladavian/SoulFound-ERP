@@ -26,12 +26,13 @@ type SettlementReport struct {
 
 // SettlementOrderRow 一单的结算。
 type SettlementOrderRow struct {
-	OrderNo  string
-	Title    string
-	Product  string
-	EcID     string
-	S        model.Settlement
-	UnitCost model.Money
+	OrderNo   string
+	Title     string
+	Product   string
+	EcID      string
+	EcProduct string
+	S         model.Settlement
+	UnitCost  model.Money
 }
 
 // SettlementProductRow 按商品汇总的一行。
@@ -163,6 +164,7 @@ type PlatformSettlement struct {
 	Label     string
 	Total     model.Settlement
 	FeeByKind map[string]model.Money
+	Products  []SettlementProductRow
 	Rows      int
 }
 
@@ -200,11 +202,19 @@ func (s *Service) BuildSummary(ctx context.Context, keys []store.StatementKey, s
 		if err != nil {
 			return nil, err
 		}
+		prods, _ := s.Store.StatementSettlementProducts(ctx, k.Platform, k.Period)
+		var prodRows []SettlementProductRow
+		for _, p := range prods {
+			prodRows = append(prodRows, SettlementProductRow{Name: p.Name, S: model.Settlement{
+				Qty: p.Qty, Revenue: p.Revenue, Cost: p.Cost,
+			}})
+		}
 		rep.Items = append(rep.Items, PlatformSettlement{
 			Platform: k.Platform, Period: k.Period,
 			Label:     model.EcPlatformLabel(k.Platform),
 			Total:     st.Total,
 			FeeByKind: st.FeeByKind,
+			Products:  MergeProducts(prodRows),
 			Rows:      st.FeeRows,
 		})
 		rep.Total.Add(st.Total)
@@ -449,4 +459,97 @@ func MergeProducts(rows []SettlementProductRow) []SettlementProductRow {
 		out = append(out, r)
 	}
 	return out
+}
+
+// ---------------------------------------------------------------- 明细行
+
+// OrderDetailRow 逐单明细（导出用）。
+//
+// 用户的参考表里就有这一层：汇总之外必须能看到每一单，
+// 否则对不上账时无从下手核对。
+type OrderDetailRow struct {
+	Platform    string
+	Period      string
+	OrderNo     string
+	Product     string
+	EcID        string
+	Qty         model.Qty
+	Goods       model.Money // 货款
+	Subsidy     model.Money // 平台补贴
+	Advance     model.Money // 平台代付垫支
+	Revenue     model.Money // 销售收入 = 货款 + 补贴 − 垫支
+	PlatformFee model.Money
+	Cost        model.Money
+	Vat         model.Money
+	Net         model.Money // 应结 = 销售收入 − 成本 − 增值税
+}
+
+// ItemDetailRow 账单费用明细（导出用，最细的一层原始数据）。
+type ItemDetailRow struct {
+	Platform  string
+	Period    string
+	Kind      string
+	Direction string
+	OrderNo   string
+	EcID      string
+	Title     string
+	Qty       model.Qty
+	Amount    model.Money
+	Source    string
+	FileName  string
+}
+
+// SummaryDetail 汇总报告附带的明细。
+type SummaryDetail struct {
+	Orders []OrderDetailRow
+	Items  []ItemDetailRow
+}
+
+// BuildSummaryDetail 取出选中账单的逐单与逐条明细。
+func (s *Service) BuildSummaryDetail(ctx context.Context, keys []store.StatementKey, rates model.VatRates) (*SummaryDetail, error) {
+	det := &SummaryDetail{}
+	for _, k := range keys {
+		// 逐单：用与结算一致的算法
+		rows, _, err := s.Store.StatementSettlement(ctx, k.Platform, k.Period)
+		if err != nil {
+			return nil, err
+		}
+		// 逐单增值税：按该订单自己的收入与成本算，口径与平台合计一致
+		for _, r := range rows {
+			qty := r.Qty
+			cost := model.Money(0)
+			if r.ProductID != nil {
+				cost = model.MulQty(qty, r.UnitCost)
+			}
+			revenue := r.Goods + r.Subsidy - r.Advance
+			row := OrderDetailRow{
+				Platform: k.Platform, Period: k.Period, OrderNo: r.OrderNo,
+				Product: r.ProductName, EcID: r.EcProductID,
+				Qty: qty, Goods: r.Goods, Subsidy: r.Subsidy, Advance: r.Advance,
+				Revenue: revenue, PlatformFee: r.FeePaid, Cost: cost,
+			}
+			row.Vat = model.TaxOf(revenue, rates.Output) - model.TaxOf(cost, rates.Input)
+			det.Orders = append(det.Orders, row)
+		}
+		// 逐条：账单原始行
+		items, err := s.Store.ListStatementItems(ctx, store.StatementItemFilter{
+			Platform: k.Platform, Period: k.Period,
+		})
+		if err != nil {
+			return nil, err
+		}
+		stmts, _ := s.Store.ListStatements(ctx, k.Platform, k.Period)
+		fileName, source := "", ""
+		if len(stmts) > 0 {
+			fileName, source = stmts[0].FileName, stmts[0].Source
+		}
+		for _, it := range items {
+			det.Items = append(det.Items, ItemDetailRow{
+				Platform: k.Platform, Period: it.Period, Kind: it.Kind, Direction: it.Direction,
+				OrderNo: it.OrderNo, EcID: it.EcProductID, Title: it.Title,
+				Qty: it.Qty, Amount: it.Amount, Source: source, FileName: fileName,
+			})
+		}
+	}
+	return det, nil
 }

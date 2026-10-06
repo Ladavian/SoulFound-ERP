@@ -311,6 +311,10 @@ func (s Settlement) GrossProfit(r VatRates) Money { return s.Net(r) }
 func (s Settlement) Margin(r VatRates) float64 { return Ratio(s.Net(r), s.Revenue) }
 
 // vatOf 从含税金额里拆出税额：金额 ÷ (1+率) × 率。
+// TaxOf 价税分离：从含税金额里算出税额（amount/1+rate × rate）。
+// 导出明细时服务层也要用，所以对外暴露。
+func TaxOf(amount Money, ratePercent float64) Money { return vatOf(amount, ratePercent) }
+
 func vatOf(amount Money, ratePercent float64) Money {
 	if amount == 0 || ratePercent == 0 {
 		return 0
