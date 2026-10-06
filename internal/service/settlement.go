@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 
 	"icewine-erp/internal/model"
 	"icewine-erp/internal/store"
@@ -188,4 +189,115 @@ func (s *Service) BuildSummary(ctx context.Context, keys []store.StatementKey, s
 		rep.FeeTotal += st.Total.PlatformFee
 	}
 	return rep, nil
+}
+
+// ---------------------------------------------------------------- 对账校验
+
+// StmtCheckResult 一次比对的汇总。
+type StmtCheckResult struct {
+	Kind        string
+	Same        int
+	Diff        int
+	OnlyPrimary int
+	OnlyOther   int
+	DiffAmount  model.Money
+}
+
+// CompareStatement 把「为准的来源」与「另一来源」按订单号逐笔比对并落库。
+//
+// 京东同一账期的月度账单与对账中心都含佣金、交易服务费，
+// 对一遍才能确认账目没错。规则（用户明确）：
+//
+//	订单号以月度账单为准 —— 先把为准那一份按订单号聚合，
+//	再拿另一来源的明细逐笔比：
+//	  两边都有且金额相同 → 一致
+//	  两边都有但金额不同 → 金额不一致（记差额）
+//	  只在月度账单里       → 对账中心缺这一单
+//	  只在对账中心里       → 月度账单缺这一单（要留意）
+//
+// 对账中心的明细按合并规则不会落进账单明细表，
+// 所以要在导入的那一刻比——那时两份数据都在手上。
+func (s *Service) CompareStatement(ctx context.Context, platform, period, kind, otherSource string, otherItems []model.EcStatementItem) ([]model.EcStatementCheck, error) {
+	if kind == "" || otherSource == "" {
+		return nil, nil
+	}
+	primarySource := model.StmtSourceBill
+	if otherSource == model.StmtSourceBill {
+		primarySource = model.StmtSourceReconcile
+	}
+	// 为准那一份是否真的存在；不存在就没什么可比
+	sources, err := s.Store.StatementSources(ctx, platform, period, kind)
+	if err != nil {
+		return nil, err
+	}
+	found := false
+	for _, src := range sources {
+		if src == primarySource {
+			found = true
+		}
+	}
+	if !found {
+		return nil, nil
+	}
+
+	primaryItems, err := s.Store.StatementKindItems(ctx, platform, period, kind)
+	if err != nil {
+		return nil, err
+	}
+	agg := func(items []model.EcStatementItem) (map[string]model.Money, []string) {
+		m := map[string]model.Money{}
+		var order []string
+		for _, it := range items {
+			if it.OrderNo == "" {
+				continue
+			}
+			if _, ok := m[it.OrderNo]; !ok {
+				order = append(order, it.OrderNo)
+			}
+			m[it.OrderNo] += it.Amount
+		}
+		return m, order
+	}
+	pm, pOrder := agg(primaryItems)
+	om, oOrder := agg(otherItems)
+
+	var checks []model.EcStatementCheck
+	add := func(orderNo string, pa, oa model.Money, status string) {
+		checks = append(checks, model.EcStatementCheck{
+			Platform: platform, Period: period, Kind: kind, OrderNo: orderNo,
+			PrimarySource: primarySource, PrimaryAmount: pa,
+			OtherSource: otherSource, OtherAmount: oa, Status: status,
+		})
+	}
+	for _, o := range pOrder {
+		oa, ok := om[o]
+		switch {
+		case !ok:
+			add(o, pm[o], 0, model.CheckOnlyPrimary)
+		case oa == pm[o]:
+			add(o, pm[o], oa, model.CheckSame)
+		default:
+			add(o, pm[o], oa, model.CheckDiff)
+		}
+	}
+	for _, o := range oOrder {
+		if _, ok := pm[o]; !ok {
+			add(o, 0, om[o], model.CheckOnlyOther)
+		}
+	}
+	if err := s.SaveStatementChecks(ctx, checks); err != nil {
+		return nil, err
+	}
+	return checks, nil
+}
+
+// SaveStatementChecks 保存比对结果。
+func (s *Service) SaveStatementChecks(ctx context.Context, checks []model.EcStatementCheck) error {
+	if len(checks) == 0 {
+		return nil
+	}
+	return s.Store.Tx(ctx, func(tx *sql.Tx) error {
+		return s.Store.ReplaceStatementChecks(ctx, tx,
+			checks[0].Platform, checks[0].Period, checks[0].Kind, checks)
+	})
 }

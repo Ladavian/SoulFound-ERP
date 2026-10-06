@@ -436,6 +436,29 @@ const migrationV17 = `
 ALTER TABLE ec_statements ADD COLUMN source TEXT NOT NULL DEFAULT 'bill';
 `
 
+// migrationV18 两份账单之间的对账校验。
+//
+// 京东同一账期的月度账单与对账中心都含佣金、交易服务费，
+// 按订单号逐笔比对，不一致就亮出来，避免账目有错却看不出来。
+// 订单号以月度账单为准（用户明确）。
+const migrationV18 = `
+CREATE TABLE IF NOT EXISTS ec_statement_checks (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    platform        TEXT    NOT NULL DEFAULT '',
+    period          TEXT    NOT NULL DEFAULT '',
+    kind            TEXT    NOT NULL DEFAULT '',
+    order_no        TEXT    NOT NULL DEFAULT '',
+    primary_source  TEXT    NOT NULL DEFAULT '',   -- 以谁为准（月度账单）
+    primary_amount  INTEGER NOT NULL DEFAULT 0,
+    other_source    TEXT    NOT NULL DEFAULT '',   -- 另一份来源（对账中心）
+    other_amount    INTEGER NOT NULL DEFAULT 0,
+    status          TEXT    NOT NULL DEFAULT '',   -- same / diff / only_primary / only_other
+    checked_at      TEXT    NOT NULL DEFAULT '',
+    UNIQUE (platform, period, kind, order_no, other_source)
+);
+CREATE INDEX IF NOT EXISTS idx_ec_checks_lookup ON ec_statement_checks(platform, period, status);
+`
+
 // migrations 按顺序执行的迁移脚本。新增结构或数据变更时在末尾追加一段 SQL，
 // 已执行过的版本不会重复执行（版本号记录在 schema_meta 表）。
 var migrations = []string{
@@ -456,4 +479,5 @@ var migrations = []string{
 	migrationV15,
 	migrationV16,
 	migrationV17,
+	migrationV18,
 }

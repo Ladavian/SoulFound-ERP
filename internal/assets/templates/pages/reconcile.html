@@ -102,6 +102,61 @@
   </div>
 </div>
 
+{{if .HasChecks}}
+{{/* 对账校验：月度账单与对账中心按订单号逐笔比，防止有错 */}}
+<div class="card">
+  <div class="card__head">
+    <div class="card__title">
+      对账校验
+      <span class="card__sub">月度账单与对账中心按订单号逐笔比对（订单号以月度账单为准）</span>
+    </div>
+    <div class="card__actions">
+      {{$bad := add (index .CheckStats "diff") (add (index .CheckStats "only_primary") (index .CheckStats "only_other"))}}
+      {{if $bad}}
+      <span class="badge badge--warn">{{$bad}} 处需要核对</span>
+      {{else}}
+      <span class="badge badge--ok">全部一致（{{index .CheckStats "same"}} 项）</span>
+      {{end}}
+    </div>
+  </div>
+  <div class="card__body">
+    {{if .Checks}}
+    <div class="table-wrap">
+      <table class="data data--stack">
+        <thead>
+          <tr><th>费用项 / 订单号</th><th>情况</th><th class="num">月度账单</th><th class="num">对账中心</th></tr>
+        </thead>
+        <tbody>
+          {{range .Checks}}
+          <tr>
+            <td class="row-cell--main">
+              {{stmtKind .Kind}}
+              <div class="tiny muted mono">{{.OrderNo}}</div>
+            </td>
+            <td class="small" data-label="情况">{{checkStatus .Status}}</td>
+            <td class="num" data-label="月度账单">{{money .PrimaryAmount}}</td>
+            <td class="num span-2" data-label="对账中心">
+              {{money .OtherAmount}}
+              <div class="cell-sub">差 {{money .Diff}}</div>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{else}}
+    <div class="alert alert--success" style="margin:0">
+      {{template "icon" "check"}}
+      <div class="alert__body">
+        <div class="alert__title">两份账单完全对得上</div>
+        <div>共 {{index .CheckStats "same"}} 项（按订单号比对了货款、佣金、交易服务费等），没有发现差异。</div>
+      </div>
+    </div>
+    {{end}}
+  </div>
+</div>
+{{end}}
+
 {{/* 收入 / 支出 明细 */}}
 <div class="grid grid--sidebar">
   <div>

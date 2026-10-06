@@ -497,3 +497,108 @@ func (s *Store) StatementKeys(ctx context.Context) ([]StatementKey, error) {
 	}
 	return out, rows.Err()
 }
+
+// ---------------------------------------------------------------- 对账校验
+
+// StatementKindItems 取某个账期某个费用项的明细（含来源）。
+func (s *Store) StatementKindItems(ctx context.Context, platform, period, kind string) ([]model.EcStatementItem, error) {
+	return s.ListStatementItems(ctx, StatementItemFilter{
+		Platform: platform, Period: period, Kind: kind,
+	})
+}
+
+// StatementSources 某个账期某个费用项有哪些来源。
+func (s *Store) StatementSources(ctx context.Context, platform, period, kind string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT source FROM ec_statements WHERE platform = ? AND period = ? AND kind = ?`,
+		platform, period, kind)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var src string
+		if err := rows.Scan(&src); err != nil {
+			return nil, err
+		}
+		out = append(out, src)
+	}
+	return out, rows.Err()
+}
+
+// ReplaceStatementChecks 覆盖保存某个费用项的比对结果。
+func (s *Store) ReplaceStatementChecks(ctx context.Context, tx DBTX, platform, period, kind string, checks []model.EcStatementCheck) error {
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM ec_statement_checks WHERE platform = ? AND period = ? AND kind = ?`,
+		platform, period, kind); err != nil {
+		return err
+	}
+	for _, c := range checks {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT OR REPLACE INTO ec_statement_checks(platform, period, kind, order_no,
+			        primary_source, primary_amount, other_source, other_amount, status, checked_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			c.Platform, c.Period, c.Kind, c.OrderNo,
+			c.PrimarySource, int64(c.PrimaryAmount), c.OtherSource, int64(c.OtherAmount),
+			c.Status, Now()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// StatementChecks 某个账期的比对结果（只返回有问题的）。
+func (s *Store) StatementChecks(ctx context.Context, platform, period string) ([]model.EcStatementCheck, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, platform, period, kind, order_no, primary_source, primary_amount,
+		        other_source, other_amount, status, checked_at
+		   FROM ec_statement_checks
+		  WHERE platform = ? AND period = ? AND status <> ?
+		  ORDER BY status, kind, order_no`, platform, period, model.CheckSame)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []model.EcStatementCheck
+	for rows.Next() {
+		var c model.EcStatementCheck
+		if err := rows.Scan(&c.ID, &c.Platform, &c.Period, &c.Kind, &c.OrderNo,
+			&c.PrimarySource, &c.PrimaryAmount, &c.OtherSource, &c.OtherAmount,
+			&c.Status, &c.CheckedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// StatementCheckStats 比对结果的统计（一致 / 不一致 / 各自独有）。
+func (s *Store) StatementCheckStats(ctx context.Context, platform, period string) (map[string]int, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT status, COUNT(*) FROM ec_statement_checks WHERE platform = ? AND period = ?
+		  GROUP BY status`, platform, period)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var st string
+		var n int
+		if err := rows.Scan(&st, &n); err != nil {
+			return nil, err
+		}
+		out[st] = n
+	}
+	return out, rows.Err()
+}
+
+// HasStatementChecks 这个账期有没有做过比对。
+func (s *Store) HasStatementChecks(ctx context.Context, platform, period string) (bool, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM ec_statement_checks WHERE platform = ? AND period = ?`,
+		platform, period).Scan(&n)
+	return n > 0, err
+}

@@ -194,6 +194,11 @@ func (s *Server) handleReconcile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 各账单类型的明细（页面上按类型展开）
+	// 两份账单的对账校验结果（只列有问题的）
+	checks, _ := s.svc.Store.StatementChecks(ctx, platform, period)
+	checkStats, _ := s.svc.Store.StatementCheckStats(ctx, platform, period)
+	hasChecks, _ := s.svc.Store.HasStatementChecks(ctx, platform, period)
+
 	detail := map[string][]model.EcStatementItem{}
 	for _, st := range statements {
 		list, err := s.svc.Store.StatementByKindRows(ctx, platform, period, st.Kind)
@@ -274,6 +279,9 @@ func (s *Server) handleReconcile(w http.ResponseWriter, r *http.Request) {
 	page["Orders"] = orders
 	page["Kinds"] = model.StmtKinds
 	page["PlatformOptions"] = model.EcPlatformOptions()
+	page["Checks"] = checks
+	page["CheckStats"] = checkStats
+	page["HasChecks"] = hasChecks
 	if msg := fr.Str("msg"); msg != "" {
 		page["Flash"] = []Flash{{Level: "info", Text: msg}}
 	}
@@ -527,6 +535,26 @@ func (s *Server) saveStatementGroupsSource(r *http.Request, platform, period, so
 		}
 		out = append(out, fmt.Sprintf("%s → %s %s %s（%d 行）",
 			label, model.PeriodLabel(period), model.StmtKindLabel(k), st.Amount, len(list)))
+		// 对账中心与月度账单都有的费用项，按订单号比一遍，防止有错
+		if source == model.StmtSourceReconcile {
+			if checks, err := s.svc.CompareStatement(r.Context(), platform, period, k, source, list); err == nil && len(checks) > 0 {
+				var same, diff, onlyP, onlyO int
+				for _, c := range checks {
+					switch c.Status {
+					case model.CheckSame:
+						same++
+					case model.CheckDiff:
+						diff++
+					case model.CheckOnlyPrimary:
+						onlyP++
+					case model.CheckOnlyOther:
+						onlyO++
+					}
+				}
+				out = append(out, fmt.Sprintf("　对账校验 %s：一致 %d · 不一致 %d · 只在月度账单 %d · 只在对账中心 %d",
+					model.StmtKindLabel(k), same, diff, onlyP, onlyO))
+			}
+		}
 	}
 	return out
 }

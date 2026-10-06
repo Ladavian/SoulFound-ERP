@@ -325,3 +325,43 @@ type SettlementDetail struct {
 	Amount Money
 	Note   string
 }
+
+// 对账校验状态。
+const (
+	CheckSame        = "same"         // 两份金额一致
+	CheckDiff        = "diff"         // 两份都有但金额不同
+	CheckOnlyPrimary = "only_primary" // 只在为准的那份里（月度账单）
+	CheckOnlyOther   = "only_other"   // 只在另一份里（对账中心）
+)
+
+// EcStatementCheck 两份账单按订单号的比对结果。
+type EcStatementCheck struct {
+	ID            int64
+	Platform      string
+	Period        string
+	Kind          string
+	OrderNo       string
+	PrimarySource string
+	PrimaryAmount Money
+	OtherSource   string
+	OtherAmount   Money
+	Status        string
+	CheckedAt     string
+}
+
+// Diff 两份的差额（为准的那份 − 另一份）。
+func (c EcStatementCheck) Diff() Money { return c.PrimaryAmount - c.OtherAmount }
+
+// StatusLabel 状态中文名。
+func CheckStatusLabel(status string) string {
+	switch status {
+	case CheckDiff:
+		return "金额不一致"
+	case CheckOnlyPrimary:
+		return "只在月度账单"
+	case CheckOnlyOther:
+		return "只在对账中心"
+	default:
+		return "一致"
+	}
+}
