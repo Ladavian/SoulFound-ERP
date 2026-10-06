@@ -321,6 +321,64 @@ const migrationV13 = `
 ALTER TABLE products ADD COLUMN allow_negative INTEGER NOT NULL DEFAULT -1;
 `
 
+// migrationV14 电商平台账期账单（对账单的数据源）。
+//
+// 平台的结算账单有多种，靠「账期 + 账单类型」区分：
+//
+//	收入：交易货款、淘金币合作费用、淘金币合作费用-流水
+//	支出：基础软件服务费、品牌新享礼金、商家寄件服务费、
+//	      淘金币软件服务费、消费券代付资金扣回、消费者体验提升计划服务费
+//
+// 每种文件的列都不一样，所以明细表存通用字段 + 一行原始数据(JSON)，
+// 既方便对账，也能追溯、以后加平台不用改表结构。
+//
+// 月份归属一律跟着账单的「账期」走，不按订单月份——
+// 用户明确要求以平台账单为准。
+const migrationV14 = `
+CREATE TABLE IF NOT EXISTS ec_statements (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    platform    TEXT    NOT NULL DEFAULT 'taobao',
+    period      TEXT    NOT NULL,              -- 账期 YYYYMM，如 202608
+    kind        TEXT    NOT NULL,              -- 账单类型（交易货款 / 基础软件服务费 …）
+    direction   TEXT    NOT NULL,              -- income / expense
+    file_name   TEXT    NOT NULL DEFAULT '',
+    row_count   INTEGER NOT NULL DEFAULT 0,
+    amount      INTEGER NOT NULL DEFAULT 0,    -- 该文件金额合计
+    imported_at TEXT    NOT NULL DEFAULT '',
+    UNIQUE (platform, period, kind)
+);
+CREATE INDEX IF NOT EXISTS idx_ec_stmt_period ON ec_statements(period, direction);
+
+CREATE TABLE IF NOT EXISTS ec_statement_items (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    statement_id  INTEGER NOT NULL REFERENCES ec_statements(id) ON DELETE CASCADE,
+    platform      TEXT    NOT NULL DEFAULT 'taobao',
+    period        TEXT    NOT NULL DEFAULT '',
+    kind          TEXT    NOT NULL DEFAULT '',
+    direction     TEXT    NOT NULL DEFAULT '',
+    order_no      TEXT    NOT NULL DEFAULT '',   -- 交易主订单号
+    sub_order_no  TEXT    NOT NULL DEFAULT '',
+    ec_product_id TEXT    NOT NULL DEFAULT '',
+    ec_sku        TEXT    NOT NULL DEFAULT '',
+    title         TEXT    NOT NULL DEFAULT '',
+    qty           INTEGER NOT NULL DEFAULT 0,
+    unit_price    INTEGER NOT NULL DEFAULT 0,
+    amount        INTEGER NOT NULL DEFAULT 0,    -- 该行金额（收入为正、支出为正数，方向看 direction）
+    fee_base      INTEGER NOT NULL DEFAULT 0,    -- 扣费基数
+    fee_rate      TEXT    NOT NULL DEFAULT '',   -- 费率原文，如 0.60%
+    refund_amount INTEGER NOT NULL DEFAULT 0,
+    tracking_no   TEXT    NOT NULL DEFAULT '',   -- 运单号（运费单靠它匹配订单）
+    occurred_at   TEXT    NOT NULL DEFAULT '',   -- 打款 / 扣费 / 确认收货时间
+    pay_time      TEXT    NOT NULL DEFAULT '',   -- 打款时间（交易货款）
+    raw           TEXT    NOT NULL DEFAULT '',   -- 原始行 JSON，便于追溯
+    imported_at   TEXT    NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_ec_stmt_item_stmt  ON ec_statement_items(statement_id);
+CREATE INDEX IF NOT EXISTS idx_ec_stmt_item_order ON ec_statement_items(platform, order_no);
+CREATE INDEX IF NOT EXISTS idx_ec_stmt_item_ship  ON ec_statement_items(tracking_no);
+CREATE INDEX IF NOT EXISTS idx_ec_stmt_item_prod  ON ec_statement_items(ec_product_id);
+`
+
 // migrations 按顺序执行的迁移脚本。新增结构或数据变更时在末尾追加一段 SQL，
 // 已执行过的版本不会重复执行（版本号记录在 schema_meta 表）。
 var migrations = []string{
@@ -337,4 +395,5 @@ var migrations = []string{
 	migrationV11,
 	migrationV12,
 	migrationV13,
+	migrationV14,
 }

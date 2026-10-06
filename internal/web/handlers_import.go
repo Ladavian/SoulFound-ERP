@@ -1,17 +1,22 @@
 package web
 
 import (
+	"bytes"
 	"encoding/csv"
 	"fmt"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/xuri/excelize/v2"
 
 	"icewine-erp/internal/model"
 	"icewine-erp/internal/service"
+
+	"golang.org/x/text/encoding/simplifiedchinese"
+	"golang.org/x/text/transform"
 )
 
 // maxImportSize 上传文件大小上限。
@@ -70,7 +75,17 @@ func readImportFile(file io.Reader, filename string) (importSheet, error) {
 	lower := strings.ToLower(filename)
 	switch {
 	case strings.HasSuffix(lower, ".csv"), strings.HasSuffix(lower, ".txt"):
-		cr := csv.NewReader(file)
+		// 电商平台导出的账单多为 GBK 编码，直接按 UTF-8 读会全是乱码。
+		// 先整体读进来判断：合法 UTF-8 就原样用，否则按 GBK 转码。
+		raw, err := io.ReadAll(file)
+		if err != nil {
+			return sh, fmt.Errorf("读取文件失败：%w", err)
+		}
+		decoded, err := decodeTextFile(raw)
+		if err != nil {
+			return sh, err
+		}
+		cr := csv.NewReader(bytes.NewReader(decoded))
 		cr.FieldsPerRecord = -1
 		cr.LazyQuotes = true
 		records, err := cr.ReadAll()
@@ -100,6 +115,24 @@ func readImportFile(file io.Reader, filename string) (importSheet, error) {
 	default:
 		return sh, fmt.Errorf("只支持 .xlsx 或 .csv 文件")
 	}
+}
+
+// decodeTextFile 把上传的文本文件解成 UTF-8。
+//
+// 平台账单常见 GBK；也见过带 BOM 的 UTF-8。判断顺序：
+//  1. 去掉 UTF-8 BOM；
+//  2. 是合法 UTF-8 就直接用；
+//  3. 否则按 GBK 解码（解不出来再退回原文，至少不会整份失败）。
+func decodeTextFile(raw []byte) ([]byte, error) {
+	raw = bytes.TrimPrefix(raw, []byte{0xEF, 0xBB, 0xBF})
+	if utf8.Valid(raw) {
+		return raw, nil
+	}
+	out, _, err := transform.Bytes(simplifiedchinese.GBK.NewDecoder(), raw)
+	if err != nil {
+		return raw, nil
+	}
+	return out, nil
 }
 
 // buildSheet 找到表头行（第一行非空），其余作为数据行。

@@ -562,3 +562,29 @@ func skuSuffix(sku string) string {
 	}
 	return "（规格 " + sku + "）"
 }
+
+// ImportStatement 导入一份账期账单（同账期同类型覆盖）。
+//
+// 月份归属一律以账单的账期为准，不按订单月份——
+// 平台账单是最终结算事实，跟它走才能跟支付宝到账对上。
+func (s *Service) ImportStatement(ctx context.Context, st *model.EcStatement, items []model.EcStatementItem, user *model.User) error {
+	if st.Period == "" {
+		return UserErrf("账单里没有账期，无法归属月份")
+	}
+	if st.Kind == "" {
+		return UserErrf("认不出这是哪一类账单")
+	}
+	if st.Direction == "" {
+		st.Direction = model.StmtDirection(st.Kind)
+	}
+	return s.Store.Tx(ctx, func(tx *sql.Tx) error {
+		if err := s.Store.ReplaceStatement(ctx, tx, st, items); err != nil {
+			return err
+		}
+		return s.Store.Log(ctx, tx, user, "导入账期账单", "ec_statement", &st.ID,
+			fmt.Sprintf("%s %s %s ¥%s（%d 行，%s）",
+				model.EcPlatformLabel(st.Platform), model.PeriodLabel(st.Period),
+				model.StmtKindLabel(st.Kind), st.Amount, len(items),
+				map[string]string{"income": "收入", "expense": "支出"}[st.Direction]))
+	})
+}
