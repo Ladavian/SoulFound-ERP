@@ -22,6 +22,14 @@
   </div>
 </div>
 
+{{/* 平台切换：不同平台各自一套账单，先在这里切 */}}
+<div class="card">
+  <div class="card__body">
+    {{template "platform_bar" (dict "Platforms" .PlatformOptions "Current" .Platform
+        "Base" "/ecommerce/settlement" "Period" .Period "Hint" "已跑通淘宝；其余平台接账单格式后逐个开放")}}
+  </div>
+</div>
+
 {{if not .Period}}
 {{template "empty" (dict "Title" "还没有账单" "Text" "先在「电商对账单」里导入平台的账期账单。")}}
 {{else}}

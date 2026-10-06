@@ -46,3 +46,16 @@
   {{- else}}<span class="badge">{{.}}</span>{{end}}
 {{- else}}<span class="muted">—</span>{{end}}
 {{end}}
+
+{{/* 平台切换：电商相关页面通用。
+     带 Current 表示当前页路径，Period 选填（带上就保留账期）。 */}}
+{{define "platform_bar"}}
+<div class="period-bar">
+  <span class="tiny muted">平台</span>
+  {{range .Platforms}}
+    <a class="chip{{if eq .Value $.Current}} is-active{{end}}"
+       href="{{$.Base}}?platform={{.Value}}{{if $.Period}}&period={{$.Period}}{{end}}">{{.Label}}</a>
+  {{end}}
+  {{if .Hint}}<span class="tiny muted" style="margin-left:8px">{{.Hint}}</span>{{end}}
+</div>
+{{end}}

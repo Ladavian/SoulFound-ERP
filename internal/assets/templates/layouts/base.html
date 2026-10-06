@@ -49,9 +49,13 @@
         <div class="nav-group__title">销售与对账</div>
         {{if .Perms.Has "market.view"}}{{template "nav_item" (dict "Href" "/markets" "Icon" "market" "Label" "市集活动" "Page" .Nav "Key" "markets")}}{{end}}
         {{if .Perms.Has "grouporder.view"}}{{template "nav_item" (dict "Href" "/group-orders" "Icon" "clipboard" "Label" "线下团单" "Page" .Nav "Key" "group-orders")}}{{end}}
-        {{/* 电商平台账单：位置先占住，功能后续接入。
-             做成真实页面（说明规划）而不是死链，避免点到 404。 */}}
-        {{template "nav_item" (dict "Href" "/ecommerce" "Icon" "cart" "Label" "电商平台账单" "Page" .Nav "Key" "ecommerce" "Badge" "规划中")}}
+        {{if .Perms.Has "product.view"}}
+        {{template "nav_item" (dict "Href" "/ecommerce" "Icon" "cart" "Label" "电商订单" "Page" .Nav "Key" "ecommerce")}}
+        {{end}}
+        {{if .Perms.Has "report.view"}}
+        {{template "nav_item" (dict "Href" "/ecommerce/reconcile" "Icon" "chart" "Label" "平台账单" "Page" .Nav "Key" "reconcile")}}
+        {{template "nav_item" (dict "Href" "/ecommerce/settlement" "Icon" "cash" "Label" "结算单" "Page" .Nav "Key" "settlement")}}
+        {{end}}
       </div>
 
       <div class="nav-group">

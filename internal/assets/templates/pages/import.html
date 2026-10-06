@@ -129,6 +129,46 @@
 </div>
 
 <div class="card">
+  <div class="card">
+    <div class="card__head">
+      <div class="card__title">
+        平台账单导入<span class="card__sub">淘宝的收入与支出账单，一次可以多选</span>
+      </div>
+      <div class="card__actions">
+        <a class="btn btn--sm" href="/ecommerce/reconcile">
+          {{template "icon" "chart"}}<span>查看平台账单</span>
+        </a>
+      </div>
+    </div>
+    <div class="card__body">
+      <form method="post" action="/ecommerce/reconcile/import" enctype="multipart/form-data">
+        <div class="form-grid">
+          <div class="field">
+            <label class="field__label" for="imp-platform">平台</label>
+            <select class="select" id="imp-platform" name="platform">
+              {{range .EcommercePlatforms}}<option value="{{.Value}}">{{.Label}}</option>{{end}}
+            </select>
+            <div class="field__hint">已跑通淘宝；其余平台接账单格式后逐个开放。</div>
+          </div>
+          <div class="field span-2">
+            <label class="field__label" for="imp-statements">账单文件（可多选）</label>
+            <input class="input" id="imp-statements" name="files" type="file" multiple
+                   accept=".csv,.xlsx,.xlsm,.txt" required>
+            <div class="field__hint">
+              把平台「收入」与「支出」两个文件夹里的账单一起选上即可，
+              系统按列名自动识别每一份是哪类账单（交易货款、基础软件服务费、
+              品牌新享礼金、商家寄件服务费、淘金币、消费券…）。
+              GBK 编码会自动识别；同一账期同一类型重复导入会整体覆盖，不会重复计账。
+            </div>
+          </div>
+        </div>
+        <button class="btn btn--primary" type="submit" style="margin-top:12px">
+          {{template "icon" "upload"}}<span>开始导入账单</span>
+        </button>
+      </form>
+    </div>
+  </div>
+
   <div class="card__head"><div class="card__title">导入前请先做一次备份</div></div>
   <div class="card__body">
     <div class="tiny muted">

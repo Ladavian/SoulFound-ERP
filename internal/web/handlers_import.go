@@ -190,6 +190,7 @@ func importUpload(w http.ResponseWriter, r *http.Request) (importSheet, bool) {
 func (s *Server) handleImportPage(w http.ResponseWriter, r *http.Request) {
 	noCache(w)
 	page := s.newPage(r, "数据导入", "import")
+	page["EcommercePlatforms"] = model.EcPlatformOptions()
 	if msg := strings.TrimSpace(r.URL.Query().Get("msg")); msg != "" {
 		page["Flash"] = []Flash{{Level: "info", Text: msg}}
 	}
@@ -293,6 +294,7 @@ func (s *Server) importDone(w http.ResponseWriter, r *http.Request, label string
 		res.Total, res.Created, res.Updated, res.Skipped))
 	noCache(w)
 	page := s.newPage(r, "数据导入", "import")
+	page["EcommercePlatforms"] = model.EcPlatformOptions()
 	page["Result"] = res
 	page["ResultLabel"] = label
 	// Flash 必须是 []Flash（模板里的 flash 组件会 range 它）

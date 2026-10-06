@@ -359,6 +359,7 @@ func (s *Server) handleSettlement(w http.ResponseWriter, r *http.Request) {
 	page := s.newPage(r, "结算单", "settlement")
 	page["Platform"] = platform
 	page["PlatformLabel"] = model.EcPlatformLabel(platform)
+	page["PlatformOptions"] = model.EcPlatformOptions()
 	page["Periods"] = periods
 	page["Period"] = period
 	page["PeriodLabel"] = model.PeriodLabel(period)
