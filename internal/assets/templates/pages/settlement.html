@@ -83,6 +83,7 @@
           <em class="tiny muted">
             销项 {{money ($t.OutputVat $rates)}} − 进项 {{money ($t.InputVat $rates)}}
             − 平台费抵扣 {{money ($t.PlatformVat $rates)}}
+            （按可抵扣费用 {{money $t.CreditableFee}} 算，运费不计入）
           </em>
         </span>
         <span class="settle__num neg">−{{money ($t.VatPayable $rates)}}</span>
@@ -140,7 +141,7 @@
             <tr>
               <td class="row-cell--main">{{stmtKind $kind}}</td>
               <td class="small" data-label="能否抵扣">
-                {{if eq $kind "商家寄件服务费"}}<span class="muted">仅列示，不计入</span>
+                {{if eq $kind "商家寄件服务费"}}<span class="muted">仅列示：不从利润扣，也不参与抵扣</span>
                 {{else if eq $kind "品牌新享淘宝礼金软件服务费"}}<span class="pos">6% 专票可抵扣</span>
                 {{else}}<span class="pos">可抵扣</span>{{end}}
               </td>
@@ -159,6 +160,8 @@
       </table>
     </div>
     <div class="tiny muted" style="margin-top:10px;line-height:1.8">
+      <strong>运费（商家寄件服务费）</strong>只在报表里展示给上游看，
+      不从你的利润里扣，也不参与增值税抵扣。<br>
       <strong>平台代付垫支 {{money $t.Advance}}</strong>（品牌新享礼金里平台替商家垫给消费者的钱）
       不在上表——它不是费用、也不开票，已经直接从销售收入里扣掉了（见第③项）。
     </div>

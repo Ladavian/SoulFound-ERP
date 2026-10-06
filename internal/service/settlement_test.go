@@ -181,3 +181,94 @@ func TestMonthlyBillWinsOverReconcile(t *testing.T) {
 		t.Errorf("对账中心独有的商品保险服务费应被补进来，实际 %+v", byKind["京东·商品保险服务费"])
 	}
 }
+
+// TestShippingNotInVatCredit 运费只在报表里展示，不参与增值税抵扣。
+//
+// 用户明确：商家寄件服务费（快递费）不从利润里扣，只在报表里给上游看。
+// 既然不计入，那它也不该当平台开票的进项来抵扣——
+// 之前所有支出都进了抵扣基数，把运费那部分税也抵掉了，
+// 应交增值税少算、应结金额多算。
+func TestShippingNotInVatCredit(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+	admin := adminUser(t, svc)
+
+	// 一张订单：货款 1130、成本 565；费用：佣金 60（可抵扣）+ 运费 106（仅列示）
+	rows := []EcOrderRow{{
+		OrderNo: "JD-1", SubOrderNo: "JD-1", Title: "测试商品", EcProductID: "JD-P1",
+		Qty: "5", PaidAmt: "1130", ItemStatus: "交易成功",
+		RefundStatus: "没有申请退款", CreatedAt: "2026-09-10 10:00",
+	}}
+	if _, err := svc.ImportEcOrders(ctx, model.EcJD, rows, admin); err != nil {
+		t.Fatal(err)
+	}
+	pid, err := svc.Store.CreateProduct(ctx, &model.Product{
+		SKU: "JD-P1", Name: "测试商品", Unit: "瓶", IsActive: true, IsWine: true,
+		EcCost: model.MustMoney("113"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.BindEcLink(ctx, model.EcJD, "JD-P1", "", "", pid, admin); err != nil {
+		t.Fatal(err)
+	}
+
+	items := []model.EcStatementItem{
+		{Period: "202609", Kind: model.StmtGoodsPayment, Direction: "income",
+			OrderNo: "JD-1", SubOrderNo: "JD-1", EcProductID: "JD-P1",
+			Qty: model.MustQty("5"), Amount: model.MustMoney("1130")},
+		{Period: "202609", Kind: model.StmtBaseService, Direction: "expense",
+			OrderNo: "JD-1", SubOrderNo: "JD-1", Amount: model.MustMoney("60")},
+		{Period: "202609", Kind: model.StmtShipping, Direction: "expense",
+			OrderNo: "JD-1", SubOrderNo: "JD-1", Amount: model.MustMoney("106")},
+	}
+	for _, kind := range []string{model.StmtGoodsPayment, model.StmtBaseService, model.StmtShipping} {
+		var sub []model.EcStatementItem
+		for _, it := range items {
+			if it.Kind == kind {
+				sub = append(sub, it)
+			}
+		}
+		if err := svc.ImportStatement(ctx, &model.EcStatement{
+			Platform: model.EcJD, Period: "202609", Kind: kind, Source: model.StmtSourceBill,
+			Direction: model.StmtDirection(kind), RowCount: len(sub)}, sub, admin); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	settings, _ := svc.Store.Settings(ctx)
+	rep, err := svc.BuildSettlement(ctx, model.EcJD, "202609", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	total := rep.Total
+
+	// 展示口径：全部费用 60 + 106 = 166
+	if total.PlatformFee != model.MustMoney("166") {
+		t.Errorf("平台费用（展示）应为 166，实际 %s", total.PlatformFee)
+	}
+	// 抵扣口径：只算可抵扣的 60，运费 106 不算
+	if total.CreditableFee != model.MustMoney("60") {
+		t.Errorf("可抵扣费用应为 60（不含运费），实际 %s", total.CreditableFee)
+	}
+	// 平台费抵扣 = 60/1.06×6% = 3.40；若误把运费算进去会是 9.40
+	got := total.PlatformVat(rep.Rates).Float()
+	if got < 3.39 || got > 3.41 {
+		t.Errorf("平台费抵扣应约 3.40（不含运费），实际 %.2f", got)
+	}
+
+	// 收入 1130、成本 5×113 = 565
+	if total.Cost != model.MustMoney("565") {
+		t.Errorf("供货成本应为 565，实际 %s", total.Cost)
+	}
+	// 应交 = 销项 130.00 − 进项 65.00 − 抵扣 3.40 = 61.60
+	vat := total.VatPayable(rep.Rates).Float()
+	if vat < 61.5 || vat > 61.7 {
+		t.Errorf("应交增值税应约 61.60，实际 %.2f（运费被算进抵扣就会偏小）", vat)
+	}
+	// 应结 = 1130 − 565 − 61.60 = 503.40
+	net := total.Net(rep.Rates).Float()
+	if net < 503.3 || net > 503.5 {
+		t.Errorf("应结金额应约 503.40，实际 %.2f", net)
+	}
+}

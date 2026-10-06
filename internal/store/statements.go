@@ -13,6 +13,14 @@ import (
 //
 // 同一份账单重复导入时整体替换，避免重复计账。
 func (s *Store) ReplaceStatement(ctx context.Context, tx DBTX, st *model.EcStatement, items []model.EcStatementItem) error {
+	// 金额与行数一律从明细算，不用调用方传进来的值。
+	// 曾经因为调用方忘了累加，账单表头金额是 0，
+	// 结果结算汇总把费用算成 0——这种"缓存值跟明细不一致"的坑不值得留。
+	st.RowCount = len(items)
+	st.Amount = 0
+	for _, it := range items {
+		st.Amount += it.Amount
+	}
 	var (
 		existing     int64
 		existingFrom string

@@ -141,10 +141,15 @@ func (s *Service) BuildSettlement(ctx context.Context, platform, period string, 
 		}
 	}
 
-	// 总费用按所有支出账单口径（含整期一笔）
+	// 总费用按所有支出账单口径（含整期一笔）；
+	// 其中"仅列示"的（运费）单独扣出来，不参与增值税抵扣。
 	rep.Total.PlatformFee = 0
-	for _, amt := range rep.FeeByKind {
+	rep.Total.CreditableFee = 0
+	for kind, amt := range rep.FeeByKind {
 		rep.Total.PlatformFee += amt
+		if model.StmtCreditable(kind) {
+			rep.Total.CreditableFee += amt
+		}
 	}
 	return rep, nil
 }

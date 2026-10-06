@@ -65,6 +65,17 @@ var stmtKindLabels = map[string]string{
 	StmtExperience:     "消费者体验提升计划",
 }
 
+// StmtNoVatCredit 不参与增值税抵扣的费用项。
+//
+// 商家寄件服务费是快递费：用户在报表里只看，不从利润里扣，
+// 也不当平台开票的进项来抵扣（用户明确"仅列示不计入"）。
+var StmtNoVatCredit = map[string]bool{
+	StmtShipping: true,
+}
+
+// StmtCreditable 这笔费用能不能参与增值税抵扣。
+func StmtCreditable(kind string) bool { return !StmtNoVatCredit[kind] }
+
 // StmtKindHint 这类账单怎么匹配订单（界面提示用）。
 func StmtKindHint(kind string) string {
 	switch kind {
@@ -241,8 +252,11 @@ type Settlement struct {
 	// 成本（含税，上游供货价）
 	Cost Money
 
-	// 平台费用（现金口径：只算真正从商家扣走、且开票的）
+	// 平台费用（展示口径：账单上的全部费用，含仅列示的运费）
 	PlatformFee Money
+
+	// CreditableFee 参与增值税抵扣的费用（= 平台费用 − 仅列示项）
+	CreditableFee Money
 }
 
 // OutputVat 销项税 = 销售额 ÷ (1+销项率) × 销项率。
@@ -256,8 +270,10 @@ func (s Settlement) InputVat(r VatRates) Money {
 }
 
 // PlatformVat 平台服务费专票可抵扣的进项。
+//
+// 只用 CreditableFee：运费这类"仅列示"的费用不计入抵扣。
 func (s Settlement) PlatformVat(r VatRates) Money {
-	return vatOf(s.PlatformFee, r.Platform)
+	return vatOf(s.CreditableFee, r.Platform)
 }
 
 // VatPayable 应交增值税 = 销项 − 进项 − 平台费抵扣。
@@ -304,6 +320,7 @@ func (s *Settlement) Add(o Settlement) {
 	s.Qty += o.Qty
 	s.Cost += o.Cost
 	s.PlatformFee += o.PlatformFee
+	s.CreditableFee += o.CreditableFee
 }
 
 // EcSettlementRow 结算表里的一行（按订单或按商品）。
