@@ -25,6 +25,8 @@
     </div>
   </div>
   <div class="page-head__actions">
+    {{if eq .Platform "taobao"}}<a class="btn btn--primary" href="/ecommerce/reconcile?platform={{.Platform}}&import=1#import">
+      {{template "icon" "upload"}}<span>导入平台账单</span></a>{{end}}
     <a class="btn" href="/ecommerce?platform={{.Platform}}">{{template "icon" "list"}}<span>订单列表</span></a>
     <a class="btn" href="/ecommerce/settlement?platform={{.Platform}}">{{template "icon" "cash"}}<span>结算单</span></a>
   </div>
@@ -156,7 +158,17 @@
                   <span class="cell-num {{if .Net.IsNeg}}neg{{else}}pos{{end}}">{{money .Net}}</span>
                   {{if .Cost}}
                   <div class="cell-sub">成本 {{money .Cost}} · 净利 {{money .Profit}}</div>
-                  {{else}}<div class="cell-sub warn">缺电商成本，净利未算</div>{{end}}
+                  {{else if not .HasPayment}}
+                  {{/* 费用账单里常有"本月只扣费、货款是别的月份打的"订单。
+                     这类单没有货款行 → 没有数量 → 算不出成本，
+                     原因不是产品档案缺成本，别误导。 */}}
+                  <div class="cell-sub muted">
+                    本账期只有费用行，没有货款
+                    {{if .PaymentPeriods}}（货款在 {{.PaymentPeriods}}）{{else}}（货款可能在其它账期）{{end}}
+                  </div>
+                  {{else}}
+                  <div class="cell-sub warn">产品未绑或未填电商成本，成本算不出来</div>
+                  {{end}}
                 </td>
               </tr>
               {{end}}
@@ -278,7 +290,7 @@
 {{end}}
 
 {{/* 导入入口：默认收起，用 details 实现，不依赖 JS */}}
-<details class="hint-fold">
+<details class="hint-fold" id="import"{{if .OpenImport}} open{{end}}>
   <summary>
     {{template "icon" "upload"}}
     <span>导入平台账单</span>

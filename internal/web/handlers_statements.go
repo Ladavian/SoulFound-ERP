@@ -285,6 +285,16 @@ func (s *Server) handleReconcile(w http.ResponseWriter, r *http.Request) {
 		Net       model.Money
 		Profit    model.Money
 		Matched   bool
+
+		// HasPayment 本账期有没有这一单的货款行。
+		//
+		// 费用账单里常常出现"这个月只扣了费、货款是上个月打的"的订单。
+		// 这类单没有货款行 → 没有数量 → 算不出成本，
+		// 但原因不是"产品档案没填电商成本"，必须分开提示。
+		HasPayment bool
+
+		// PaymentPeriods 这一单的货款出现在哪些账期（帮用户找到那笔钱）。
+		PaymentPeriods string
 	}
 	var orders []orderRow
 	{
@@ -314,6 +324,7 @@ func (s *Server) handleReconcile(w http.ResponseWriter, r *http.Request) {
 				}
 				if kind == model.StmtGoodsPayment {
 					row.Payment += it.Amount
+					row.HasPayment = true
 					if it.ProductID != nil && it.EcCost > 0 {
 						row.Cost += model.MulQty(it.Qty, it.EcCost)
 					}
@@ -322,10 +333,31 @@ func (s *Server) handleReconcile(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+		// 只扣了费、没有货款行的订单：查出它的货款在哪几个账期，
+		// 直接告诉用户"钱在哪个月"，而不是笼统说缺成本。
+		var noPay []string
+		for _, k := range seq {
+			if !payments[k].HasPayment {
+				noPay = append(noPay, k)
+			}
+		}
+		payPeriods := map[string][]string{}
+		if len(noPay) > 0 {
+			payPeriods, _ = s.svc.Store.EcPaymentPeriods(ctx, platform, noPay)
+		}
 		for _, k := range seq {
 			row := payments[k]
 			row.Net = row.Payment - row.Fee
 			row.Profit = row.Net - row.Cost
+			if !row.HasPayment {
+				if ps := payPeriods[k]; len(ps) > 0 {
+					labels := make([]string, 0, len(ps))
+					for _, p := range ps {
+						labels = append(labels, model.PeriodLabel(p))
+					}
+					row.PaymentPeriods = strings.Join(labels, "、")
+				}
+			}
 			orders = append(orders, *row)
 		}
 	}
@@ -352,6 +384,8 @@ func (s *Server) handleReconcile(w http.ResponseWriter, r *http.Request) {
 	page := s.newPage(r, "电商对账单", "reconcile")
 	page["PlatformHints"] = hints
 	page["PlatformStatements"] = platformCounts[platform]
+	// 顶部「导入平台账单」按钮带 ?import=1 → 自动展开底部导入区
+	page["OpenImport"] = fr.Str("import") == "1"
 	page["Platform"] = platform
 	page["PlatformLabel"] = model.EcPlatformLabel(platform)
 	page["Periods"] = periods

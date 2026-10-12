@@ -3527,3 +3527,64 @@ func TestSummarySelectsByPlatformPeriod(t *testing.T) {
 		t.Error("京东 7 月应被勾上")
 	}
 }
+
+// TestFeeOnlyOrderShowsWherePaymentIs 只扣费没货款的订单要指出货款在哪个月。
+//
+// 用户的实际数据就是这样：平台账单里有些订单本月只扣了费
+// （基础软件服务费、淘金币、品牌新享…），货款是别的月份打的。
+// 这类单本月没有货款行 → 没有数量 → 算不出成本，
+// 但原因**不是**"产品档案没填电商成本"。
+// 之前统一提示"缺电商成本"，用户在产品上明明填了成本，看得一头雾水。
+func TestFeeOnlyOrderShowsWherePaymentIs(t *testing.T) {
+	h, svc, cfg := testApp(t)
+	ctx := context.Background()
+	cookie := doLogin(t, h, cfg, "admin", "admin123")
+	admin := mustUser(t, svc, "admin")
+
+	// 产品（有电商成本）
+	pid, err := svc.Store.CreateProduct(ctx, &model.Product{
+		SKU: "FEE-P1", Name: "只扣费测试品", Unit: "瓶", IsActive: true, IsWine: true,
+		EcCost: model.MustMoney("140"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.BindEcLink(ctx, model.EcTaobao, "FEE-EC-1", "", "", pid, admin); err != nil {
+		t.Fatal(err)
+	}
+
+	const orderNo = "FEE-ONLY-1"
+	// 8 月：这一单的货款
+	if err := svc.ImportStatement(ctx, &model.EcStatement{
+		Platform: model.EcTaobao, Period: "202608", Kind: model.StmtGoodsPayment,
+		Source: model.StmtSourceBill, Direction: "income"}, []model.EcStatementItem{{
+		Period: "202608", Kind: model.StmtGoodsPayment, Direction: "income",
+		OrderNo: orderNo, SubOrderNo: orderNo, EcProductID: "FEE-EC-1",
+		Qty: model.MustQty("2"), Amount: model.MustMoney("578"),
+	}}, admin); err != nil {
+		t.Fatal(err)
+	}
+	// 9 月：只有费用，没有货款
+	if err := svc.ImportStatement(ctx, &model.EcStatement{
+		Platform: model.EcTaobao, Period: "202609", Kind: model.StmtBaseService,
+		Source: model.StmtSourceBill, Direction: "expense"}, []model.EcStatementItem{{
+		Period: "202609", Kind: model.StmtBaseService, Direction: "expense",
+		OrderNo: orderNo, SubOrderNo: orderNo, Amount: model.MustMoney("3.47"),
+	}}, admin); err != nil {
+		t.Fatal(err)
+	}
+
+	_, raw := get(t, h, "/ecommerce/reconcile?platform=taobao&period=202609", cookie)
+	page := html.UnescapeString(raw)
+
+	// 要指出货款在 2026-08，而不是笼统说缺成本
+	if !strings.Contains(page, "本账期只有费用行") {
+		t.Errorf("应说明这是「只有费用行」的订单；片段: %s", snippetAround(page, orderNo, 400))
+	}
+	if !strings.Contains(page, "货款在 2026-08") {
+		t.Errorf("应指出货款在 2026-08\n片段: %s", snippetAround(page, orderNo, 400))
+	}
+	if strings.Contains(page, "缺电商成本") {
+		t.Error("不该再出现「缺电商成本」这种误导性提示（产品明明填了成本）")
+	}
+}

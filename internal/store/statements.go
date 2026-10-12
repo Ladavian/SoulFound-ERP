@@ -694,3 +694,38 @@ func ParseStatementKey(s string) (platform, period string, ok bool) {
 	}
 	return s[:i], s[i+1:], true
 }
+
+// EcPaymentPeriods 查这些订单的货款出现在哪些账期。
+//
+// 用途：费用账单里常出现"本月只扣了费、货款是上个月打的"的订单。
+// 这类单本月没有货款行，算不出成本；与其笼统提示"缺成本"，
+// 不如直接告诉用户货款在哪个月，好去找。
+func (s *Store) EcPaymentPeriods(ctx context.Context, platform string, orderNos []string) (map[string][]string, error) {
+	out := map[string][]string{}
+	if len(orderNos) == 0 {
+		return out, nil
+	}
+	ph := make([]string, 0, len(orderNos))
+	args := make([]any, 0, len(orderNos)+1)
+	args = append(args, platform)
+	for _, o := range orderNos {
+		ph = append(ph, "?")
+		args = append(args, o)
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT DISTINCT order_no, period FROM ec_statement_items
+		  WHERE platform = ? AND kind = ? AND order_no IN (`+strings.Join(ph, ",")+`)
+		  ORDER BY period`, append([]any{platform, model.StmtGoodsPayment}, args[1:]...)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var o, p string
+		if err := rows.Scan(&o, &p); err != nil {
+			return nil, err
+		}
+		out[o] = append(out[o], p)
+	}
+	return out, rows.Err()
+}

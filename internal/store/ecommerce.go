@@ -612,7 +612,8 @@ func (s *Store) EcUnmatched(ctx context.Context, platform string, limit int) ([]
 	}
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT i.ec_product_id, i.ec_sku, MAX(i.title), MAX(i.merchant_code),
-		        COALESCE(SUM(i.qty), 0), COUNT(DISTINCT i.order_id)
+		        COALESCE(SUM(i.qty), 0), COUNT(DISTINCT i.order_id),
+		        COALESCE(SUM(i.paid_amount), 0)
 		   FROM ec_order_items i
 		  WHERE i.product_id IS NULL AND i.platform = ?
 		  GROUP BY i.ec_product_id, i.ec_sku
@@ -626,7 +627,7 @@ func (s *Store) EcUnmatched(ctx context.Context, platform string, limit int) ([]
 	for rows.Next() {
 		var u model.EcUnmatchedItem
 		if err := rows.Scan(&u.EcProductID, &u.EcSKU, &u.Title, &u.MerchantCode,
-			&u.Qty, &u.Orders); err != nil {
+			&u.Qty, &u.Orders, &u.Amount); err != nil {
 			return nil, err
 		}
 		out = append(out, u)

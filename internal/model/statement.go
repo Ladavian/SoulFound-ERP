@@ -13,6 +13,7 @@ const (
 	StmtCoinService    = "淘金币软件服务费"
 	StmtCouponClawback = "消费券代付资金扣回"
 	StmtExperience     = "消费者体验提升计划服务费"
+	StmtPayLater       = "先用后付技术服务费"
 )
 
 // StmtKinds 账单类型清单（顺序即对账单上的显示顺序）。
@@ -26,6 +27,7 @@ var StmtKinds = []string{
 	StmtCoinService,
 	StmtCouponClawback,
 	StmtExperience,
+	StmtPayLater,
 }
 
 // StmtIncomeKinds 收入类账单。

@@ -354,6 +354,9 @@ type EcUnmatchedItem struct {
 	Qty          Qty
 	Orders       int
 
+	// Amount 这些未匹配订单行的买家实付合计：让"缺成本"的影响看得见。
+	Amount Money
+
 	// BoundTo 这个平台商品ID 若已经绑在某个产品上，带出产品名。
 	// 直接告诉用户"已经绑给谁"，不用试一次才知道重复。
 	BoundTo string
