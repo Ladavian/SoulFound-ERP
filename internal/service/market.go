@@ -394,11 +394,11 @@ func (s *Service) UpdateMarketItemRow(ctx context.Context, marketID, itemID int6
 	if err != nil {
 		return err
 	}
-	return s.RefreshMarketTotals(ctx, marketID)
-	if err := s.syncCarryIfOngoing(ctx, marketID, user); err != nil {
+	if err := s.RefreshMarketTotals(ctx, marketID); err != nil {
 		return err
 	}
-	return nil
+	// 备货量可能改了：进行中的市集同步库存（按差额补，幂等）
+	return s.syncCarryIfOngoing(ctx, marketID, user)
 }
 
 // reconcileItemQuantities 让明细行的汇总数量与逐笔记录保持一致。
@@ -548,11 +548,11 @@ func (s *Service) DeleteMarketItemRow(ctx context.Context, marketID, itemID int6
 	if err != nil {
 		return err
 	}
-	return s.RefreshMarketTotals(ctx, marketID)
-	if err := s.syncCarryIfOngoing(ctx, marketID, user); err != nil {
+	if err := s.RefreshMarketTotals(ctx, marketID); err != nil {
 		return err
 	}
-	return nil
+	// 备货量可能改了：进行中的市集同步库存（按差额补，幂等）
+	return s.syncCarryIfOngoing(ctx, marketID, user)
 }
 
 // SaveMarketExpenses 覆盖保存市集费用。
