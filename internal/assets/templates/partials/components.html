@@ -33,7 +33,9 @@
 
 {{define "market_status"}}{{if eq . "settled"}}<span class="badge badge--ok">已结算</span>{{else if eq . "pending"}}<span class="badge badge--danger">待结算</span>{{else if eq . "ongoing"}}<span class="badge badge--live">进行中</span>{{else}}<span class="badge badge--warn">计划中</span>{{end}}{{end}}
 
-{{define "purchase_status"}}{{if eq . "confirmed"}}<span class="badge badge--ok">已入库</span>{{else if eq . "void"}}<span class="badge badge--muted">已作废</span>{{else}}<span class="badge badge--warn">草稿</span>{{end}}{{end}}
+{{/* 只有明确的 void 才显示已作废：
+     空值或未知值都按草稿显示，避免"状态写坏了就误报已作废"。 */}}
+{{define "purchase_status"}}{{if eq . "confirmed"}}<span class="badge badge--ok">已入库</span>{{else if eq . "void"}}<span class="badge badge--muted">已作废</span>{{else if eq . "draft"}}<span class="badge badge--warn">草稿</span>{{else}}<span class="badge badge--warn">草稿</span>{{end}}{{end}}
 
 {{define "confirm_form"}}<form method="post" action="{{.Action}}" class="inline" onsubmit="return confirm('{{.Message}}')"><button class="btn {{.Class}}" type="submit">{{template "icon" .Icon}}<span>{{.Label}}</span></button></form>{{end}}
 

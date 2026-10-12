@@ -166,6 +166,13 @@ func (s *Service) SavePurchase(ctx context.Context, in PurchaseInput, user *mode
 			if cur != model.PurchaseDraft {
 				return UserErrf("只有草稿状态的采购单可以修改；已入库请先「撤销入库」")
 			}
+			// 必须显式带上状态。
+			//
+			// UpdatePurchase 会把 status 一起写库，而 buildPurchase 出来的
+			// p.Status 是空的；不补这一句，保存草稿后状态就被写成空字符串，
+			// 详情页把空值当"已作废"、列表页又当"草稿"，
+			// 于是出现"提示已作废、列表还是草稿"的矛盾。
+			p.Status = cur
 			if err := s.Store.UpdatePurchase(ctx, tx, p); err != nil {
 				return err
 			}

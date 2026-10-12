@@ -48,12 +48,22 @@
     确认数量与单价无误后，点「确认入库」才会按到岸成本写入库存{{if .Perms.Has "report.view"}}，并重算相关产品的移动加权平均成本{{end}}。
   </div>
 </div>
-{{else}}
+{{else if $p.IsVoid}}
 <div class="alert alert--warn">
   {{template "icon" "alert"}}
   <div class="alert__body">
     <div class="alert__title">已作废</div>
     本单已作废，不参与库存、成本与报表统计。
+  </div>
+</div>
+{{else}}
+{{/* 兜底：状态既不是已入库、已作废，就按草稿展示。
+     不能把"状态意外为空"直接当成已作废——那会误导用户以为单据被作废了。 */}}
+<div class="alert alert--warn">
+  {{template "icon" "alert"}}
+  <div class="alert__body">
+    <div class="alert__title">状态异常：{{$p.Status}}</div>
+    这张采购单的状态无法识别，请刷新页面；若仍异常请联系管理员。
   </div>
 </div>
 {{end}}
@@ -127,7 +137,7 @@
       <div class="card__head">
         <div class="card__title">金额汇总</div>
         <div class="card__actions">
-          {{if $p.IsConfirmed}}<span class="badge badge--ok">{{if .Perms.Has "report.view"}}已计入库存成本{{else}}已计入库存{{end}}</span>{{else if $p.IsDraft}}<span class="badge badge--warn">未计入库存</span>{{else}}<span class="badge badge--muted">已作废</span>{{end}}
+          {{if $p.IsConfirmed}}<span class="badge badge--ok">{{if .Perms.Has "report.view"}}已计入库存成本{{else}}已计入库存{{end}}</span>{{else if $p.IsVoid}}<span class="badge badge--muted">已作废</span>{{else}}<span class="badge badge--warn">未计入库存</span>{{end}}
         </div>
       </div>
       <div class="card__body">

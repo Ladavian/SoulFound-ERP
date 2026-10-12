@@ -635,6 +635,12 @@ func (p Purchase) IsDraft() bool { return p.Status == PurchaseDraft }
 // IsConfirmed 是否已入库。
 func (p Purchase) IsConfirmed() bool { return p.Status == PurchaseConfirmed }
 
+// IsVoid 是否已作废。
+//
+// 判断必须是"明确等于 void"，不能写成 !IsDraft && !IsConfirmed：
+// 状态一旦被写坏（例如空字符串），那样会误报成"已作废"。
+func (p Purchase) IsVoid() bool { return p.Status == PurchaseVoid }
+
 // ExtraCost 附加费用合计。
 func (p Purchase) ExtraCost() Money { return p.ShippingCost + p.TariffCost + p.OtherCost }
 
