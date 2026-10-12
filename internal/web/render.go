@@ -72,6 +72,7 @@ var ecNavItems = []map[string]any{
 func (r *Renderer) funcs() template.FuncMap {
 	sym := r.symbol()
 	return template.FuncMap{
+		"add2": func(a, b model.Money) model.Money { return a + b },
 		// 侧栏「电商账单」的子菜单
 		"ecNav": func() []map[string]any { return ecNavItems },
 		// 金额与数量。负数把负号放在货币符号前：-¥123.45，而不是 ¥-123.45

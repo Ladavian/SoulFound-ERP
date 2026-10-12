@@ -7,13 +7,14 @@ import (
 
 	"icewine-erp/internal/model"
 	"icewine-erp/internal/service"
+	"icewine-erp/internal/store"
 )
 
 // buildSettlementWorkbook 生成结算单 Excel。
 //
 // 版式按"人能看懂"来排：先结论（应结多少），再构成（怎么算出来的），
 // 最后明细（逐单 + 逐商品 + 平台费用），会计和上游都能直接看。
-func buildSettlementWorkbook(rep *service.SettlementReport, platformLabel string) (*excelize.File, error) {
+func buildSettlementWorkbook(rep *service.SettlementReport, platformLabel string, offlineOff *store.OfflineDetail) (*excelize.File, error) {
 	f := excelize.NewFile()
 	defer func() { _ = f.Close() }()
 
@@ -183,6 +184,65 @@ func buildSettlementWorkbook(rep *service.SettlementReport, platformLabel string
 	_ = f.SetColWidth(ws4, "B", "B", 16)
 
 	f.SetActiveSheet(0)
+	// ---------------- 已排除订单（线下结算） ----------------
+	//
+	// 用户要求：排除的订单不管收入还是支出都要在账单里说明白，
+	// 否则平台账单的合计与本次结算对不上，看不出是不是算错了。
+	if offlineOff != nil && offlineOff.Orders > 0 {
+		of := offlineOff
+		wso := "已排除订单"
+		_, _ = f.NewSheet(wso)
+		_ = f.SetCellValue(wso, "A1", "已排除订单（线下结算）—— 本次结算的收入与支出都不含这些单")
+		_ = f.SetCellStyle(wso, "A1", "A1", headStyle)
+		_ = f.SetCellValue(wso, "A2", "项目")
+		_ = f.SetCellValue(wso, "B2", "说明")
+		_ = f.SetCellValue(wso, "C2", "金额")
+		_ = f.SetCellStyle(wso, "A2", "C2", headStyle)
+
+		r := 3
+		put := func(name, note string, amt float64, style int) {
+			_ = f.SetCellValue(wso, fmt.Sprintf("A%d", r), name)
+			_ = f.SetCellValue(wso, fmt.Sprintf("B%d", r), note)
+			_ = f.SetCellValue(wso, fmt.Sprintf("C%d", r), amt)
+			if style != 0 {
+				_ = f.SetCellStyle(wso, fmt.Sprintf("C%d", r), fmt.Sprintf("C%d", r), style)
+			}
+			r++
+		}
+		put("订单数", "共 "+fmt.Sprintf("%d", of.Orders)+" 单 · "+of.Qty.String()+" 件", 0, 0)
+		put("货款", "这些单的平台打款", of.Goods.Float(), moneyStyle)
+		if of.Subsidy != 0 {
+			put("平台补贴", "淘金币等", of.Subsidy.Float(), moneyStyle)
+		}
+		if of.Advance != 0 {
+			put("平台代付垫支", "从货款扣回（负数）", -of.Advance.Float(), moneyStyle)
+		}
+		put("收入合计", "货款 + 补贴 − 垫支", of.Revenue.Float(), totalStyle)
+		for kind, amt := range of.FeeByKind {
+			put(model.StmtKindLabel(kind), "支出 · 已排除", -amt.Float(), moneyStyle)
+		}
+		if of.FeeTotal != 0 {
+			put("支出合计", "平台费用", -of.FeeTotal.Float(), totalStyle)
+		}
+		r++
+		_ = f.SetCellValue(wso, fmt.Sprintf("A%d", r), "收入侧对账")
+		_ = f.SetCellValue(wso, fmt.Sprintf("B%d", r),
+			fmt.Sprintf("平台账单全部货款 %s − 已排除货款 %s = 本次结算货款 %s",
+				rep.Total.Goods.Add(of.Goods).String(), of.Goods.String(), rep.Total.Goods.String()))
+		r++
+		_ = f.SetCellValue(wso, fmt.Sprintf("A%d", r), "支出侧对账")
+		_ = f.SetCellValue(wso, fmt.Sprintf("B%d", r),
+			fmt.Sprintf("平台账单全部费用 %s − 已排除费用 %s = 本次结算费用 %s",
+				rep.Total.PlatformFee.Add(of.FeeTotal).String(), of.FeeTotal.String(), rep.Total.PlatformFee.String()))
+		r += 2
+		_ = f.SetCellValue(wso, fmt.Sprintf("A%d", r), "说明")
+		_ = f.SetCellValue(wso, fmt.Sprintf("B%d", r),
+			"已排除订单不计入本次结算的收入、成本与增值税，也不算平台费用抵扣。")
+		_ = f.SetColWidth(wso, "A", "A", 20)
+		_ = f.SetColWidth(wso, "B", "B", 86)
+		_ = f.SetColWidth(wso, "C", "C", 16)
+	}
+
 	return f, nil
 }
 

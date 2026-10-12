@@ -740,3 +740,84 @@ func (s *Store) EcPaymentPeriods(ctx context.Context, platform string, orderNos 
 	}
 	return out, rows.Err()
 }
+
+// OfflineDetail 已排除（线下结算）订单的完整明细，用于在结算单里说清楚。
+//
+// 用户要求：排除的订单不管收入还是支出，都要在账单里说明白，
+// 这样平台账单的合计与本次结算才对得上。
+type OfflineDetail struct {
+	Orders   int
+	Qty      model.Qty
+	Goods    model.Money // 货款
+	Subsidy  model.Money // 平台补贴
+	Advance  model.Money // 平台代付垫支
+	Revenue  model.Money // 销售收入 = 货款 + 补贴 − 垫支
+	FeeTotal model.Money // 平台费用（支出）
+	// FeeByKind 各费用项的金额（支出侧要逐项说明）
+	FeeByKind map[string]model.Money
+	FeeRows   int
+}
+
+// OfflineSettlementDetail 统计被排除订单的收入与支出明细。
+func (s *Store) OfflineSettlementDetail(ctx context.Context, platform string, periods []string) (OfflineDetail, error) {
+	out := OfflineDetail{FeeByKind: map[string]model.Money{}}
+	if len(periods) == 0 {
+		return out, nil
+	}
+	ph := make([]string, 0, len(periods))
+	args := []any{platform}
+	for _, p := range periods {
+		ph = append(ph, "?")
+		args = append(args, p)
+	}
+	in := strings.Join(ph, ",")
+
+	// 单数与数量（按货款行统计，避免费用行重复计数）
+	row := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(DISTINCT si.order_no), COALESCE(SUM(si.qty), 0)
+		  FROM ec_statement_items si
+		  JOIN ec_orders x ON x.platform = si.platform AND x.order_no = si.order_no
+		 WHERE si.platform = ? AND si.kind = ? AND si.period IN (`+in+`)
+		   AND x.settle_mode = 'offline'`,
+		append([]any{platform, model.StmtGoodsPayment}, args[1:]...)...)
+	if err := row.Scan(&out.Orders, &out.Qty); err != nil {
+		return out, err
+	}
+
+	// 收入与支出逐项
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT si.kind, si.direction, COUNT(*), COALESCE(SUM(si.amount), 0),
+		       COALESCE(SUM(si.advance_amount), 0)
+		  FROM ec_statement_items si
+		  JOIN ec_orders x ON x.platform = si.platform AND x.order_no = si.order_no
+		 WHERE si.platform = ? AND si.period IN (`+in+`)
+		   AND x.settle_mode = 'offline'
+		 GROUP BY si.kind, si.direction`,
+		append([]any{platform}, args[1:]...)...)
+	if err != nil {
+		return out, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var kind, dir string
+		var n, amt, adv int64
+		if err := rows.Scan(&kind, &dir, &n, &amt, &adv); err != nil {
+			return out, err
+		}
+		if dir == "income" {
+			switch kind {
+			case model.StmtGoodsPayment:
+				out.Goods += model.Money(amt)
+			default:
+				out.Subsidy += model.Money(amt)
+			}
+			out.Advance += model.Money(adv)
+		} else {
+			out.FeeByKind[kind] += model.Money(amt)
+			out.FeeTotal += model.Money(amt)
+			out.FeeRows += int(n)
+		}
+	}
+	out.Revenue = out.Goods + out.Subsidy - out.Advance
+	return out, rows.Err()
+}

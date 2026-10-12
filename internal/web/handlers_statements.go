@@ -496,8 +496,19 @@ func (s *Server) handleSettlement(w http.ResponseWriter, r *http.Request) {
 		period = sel[0]
 	}
 
+	// 线下结算被排除的订单：结算单里必须说清楚，
+	// 否则平台账单合计与本次结算对不上会让人怀疑算错。
+	offline, err := s.svc.Store.OfflineSettlementDetail(ctx, platform, sel)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	noCache(w)
 	page := s.newPage(r, "结算单", "settlement")
+	page["Offline"] = offline
+	page["HasOffline"] = offline.Orders > 0
+	page["PlatformStatements"] = 0
 	page["PeriodChips"] = periodChips(r, periods, sel, nil)
 	page["Platform"] = platform
 	page["PlatformLabel"] = model.EcPlatformLabel(platform)
@@ -528,7 +539,11 @@ func (s *Server) handleSettlementExport(w http.ResponseWriter, r *http.Request) 
 		s.fail(w, r, "/ecommerce/settlement", err)
 		return
 	}
-	f, err := buildSettlementWorkbook(rep, model.EcPlatformLabel(platform))
+	offline, _ := s.svc.Store.OfflineSettlementDetail(ctx, platform, rep.Periods2)
+	if len(rep.Periods2) == 0 && rep.Period != "" {
+		offline, _ = s.svc.Store.OfflineSettlementDetail(ctx, platform, []string{rep.Period})
+	}
+	f, err := buildSettlementWorkbook(rep, model.EcPlatformLabel(platform), &offline)
 	if err != nil {
 		s.fail(w, r, "/ecommerce/settlement", err)
 		return

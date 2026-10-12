@@ -122,6 +122,90 @@
   </div>
 </div>
 
+{{if .HasOffline}}
+{{/* 线下结算排除说明：用户要求"排除订单的数据不管收入还是支出都要说明白"。
+     平台账单的合计里含这些单，而本次结算不含，必须写清楚才能对账。 */}}
+<div class="card">
+  <div class="card__head">
+    <div class="card__title">
+      已排除订单（线下结算）
+      <span class="card__sub">这些单线下跟上游结，本次结算的收入与支出都不含它们</span>
+    </div>
+    <div class="card__actions">
+      <span class="badge badge--warn">{{.Offline.Orders}} 单 · {{.Offline.Qty}} 件</span>
+    </div>
+  </div>
+  <div class="card__body">
+    <div class="table-wrap">
+      <table class="data data--stack">
+        <thead><tr><th>项目</th><th>说明</th><th class="num">金额</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="row-cell--main">货款</td>
+            <td class="small text-2" data-label="说明">这些单的平台打款</td>
+            <td class="num" data-label="金额">{{money .Offline.Goods}}</td>
+          </tr>
+          {{if .Offline.Subsidy}}
+          <tr>
+            <td class="row-cell--main">平台补贴</td>
+            <td class="small text-2" data-label="说明">淘金币等</td>
+            <td class="num" data-label="金额">{{money .Offline.Subsidy}}</td>
+          </tr>
+          {{end}}
+          {{if .Offline.Advance}}
+          <tr>
+            <td class="row-cell--main">平台代付垫支</td>
+            <td class="small text-2" data-label="说明">从货款扣回</td>
+            <td class="num neg" data-label="金额">−{{money .Offline.Advance}}</td>
+          </tr>
+          {{end}}
+          <tr>
+            <td class="row-cell--main strong">收入合计（销售收入）</td>
+            <td class="small text-2" data-label="说明">货款 + 补贴 − 垫支</td>
+            <td class="num strong" data-label="金额">{{money .Offline.Revenue}}</td>
+          </tr>
+          {{range $kind := .Kinds}}
+            {{$amt := index $.Offline.FeeByKind $kind}}
+            {{if $amt}}
+            <tr>
+              <td class="row-cell--main">{{stmtKind $kind}}</td>
+              <td class="small text-2" data-label="说明">支出 · 已排除</td>
+              <td class="num neg" data-label="金额">−{{money $amt}}</td>
+            </tr>
+            {{end}}
+          {{end}}
+          {{if .Offline.FeeTotal}}
+          <tr>
+            <td class="row-cell--main strong">支出合计（平台费用）</td>
+            <td class="small text-2" data-label="说明">共 {{.Offline.FeeRows}} 行</td>
+            <td class="num strong neg" data-label="金额">−{{money .Offline.FeeTotal}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    <div class="small" style="margin-top:12px;line-height:1.9">
+      <div>
+        <strong>收入侧对账</strong>：平台账单全部货款合计
+        <strong>{{money (add2 .Rep.Total.Goods .Offline.Goods)}}</strong>
+        − 已排除货款 <strong>{{money .Offline.Goods}}</strong>
+        = 本次结算货款 <strong>{{money .Rep.Total.Goods}}</strong>
+      </div>
+      <div>
+        <strong>支出侧对账</strong>：平台账单全部费用合计
+        <strong>{{money (add2 .Rep.Total.PlatformFee .Offline.FeeTotal)}}</strong>
+        − 已排除费用 <strong>{{money .Offline.FeeTotal}}</strong>
+        = 本次结算费用 <strong>{{money .Rep.Total.PlatformFee}}</strong>
+      </div>
+      <div class="muted" style="margin-top:6px">
+        说明：已排除订单不计入本次结算的收入、成本与增值税，也不算平台费用抵扣。
+        如需把某一单加回来，到「平台账单 → 已排除（线下结算）」点「恢复平台结算」。
+      </div>
+    </div>
+  </div>
+</div>
+{{end}}
+
 <div class="card">
   <div class="card__head">
     <div class="card__title">
