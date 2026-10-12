@@ -285,13 +285,18 @@ func TestMarketSettleProfitAndStock(t *testing.T) {
 		t.Error("重复结算应返回错误")
 	}
 
-	// 撤销结算后库存与成本快照应还原
+	// 撤销结算后成本快照应清空。
+	//
+	// 库存不再回到 10：撤销结算后市集回到「进行中」，货还在市集上，
+	// 所以只把"实际消耗"那部分还原，备货 8 瓶仍然占着库存 → 10 − 8 = 2。
+	// 这是用户要求的口径：总库存必须减去市集带走的货。
 	if err := svc.UnsettleMarket(ctx, marketID, admin); err != nil {
 		t.Fatal(err)
 	}
 	p, _ = svc.Store.ProductByID(ctx, productID)
-	if p.StockQty != model.MustQty("10") || p.StockValue != model.MustMoney("400") {
-		t.Errorf("撤销结算后应还原，实际 qty=%s value=%s", p.StockQty, p.StockValue)
+	if p.StockQty != model.MustQty("2") || p.StockValue != model.MustMoney("80") {
+		t.Errorf("撤销结算后应只还原消耗部分（备货 8 仍占用），实际 qty=%s value=%s",
+			p.StockQty, p.StockValue)
 	}
 	m, _ = svc.Store.MarketByID(ctx, marketID)
 	if m.Items[0].UnitCost != nil {

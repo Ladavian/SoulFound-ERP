@@ -133,7 +133,16 @@ func (s *Service) SaveMarket(ctx context.Context, in MarketInput, user *model.Us
 		}
 		return s.Store.Log(ctx, tx, user, "保存市集", "market", &newID, m.Name)
 	})
-	return newID, err
+	if err != nil {
+		return newID, err
+	}
+	// 备货量可能改了：进行中的市集要同步库存（按差额补，不会重复扣）
+	if m.Status == model.MarketOngoing {
+		if err := s.PostMarketCarry(ctx, newID, user); err != nil {
+			return newID, err
+		}
+	}
+	return newID, nil
 }
 
 // SetMarketStatus 切换计划中 / 进行中。
@@ -141,7 +150,7 @@ func (s *Service) SetMarketStatus(ctx context.Context, marketID int64, status st
 	if status != model.MarketPlanned && status != model.MarketOngoing {
 		return UserErrf("不支持的状态")
 	}
-	return s.Store.Tx(ctx, func(tx *sql.Tx) error {
+	err := s.Store.Tx(ctx, func(tx *sql.Tx) error {
 		st, err := s.Store.MarketStatusTx(ctx, tx, marketID)
 		if errors.Is(err, store.ErrNotFound) {
 			return UserErrf("市集不存在")
@@ -154,6 +163,12 @@ func (s *Service) SetMarketStatus(ctx context.Context, marketID int64, status st
 		}
 		return s.Store.SetMarketStatus(ctx, tx, marketID, status)
 	})
+	if err != nil {
+		return err
+	}
+	// 状态改完再记备货库存：进入「进行中」= 货带走 → 出库；
+	// 退回「计划中」= 货还在仓库 → 取消出库。
+	return s.PostMarketCarry(ctx, marketID, user)
 }
 
 // AddMarketProduct 往市集里添加一个产品（单价默认取当前售价）。
@@ -380,6 +395,10 @@ func (s *Service) UpdateMarketItemRow(ctx context.Context, marketID, itemID int6
 		return err
 	}
 	return s.RefreshMarketTotals(ctx, marketID)
+	if err := s.syncCarryIfOngoing(ctx, marketID, user); err != nil {
+		return err
+	}
+	return nil
 }
 
 // reconcileItemQuantities 让明细行的汇总数量与逐笔记录保持一致。
@@ -488,6 +507,20 @@ func (s *Service) reconcileItemQuantities(ctx context.Context, tx *sql.Tx, marke
 }
 
 // DeleteMarketItemRow 删除一行市集明细，连同该产品在本场的现场记录。
+// syncCarryIfOngoing 进行中的市集改了明细/备货量后同步库存。
+//
+// PostMarketCarry 是按差额补的，重复调用不会重复扣，可以放心调。
+func (s *Service) syncCarryIfOngoing(ctx context.Context, marketID int64, user *model.User) error {
+	m, err := s.Store.MarketByID(ctx, marketID)
+	if err != nil {
+		return err
+	}
+	if m == nil || m.Status != model.MarketOngoing {
+		return nil
+	}
+	return s.PostMarketCarry(ctx, marketID, user)
+}
+
 func (s *Service) DeleteMarketItemRow(ctx context.Context, marketID, itemID int64, user *model.User) error {
 	item, err := s.Store.MarketItemByID(ctx, itemID)
 	if err != nil {
@@ -516,6 +549,10 @@ func (s *Service) DeleteMarketItemRow(ctx context.Context, marketID, itemID int6
 		return err
 	}
 	return s.RefreshMarketTotals(ctx, marketID)
+	if err := s.syncCarryIfOngoing(ctx, marketID, user); err != nil {
+		return err
+	}
+	return nil
 }
 
 // SaveMarketExpenses 覆盖保存市集费用。
@@ -587,6 +624,72 @@ func (s *Service) RefreshMarketTotals(ctx context.Context, marketID int64) error
 	})
 }
 
+// PostMarketCarry 市集备货出库：把带走的货从仓库扣掉。
+//
+// 用户反馈：总库存没有减去市集消耗的货。
+// 原因是库存只在**结算时**才按 sold/tasting/gift/loss 扣减，
+// 市集还在进行中时，带去的货已经离开仓库，账上却还是满的。
+//
+// 这里在备货/进行中就把 carried_qty 扣掉；结算时再把这部分
+// **全额对冲回库**，然后按实际消耗（销售/试饮/赠送/损耗）扣减。
+// 净结果与原来完全一致，但进行中的库存是对的。
+func (s *Service) PostMarketCarry(ctx context.Context, marketID int64, user *model.User) error {
+	m, err := s.Store.MarketByID(ctx, marketID)
+	if err != nil {
+		return err
+	}
+	if m == nil {
+		return UserErrf("市集不存在")
+	}
+	if m.IsSettled() {
+		return nil // 已结算的市集由结算逻辑负责
+	}
+	cfg, err := s.Store.Settings(ctx)
+	if err != nil {
+		return err
+	}
+	var userID *int64
+	if user != nil {
+		uid := user.ID
+		userID = &uid
+	}
+	occurred := m.StartDate
+	if occurred == "" {
+		occurred = m.EndDate
+	}
+	return s.Store.Tx(ctx, func(tx *sql.Tx) error {
+		// 备货量可能被改过：只补差额，不删流水。
+		// 库存缓存值由 Poster 增量维护，删流水会把它算错。
+		posted, err := s.Store.MarketCarryPosted(ctx, tx, marketID)
+		if err != nil {
+			return err
+		}
+		poster := s.NewPoster(ctx, tx, cfg.AllowNegative)
+		ref := marketID
+		for i := range m.Items {
+			it := &m.Items[i]
+			delta := -it.CarriedQty - posted[it.ProductID]
+			if delta == 0 {
+				continue
+			}
+			if _, err := poster.Post(PostRequest{
+				ProductID:  it.ProductID,
+				Qty:        delta,
+				OccurredOn: occurred,
+				Reason:     model.ReasonMarketCarry,
+				RefType:    "market",
+				RefID:      &ref,
+				RefCode:    m.Code,
+				Note:       m.Name + " 备货出库",
+				UserID:     userID,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 // SettleMarket 结算市集：扣减库存、锁定成本快照、固化损益。
 func (s *Service) SettleMarket(ctx context.Context, marketID int64, user *model.User) error {
 	m, err := s.Store.MarketByID(ctx, marketID)
@@ -644,6 +747,10 @@ func (s *Service) SettleMarket(ctx context.Context, marketID int64, user *model.
 		ref := marketID
 		items := make([]model.MarketItem, len(m.Items))
 		copy(items, m.Items)
+		carryPosted, err := s.Store.MarketCarryPosted(ctx, tx, marketID)
+		if err != nil {
+			return err
+		}
 
 		for i := range items {
 			it := &items[i]
@@ -665,6 +772,20 @@ func (s *Service) SettleMarket(ctx context.Context, marketID int64, user *model.
 			type line struct {
 				qty    model.Qty
 				reason string
+			}
+			// 备货已经带离仓库：把**实际记过的那部分**对冲回库，
+			// 再按真实消耗扣减。
+			// 用已记数（而不是 carried_qty）是为了兼容
+			// "计划中 → 直接结算"这种从没记过备货的情况——
+			// 那时若按 carried_qty 回库，库存会凭空变多。
+			if posted, ok := carryPosted[it.ProductID]; ok && posted != 0 {
+				req := base
+				req.Qty = -posted
+				req.Reason = model.ReasonMarketCarry
+				req.Note = m.Name + " 备货对冲"
+				if _, err := poster.Post(req); err != nil {
+					return err
+				}
 			}
 			lines := []line{
 				{it.SoldQty, model.ReasonMarketSale},
@@ -713,7 +834,7 @@ func (s *Service) UnsettleMarket(ctx context.Context, marketID int64, user *mode
 	if !m.IsSettled() {
 		return UserErrf("该市集尚未结算，无需撤销")
 	}
-	return s.Store.Tx(ctx, func(tx *sql.Tx) error {
+	err = s.Store.Tx(ctx, func(tx *sql.Tx) error {
 		st, err := s.Store.MarketStatusTx(ctx, tx, marketID)
 		if errors.Is(err, store.ErrNotFound) {
 			return UserErrf("市集不存在")
@@ -750,6 +871,12 @@ func (s *Service) UnsettleMarket(ctx context.Context, marketID int64, user *mode
 		}
 		return s.Store.Log(ctx, tx, user, "撤销市集结算", "market", &marketID, m.Name)
 	})
+	if err != nil {
+		return err
+	}
+	// 撤销后状态回到「进行中」，而刚才把该市集的流水（含备货）全删了，
+	// 货其实还在市集上，所以要把备货出库重新记上。
+	return s.PostMarketCarry(ctx, marketID, user)
 }
 
 // DeleteMarket 删除市集（已结算需先撤销）。

@@ -491,14 +491,16 @@ func TestFullBusinessFlow(t *testing.T) {
 		t.Errorf("净利润应为 %s，实际 %s", wantProfit, market.NetProfit)
 	}
 
-	// 9. 撤销结算后库存回滚
+	// 9. 撤销结算：市集回到「进行中」，货还在市集上，
+	//    所以只还原实际消耗，备货 12 瓶仍占库存 → 20 − 12 = 8。
+	//    （用户要求：总库存必须减去市集带走的货）
 	code, _ = post(t, h, "/markets/"+strconv.FormatInt(marketID, 10)+"/unsettle", url.Values{}, cookie)
 	if code != http.StatusSeeOther {
 		t.Fatalf("撤销结算应 303，实际 %d", code)
 	}
 	product, _ = svc.Store.ProductByID(ctx, product.ID)
-	if product.StockQty != model.MustQty("20") {
-		t.Errorf("撤销结算后库存应回到 20，实际 %s", product.StockQty)
+	if product.StockQty != model.MustQty("8") {
+		t.Errorf("撤销结算后备货 12 仍应占用库存（20−12=8），实际 %s", product.StockQty)
 	}
 }
 

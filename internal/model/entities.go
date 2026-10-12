@@ -378,6 +378,7 @@ const (
 	ReasonReturnIn      = "return_in"      // 退货入库
 	ReasonDirectSale    = "direct_sale"    // 销售出库（市集之外的直销）
 	ReasonTransferOut   = "transfer_out"   // 调拨出库（发到别处仓库）
+	ReasonMarketCarry   = "market_carry"   // 市集备货出库（货已带离仓库，结算时对冲回来）
 	ReasonMarketSale    = "market_sale"    // 市集销售
 	ReasonMarketTasting = "market_tasting" // 市集试饮
 	ReasonMarketGift    = "market_gift"    // 市集赠送
@@ -393,6 +394,7 @@ var ReasonLabels = map[string]string{
 	ReasonReturnIn:      "退货入库",
 	ReasonDirectSale:    "销售出库",
 	ReasonTransferOut:   "调拨出库",
+	ReasonMarketCarry:   "市集备货",
 	ReasonMarketSale:    "市集销售",
 	ReasonMarketTasting: "市集试饮",
 	ReasonMarketGift:    "市集赠送",

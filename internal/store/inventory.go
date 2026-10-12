@@ -348,3 +348,28 @@ func (s *Store) OutboundByReasonBetween(ctx context.Context, from, to string) ([
 	}
 	return out, nil
 }
+
+// MarketCarryPosted 市集已记入库存的备货量（按产品）。
+//
+// 备货量可能被改过，这里只补差额，不删流水——
+// 库存缓存值由 Poster 增量维护，删流水会把它算错。
+func (s *Store) MarketCarryPosted(ctx context.Context, tx DBTX, marketID int64) (map[int64]model.Qty, error) {
+	rows, err := tx.QueryContext(ctx,
+		`SELECT product_id, COALESCE(SUM(qty), 0) FROM stock_movements
+		  WHERE ref_type = 'market' AND ref_id = ? AND reason = ?
+		  GROUP BY product_id`, marketID, model.ReasonMarketCarry)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]model.Qty{}
+	for rows.Next() {
+		var pid int64
+		var q model.Qty
+		if err := rows.Scan(&pid, &q); err != nil {
+			return nil, err
+		}
+		out[pid] = q
+	}
+	return out, rows.Err()
+}
