@@ -116,6 +116,55 @@
 </div>
 {{end}}
 
+{{if .OfflineRows}}
+{{/* 线下结算：已从平台结算里排除的订单。
+     列出金额，好跟平台账单对：账单合计 − 已排除 = 本次结算 */}}
+<div class="card">
+  <div class="card__head">
+    <div class="card__title">
+      已排除（线下结算）
+      <span class="card__sub">这些单线下跟上游结，不参与平台结算</span>
+    </div>
+    <div class="card__actions">
+      <span class="badge badge--warn">{{len .OfflineRows}} 单 · {{money .OfflineTotal.Amount}}</span>
+    </div>
+  </div>
+  <div class="card__body">
+    <div class="table-wrap">
+      <table class="data data--stack">
+        <thead>
+          <tr><th>订单号</th><th class="num">账期 / 数量</th><th class="num">货款</th><th class="num">操作</th></tr>
+        </thead>
+        <tbody>
+          {{range .OfflineRows}}
+          <tr>
+            <td class="row-cell--main"><span class="mono">{{.OrderNo}}</span></td>
+            <td class="num" data-label="账期 / 数量">{{periodLabel .Period}} · {{.Qty}}</td>
+            <td class="num" data-label="货款">{{money .Amount}}</td>
+            <td class="num span-2" data-label="操作">
+              <form method="post" action="/ecommerce/settle-mode" class="inline">
+                <input type="hidden" name="order_no" value="{{.OrderNo}}">
+                <input type="hidden" name="mode" value="platform">
+                <button class="btn btn--sm" type="submit">恢复平台结算</button>
+              </form>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+        <tfoot>
+          <tr><td>合计</td><td class="num">{{.OfflineTotal.Qty}}</td><td class="num">{{money .OfflineTotal.Amount}}</td><td></td></tr>
+        </tfoot>
+      </table>
+    </div>
+    <div class="small muted" style="margin-top:10px;line-height:1.8">
+      对账关系：平台账单收入合计 <strong>{{money .BillIncomeTotal}}</strong>
+      − 已排除 <strong>{{money .OfflineTotal.Amount}}</strong>
+      = 本次计入结算 <strong>{{money $rec.IncomeTotal}}</strong>
+    </div>
+  </div>
+</div>
+{{end}}
+
 <div class="grid grid--sidebar">
   <div>
     {{/* 订单维度：这一单最终到手多少 */}}
@@ -156,6 +205,15 @@
                 </td>
                 <td class="num span-2" data-label="到手 / 成本">
                   <span class="cell-num {{if .Net.IsNeg}}neg{{else}}pos{{end}}">{{money .Net}}</span>
+                  {{if $.CanManage}}
+                  <form method="post" action="/ecommerce/settle-mode" class="inline" style="margin-top:4px">
+                    <input type="hidden" name="order_no" value="{{.OrderNo}}">
+                    <input type="hidden" name="mode" value="offline">
+                    <input type="hidden" name="period" value="{{$.Period}}">
+                    <button class="btn btn--sm btn--ghost" type="submit"
+                            title="这一单线下跟上游结，不参与平台结算">线下结算，排除</button>
+                  </form>
+                  {{end}}
                   {{if .Cost}}
                   <div class="cell-sub">成本 {{money .Cost}} · 净利 {{money .Profit}}</div>
                   {{else if not .HasPayment}}

@@ -345,6 +345,20 @@ type EcImportSummary struct {
 	UnmatchedEc []EcUnmatchedItem // 未匹配的商品（按电商商品ID 归并）
 }
 
+// 订单的结算方式。
+const (
+	SettleModePlatform = "platform" // 走平台结算（默认）
+	SettleModeOffline  = "offline"  // 线下结算：从平台结算里排除
+)
+
+// SettleModeLabel 结算方式中文名。
+func SettleModeLabel(m string) string {
+	if m == SettleModeOffline {
+		return "线下结算"
+	}
+	return "平台结算"
+}
+
 // EcUnmatchedItem 未匹配上产品的电商商品。
 type EcUnmatchedItem struct {
 	EcProductID  string

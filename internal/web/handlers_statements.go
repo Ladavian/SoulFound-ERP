@@ -400,6 +400,39 @@ func (s *Server) handleReconcile(w http.ResponseWriter, r *http.Request) {
 	page["Checks"] = checks
 	page["CheckStats"] = checkStats
 	page["HasChecks"] = hasChecks
+
+	// 线下结算（已被排除）的订单：列出来 + 合计，
+	// 方便"账单合计（含全部）− 已排除 = 本次结算"这样对账。
+	offlineSet, _ := s.svc.Store.OfflineOrderNos(ctx, platform)
+	type offlineRow struct {
+		OrderNo string
+		Qty     model.Qty
+		Amount  model.Money
+		Period  string
+	}
+	var offlineRows []offlineRow
+	var offlineTotal store.OfflineSettleSummary
+	for _, p := range sel {
+		sm, _ := s.svc.Store.OfflineSettledOrders(ctx, platform, p)
+		offlineTotal.Orders += sm.Orders
+		offlineTotal.Qty += sm.Qty
+		offlineTotal.Amount += sm.Amount
+		items, _ := s.svc.Store.ListStatementItems(ctx, store.StatementItemFilter{
+			Platform: platform, Period: p, Kind: model.StmtGoodsPayment,
+		})
+		seen := map[string]bool{}
+		for _, it := range items {
+			if !offlineSet[it.OrderNo] || seen[it.OrderNo] {
+				continue
+			}
+			seen[it.OrderNo] = true
+			offlineRows = append(offlineRows, offlineRow{it.OrderNo, it.Qty, it.Amount, p})
+		}
+	}
+	page["OfflineRows"] = offlineRows
+	page["OfflineTotal"] = offlineTotal
+	page["BillIncomeTotal"] = rec.IncomeTotal + offlineTotal.Amount
+	page["CanManage"] = permsForUser(userFrom(r)).Has(PermProductManage)
 	if msg := fr.Str("msg"); msg != "" {
 		page["Flash"] = []Flash{{Level: "info", Text: msg}}
 	}

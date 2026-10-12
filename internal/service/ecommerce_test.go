@@ -535,3 +535,95 @@ func TestNormalizeEcSKU(t *testing.T) {
 		}
 	}
 }
+
+// TestOfflineSettledOrderExcluded 线下结算的订单要从平台结算里排除。
+//
+// 用户的实际做法：有些订单线下跟上游结，不走平台结算。
+// 标记为线下后，这一单的货款/补贴/费用/数量/成本都要从结算里去掉，
+// 否则同一单会被结两次。
+//
+// 关键坑：不能只把排除条件加在 LEFT JOIN 上——LEFT JOIN 条件不满足时
+// 行仍然保留、金额照样汇总，等于没排除；必须写进 WHERE。
+func TestOfflineSettledOrderExcluded(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+	admin := adminUser(t, svc)
+
+	pid, err := svc.Store.CreateProduct(ctx, &model.Product{
+		SKU: "OFF-P1", Name: "线下结算测试品", Unit: "瓶", IsActive: true, IsWine: true,
+		EcCost: model.MustMoney("100"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.BindEcLink(ctx, model.EcTaobao, "OFF-EC-1", "", "", pid, admin); err != nil {
+		t.Fatal(err)
+	}
+	rows := []EcOrderRow{
+		{OrderNo: "OFF-1", SubOrderNo: "OFF-1", Title: "线下结算测试品", EcProductID: "OFF-EC-1",
+			Qty: "2", PaidAmt: "600", ItemStatus: "交易成功",
+			RefundStatus: "没有申请退款", CreatedAt: "2026-09-10 10:00"},
+		{OrderNo: "OFF-2", SubOrderNo: "OFF-2", Title: "线下结算测试品", EcProductID: "OFF-EC-1",
+			Qty: "3", PaidAmt: "900", ItemStatus: "交易成功",
+			RefundStatus: "没有申请退款", CreatedAt: "2026-09-11 10:00"},
+	}
+	if _, err := svc.ImportEcOrders(ctx, model.EcTaobao, rows, admin); err != nil {
+		t.Fatal(err)
+	}
+	items := []model.EcStatementItem{
+		{Period: "202609", Kind: model.StmtGoodsPayment, Direction: "income",
+			OrderNo: "OFF-1", SubOrderNo: "OFF-1", EcProductID: "OFF-EC-1",
+			Qty: model.MustQty("2"), Amount: model.MustMoney("600")},
+		{Period: "202609", Kind: model.StmtGoodsPayment, Direction: "income",
+			OrderNo: "OFF-2", SubOrderNo: "OFF-2", EcProductID: "OFF-EC-1",
+			Qty: model.MustQty("3"), Amount: model.MustMoney("900")},
+	}
+	if err := svc.ImportStatement(ctx, &model.EcStatement{
+		Platform: model.EcTaobao, Period: "202609", Kind: model.StmtGoodsPayment,
+		Source: model.StmtSourceBill, Direction: "income"}, items, admin); err != nil {
+		t.Fatal(err)
+	}
+
+	settings, _ := svc.Store.Settings(ctx)
+	before, err := svc.BuildSettlement(ctx, model.EcTaobao, "202609", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before.Total.Goods != model.MustMoney("1500") || before.Total.Qty != model.MustQty("5") {
+		t.Fatalf("排除前应为 1500 / 5 件，实际 %s / %s", before.Total.Goods, before.Total.Qty)
+	}
+
+	// 把 OFF-1（2 件 / 600）标为线下结算
+	if err := svc.SetOrderSettleMode(ctx, model.EcTaobao, "OFF-1", model.SettleModeOffline, admin); err != nil {
+		t.Fatal(err)
+	}
+	after, err := svc.BuildSettlement(ctx, model.EcTaobao, "202609", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Total.Goods != model.MustMoney("900") {
+		t.Errorf("排除后货款应为 900（1500−600），实际 %s", after.Total.Goods)
+	}
+	if after.Total.Qty != model.MustQty("3") {
+		t.Errorf("排除后数量应为 3 件，实际 %s", after.Total.Qty)
+	}
+	if len(after.Orders) != 1 || after.Orders[0].OrderNo != "OFF-2" {
+		t.Errorf("排除后只剩 OFF-2，实际 %d 单", len(after.Orders))
+	}
+	// 排除掉的订单要被统计出来，便于"账单合计 − 已排除 = 本次结算"对账
+	sm, err := svc.Store.OfflineSettledOrders(ctx, model.EcTaobao, "202609")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sm.Orders != 1 || sm.Amount != model.MustMoney("600") {
+		t.Errorf("已排除合计应为 1 单 / 600，实际 %d 单 / %s", sm.Orders, sm.Amount)
+	}
+	// 恢复
+	if err := svc.SetOrderSettleMode(ctx, model.EcTaobao, "OFF-1", model.SettleModePlatform, admin); err != nil {
+		t.Fatal(err)
+	}
+	back, _ := svc.BuildSettlement(ctx, model.EcTaobao, "202609", settings)
+	if back.Total.Goods != model.MustMoney("1500") {
+		t.Errorf("恢复后货款应回到 1500，实际 %s", back.Total.Goods)
+	}
+}

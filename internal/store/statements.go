@@ -199,6 +199,13 @@ const stmtItemCols = `si.id, si.statement_id, si.platform, si.period, si.kind, s
 	si.advance_amount, si.gross_amount, si.sku_id, si.sku_label,
 	oi.product_id, COALESCE(p.name, ''), COALESCE(p.sku, ''), COALESCE(p.ec_cost, 0)`
 
+// stmtNotOffline 排除"线下结算"的订单。
+//
+// 必须放在 WHERE 里，不能只加在 LEFT JOIN 上：
+// LEFT JOIN 条件不满足时行仍然保留，金额照样被汇总，等于没排除。
+// 没有订单号的（整期一笔的费用）不受影响。
+const stmtNotOffline = " AND NOT EXISTS (SELECT 1 FROM ec_orders x WHERE x.platform = si.platform AND x.order_no = si.order_no AND x.settle_mode = 'offline') "
+
 // statementOrderJoin 账单行 → 订单明细的关联。
 //
 // 关键：平台账单里的「订单号」是**主订单号**，不是子订单号，
@@ -263,7 +270,8 @@ func (s *Store) Reconcile(ctx context.Context, platform, period string) (model.E
 	}
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT kind, direction, COUNT(*), COALESCE(SUM(amount), 0)
-		   FROM ec_statement_items WHERE platform = ? AND period = ?
+		   FROM ec_statement_items si WHERE si.platform = ? AND si.period = ?
+		   `+stmtNotOffline+`
 		  GROUP BY kind, direction`, platform, period)
 	if err != nil {
 		return r, err
@@ -306,7 +314,8 @@ func (s *Store) Reconcile(ctx context.Context, platform, period string) (model.E
 		        COALESCE(SUM(CASE WHEN oi.product_id IS NULL OR p.ec_cost <= 0 THEN 1 ELSE 0 END), 0)
 		   FROM ec_statement_items si
 		   `+statementOrderJoin+`
-		  WHERE si.platform = ? AND si.period = ? AND si.kind = ?`,
+		  WHERE si.platform = ? AND si.period = ? AND si.kind = ?
+		  `+stmtNotOffline+` `,
 		platform, period, model.StmtGoodsPayment)
 	if err != nil {
 		return r, err
@@ -379,6 +388,7 @@ func (s *Store) StatementSettlement(ctx context.Context, platform, period string
 		  FROM ec_statement_items si
 		  `+statementOrderJoin+`
 		 WHERE si.platform = ? AND si.period = ?
+		   `+stmtNotOffline+`
 		 ORDER BY si.id`, platform, period)
 	if err != nil {
 		return nil, nil, err
@@ -458,6 +468,7 @@ func (s *Store) StatementSettlementProducts(ctx context.Context, platform, perio
 		  FROM ec_statement_items si
 		  `+statementOrderJoin+`
 		 WHERE si.platform = ? AND si.period = ? AND si.kind = ?
+		   `+stmtNotOffline+`
 		 -- 按产品合并：同一个产品可能绑了多个平台商品ID
 		 -- （同一平台多个链接、或跨平台），它们是同一个产品，
 		 -- 汇总时必须合成一行，否则同一款酒会被拆成好几行。

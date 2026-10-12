@@ -1,6 +1,7 @@
 package web
 
 import (
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -191,4 +192,28 @@ func (s *Server) ecPlatform(r *http.Request) string {
 		return model.EcTaobao
 	}
 	return p
+}
+
+// handleOrderSettleMode 把订单标记为线下结算 / 恢复平台结算。
+func (s *Server) handleOrderSettleMode(w http.ResponseWriter, r *http.Request) {
+	fr := newFormReader(r)
+	platform := s.ecPlatform(r)
+	orderNo := fr.Str("order_no")
+	mode := fr.Str("mode")
+	if mode == "" {
+		mode = model.SettleModeOffline
+	}
+	back := fmt.Sprintf("/ecommerce/reconcile?platform=%s&period=%s", platform, fr.Str("period"))
+	if fr.Str("from") == "orders" {
+		back = "/ecommerce?platform=" + platform
+	}
+	if err := s.svc.SetOrderSettleMode(r.Context(), platform, orderNo, mode, userFrom(r)); err != nil {
+		s.fail(w, r, back, err)
+		return
+	}
+	msg := "已标记为线下结算，这一单不再参与平台结算"
+	if mode == model.SettleModePlatform {
+		msg = "已恢复为平台结算"
+	}
+	s.ok(w, r, back, msg)
 }

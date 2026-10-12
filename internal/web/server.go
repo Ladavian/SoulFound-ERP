@@ -315,6 +315,7 @@ func (s *Server) routes() {
 	m.Handle("POST /ecommerce/bind", s.guard(PermProductManage, s.handleEcBind))
 	m.Handle("POST /ecommerce/bind-item", s.guard(PermProductManage, s.handleEcBindItem))
 	m.Handle("POST /ecommerce/unbind", s.guard(PermProductManage, s.handleEcUnbind))
+	m.Handle("POST /ecommerce/settle-mode", s.guard(PermProductManage, s.handleOrderSettleMode))
 	m.Handle("POST /import/ec-orders", s.guard(PermProductManage, s.handleImportEcOrders))
 	m.Handle("GET /ecommerce/reconcile", s.guard(PermReportView, s.handleReconcile))
 	m.Handle("POST /ecommerce/reconcile/import", s.guard(PermProductManage, s.handleImportStatement))

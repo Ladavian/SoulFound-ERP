@@ -459,6 +459,16 @@ CREATE TABLE IF NOT EXISTS ec_statement_checks (
 CREATE INDEX IF NOT EXISTS idx_ec_checks_lookup ON ec_statement_checks(platform, period, status);
 `
 
+// migrationV19 订单的结算方式。
+//
+// 用户的实际做法：有些订单不走平台结算，而是线下跟上游结。
+// 这些订单要从平台结算里排除掉，否则同一单会被结两次。
+// platform=走平台结算（默认）· offline=线下结算，已排除
+const migrationV19 = `
+ALTER TABLE ec_orders ADD COLUMN settle_mode TEXT NOT NULL DEFAULT 'platform';
+CREATE INDEX IF NOT EXISTS idx_ec_orders_settle ON ec_orders(platform, settle_mode);
+`
+
 // migrations 按顺序执行的迁移脚本。新增结构或数据变更时在末尾追加一段 SQL，
 // 已执行过的版本不会重复执行（版本号记录在 schema_meta 表）。
 var migrations = []string{
@@ -480,4 +490,5 @@ var migrations = []string{
 	migrationV16,
 	migrationV17,
 	migrationV18,
+	migrationV19,
 }

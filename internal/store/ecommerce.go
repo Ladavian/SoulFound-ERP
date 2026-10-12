@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 
 	"icewine-erp/internal/model"
@@ -712,6 +713,74 @@ func (s *Store) EcOrderMonthCounts(ctx context.Context, platform string) (map[st
 			return nil, err
 		}
 		out[m] = n
+	}
+	return out, rows.Err()
+}
+
+// SetOrderSettleMode 设置订单的结算方式（平台 / 线下）。
+//
+// 返回受影响的订单行数；找不到订单时返回错误。
+func (s *Store) SetOrderSettleMode(ctx context.Context, tx DBTX, platform, orderNo, mode string) (int64, error) {
+	if mode != model.SettleModePlatform && mode != model.SettleModeOffline {
+		return 0, fmt.Errorf("不支持的结算方式：%s", mode)
+	}
+	res, err := tx.ExecContext(ctx,
+		`UPDATE ec_orders SET settle_mode = ? WHERE platform = ? AND order_no = ?`,
+		mode, platform, orderNo)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return 0, ErrNotFound
+	}
+	return n, nil
+}
+
+// OfflineSettleSummary 已排除（线下结算）订单的合计，用于跟平台账单对账。
+type OfflineSettleSummary struct {
+	Orders int
+	Qty    model.Qty
+	Amount model.Money
+}
+
+// OfflineSettledOrders 某个平台（可指定账期）里被排除的订单。
+//
+// 金额取账单里的货款行，这样"账单合计 − 已排除 = 本次结算"能直接对上。
+func (s *Store) OfflineSettledOrders(ctx context.Context, platform, period string) (OfflineSettleSummary, error) {
+	var out OfflineSettleSummary
+	q := `SELECT COUNT(DISTINCT eo.id), COALESCE(SUM(si.qty), 0), COALESCE(SUM(si.amount), 0)
+	        FROM ec_orders eo
+	        JOIN ec_statement_items si
+	          ON si.platform = eo.platform AND si.order_no = eo.order_no
+	         AND si.kind = ?
+	       WHERE eo.platform = ? AND eo.settle_mode = 'offline'`
+	args := []any{model.StmtGoodsPayment, platform}
+	if period != "" {
+		q += ` AND si.period = ?`
+		args = append(args, period)
+	}
+	if err := s.db.QueryRowContext(ctx, q, args...).Scan(&out.Orders, &out.Qty, &out.Amount); err != nil {
+		return out, err
+	}
+	return out, nil
+}
+
+// OfflineOrderNos 已排除的订单号集合（供页面标出哪些被排除了）。
+func (s *Store) OfflineOrderNos(ctx context.Context, platform string) (map[string]bool, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT order_no FROM ec_orders WHERE platform = ? AND settle_mode = 'offline'`, platform)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var o string
+		if err := rows.Scan(&o); err != nil {
+			return nil, err
+		}
+		out[o] = true
 	}
 	return out, rows.Err()
 }

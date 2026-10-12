@@ -3,10 +3,12 @@ package service
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
 	"icewine-erp/internal/model"
+	"icewine-erp/internal/store"
 )
 
 // EcOrderRow 平台导出表格里的一行（子订单）。
@@ -591,5 +593,29 @@ func (s *Service) ImportStatement(ctx context.Context, st *model.EcStatement, it
 				model.EcPlatformLabel(st.Platform), model.PeriodLabel(st.Period),
 				model.StmtKindLabel(st.Kind), st.Amount, len(items),
 				map[string]string{"income": "收入", "expense": "支出"}[st.Direction]))
+	})
+}
+
+// SetOrderSettleMode 把订单标记为「走平台结算」或「线下结算」。
+//
+// 用户的实际做法：有些订单线下跟上游结，不参与平台结算。
+// 标记为线下后，这一单的货款/补贴/费用/数量/成本/增值税
+// 都会从平台结算里排除，避免同一单被结两次。
+func (s *Service) SetOrderSettleMode(ctx context.Context, platform, orderNo, mode string, user *model.User) error {
+	if strings.TrimSpace(orderNo) == "" {
+		return UserErrf("订单号不能为空")
+	}
+	return s.Store.Tx(ctx, func(tx *sql.Tx) error {
+		if _, err := s.Store.SetOrderSettleMode(ctx, tx, platform, orderNo, mode); err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				return UserErrf("找不到这个平台的这一单：%s", orderNo)
+			}
+			return err
+		}
+		action := "标记线下结算"
+		if mode == model.SettleModePlatform {
+			action = "恢复平台结算"
+		}
+		return s.Store.Log(ctx, tx, user, action, "ec_order", nil, orderNo)
 	})
 }
