@@ -53,11 +53,14 @@ func buildSummaryWorkbook(rep *service.SummaryReport, det *service.SummaryDetail
 		_ = f.SetCellValue(ws, c, h)
 	}
 	_ = f.SetCellStyle(ws, "A4", "K4", head)
+	// 列与列之间的等式写清楚，避免手算漏项
+	_ = f.SetCellValue(ws, "A3",
+		"列间等式：销售收入 = 货款 + 平台补贴 − 平台代付扣回；"+
+			"应结金额 = 销售收入 − 平台费用 − 供货成本 − 应交增值税")
 
 	r := 5
 	for _, it := range rep.Items {
 		t := it.Total
-		net := t.Net(rep.Rates)
 		_ = f.SetCellValue(ws, fmt.Sprintf("A%d", r), it.Label)
 		_ = f.SetCellValue(ws, fmt.Sprintf("B%d", r), model.PeriodLabel(it.Period))
 		_ = f.SetCellValue(ws, fmt.Sprintf("C%d", r), t.Qty.Float())
@@ -68,9 +71,12 @@ func buildSummaryWorkbook(rep *service.SummaryReport, det *service.SummaryDetail
 		// 平台费用列用"我方承担"口径（不含运费这类仅展示的费用）
 		_ = f.SetCellValue(ws, fmt.Sprintf("H%d", r), t.BorneFee.Float())
 		_ = f.SetCellValue(ws, fmt.Sprintf("I%d", r), t.VatPayable(rep.Rates).Float())
-		_ = f.SetCellValue(ws, fmt.Sprintf("J%d", r), net.Float())
+		// 应结金额写成公式：点单元格就能看到它是怎么算出来的，
+		// 也避免手算时漏项（用户就漏减过「平台代付扣回」157）。
+		_ = f.SetCellFormula(ws, fmt.Sprintf("J%d", r),
+			fmt.Sprintf("D%d-H%d-G%d-I%d", r, r, r, r))
 		if t.Revenue > 0 {
-			_ = f.SetCellValue(ws, fmt.Sprintf("K%d", r), model.Ratio(net, t.Revenue)/100)
+			_ = f.SetCellFormula(ws, fmt.Sprintf("K%d", r), fmt.Sprintf("J%d/D%d", r, r))
 		}
 		_ = f.SetCellStyle(ws, fmt.Sprintf("D%d", r), fmt.Sprintf("I%d", r), money)
 		_ = f.SetCellStyle(ws, fmt.Sprintf("J%d", r), fmt.Sprintf("J%d", r), netStyle)
@@ -87,7 +93,8 @@ func buildSummaryWorkbook(rep *service.SummaryReport, det *service.SummaryDetail
 	_ = f.SetCellValue(ws, fmt.Sprintf("G%d", r), tt.Cost.Float())
 	_ = f.SetCellValue(ws, fmt.Sprintf("H%d", r), tt.BorneFee.Float())
 	_ = f.SetCellValue(ws, fmt.Sprintf("I%d", r), tt.VatPayable(rep.Rates).Float())
-	_ = f.SetCellValue(ws, fmt.Sprintf("J%d", r), tt.Net(rep.Rates).Float())
+	_ = f.SetCellFormula(ws, fmt.Sprintf("J%d", r),
+		fmt.Sprintf("D%d-H%d-G%d-I%d", r, r, r, r))
 	_ = f.SetCellStyle(ws, fmt.Sprintf("A%d", r), fmt.Sprintf("I%d", r), bold)
 	_ = f.SetCellStyle(ws, fmt.Sprintf("J%d", r), fmt.Sprintf("J%d", r), netStyle)
 
