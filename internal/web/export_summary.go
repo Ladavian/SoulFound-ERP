@@ -46,24 +46,23 @@ func buildSummaryWorkbook(rep *service.SummaryReport, det *service.SummaryDetail
 		"税率：销项 %.0f%% · 进项 %.0f%% · 平台费专票 %.0f%%；运费不计入结算",
 		rep.Rates.Output, rep.Rates.Input, rep.Rates.Platform))
 
-	// 列顺序（后面的列都由前面的列用公式算出来）：
-	//   A 平台 B 账期 C 销量 D 货款 E 平台补贴 F 平台代付扣回
+	// 列顺序（后面的列由前面的列用公式算出来，点单元格即可看到推导）：
+	//   A 平台 B 账期 C 销量
+	//   D 货款 E 平台补贴 F 平台代付扣回
 	//   G 销售收入 = D+E−F
-	//   H 供货成本 I 平台费用
-	//   J 销项税额 = G÷(1+销项率)×销项率
-	//   K 进项税额 = H÷(1+进项率)×进项率
-	//   L 平台费抵扣 = I÷(1+专票率)×专票率
-	//   M 应交增值税 = J−K−L
-	//   N 应结金额 = G−I−H−M
-	//   O 毛利率 = N÷G
+	//   H 供货成本 I 平台费用（承担）
+	//   J 增值税抵扣 = I/(1+专票率)×专票率
+	//   K 应交增值税 = (销项 − 进项 − 抵扣)，销项/进项在这里就地算，
+	//                 不再单列两列（用户要求首页不要放这些中间量）
+	//   L 应结金额 = D+E−F−H−I−K   ← 把平台代付扣回显式写进去
+	//   M 毛利率 = L/G
 	heads := []string{"平台", "账期", "销量", "货款", "平台补贴", "平台代付扣回",
-		"销售收入", "供货成本", "平台费用",
-		"销项税额", "进项税额", "平台费抵扣", "应交增值税", "应结金额", "毛利率"}
+		"销售收入", "供货成本", "平台费用", "增值税抵扣", "应交增值税", "应结金额", "毛利率"}
 	for i, h := range heads {
 		c, _ := excelize.CoordinatesToCellName(i+1, 4)
 		_ = f.SetCellValue(ws, c, h)
 	}
-	_ = f.SetCellStyle(ws, "A4", "O4", head)
+	_ = f.SetCellStyle(ws, "A4", "M4", head)
 	// 列与列之间的等式写清楚，避免手算漏项
 	_ = f.SetCellValue(ws, "A3",
 		"列间等式：销售收入 = 货款 + 平台补贴 − 平台代付扣回；"+
@@ -78,8 +77,7 @@ func buildSummaryWorkbook(rep *service.SummaryReport, det *service.SummaryDetail
 		_ = f.SetCellValue(ws, fmt.Sprintf("D%d", r), t.Goods.Float())
 		_ = f.SetCellValue(ws, fmt.Sprintf("E%d", r), t.Subsidy.Float())
 		_ = f.SetCellValue(ws, fmt.Sprintf("F%d", r), -t.Advance.Float())
-		// 下面这些列全部用公式互相引用，改一个数就看得出影响，
-		// 也能避免手算漏项（用户就漏减过「平台代付扣回」）。
+		// 销售收入与后面所有列都用公式互相引用
 		_ = f.SetCellFormula(ws, fmt.Sprintf("G%d", r), fmt.Sprintf("D%d+E%d-F%d", r, r, r))
 		_ = f.SetCellValue(ws, fmt.Sprintf("H%d", r), t.Cost.Float())
 		_ = f.SetCellValue(ws, fmt.Sprintf("I%d", r), t.BorneFee.Float())
@@ -87,19 +85,19 @@ func buildSummaryWorkbook(rep *service.SummaryReport, det *service.SummaryDetail
 		in := rep.Rates.Input / 100
 		plat := rep.Rates.Platform / 100
 		_ = f.SetCellFormula(ws, fmt.Sprintf("J%d", r),
-			fmt.Sprintf("G%d/(1+%g)*%g", r, out, out))
-		_ = f.SetCellFormula(ws, fmt.Sprintf("K%d", r),
-			fmt.Sprintf("H%d/(1+%g)*%g", r, in, in))
-		_ = f.SetCellFormula(ws, fmt.Sprintf("L%d", r),
 			fmt.Sprintf("I%d/(1+%g)*%g", r, plat, plat))
-		_ = f.SetCellFormula(ws, fmt.Sprintf("M%d", r), fmt.Sprintf("J%d-K%d-L%d", r, r, r))
-		_ = f.SetCellFormula(ws, fmt.Sprintf("N%d", r), fmt.Sprintf("G%d-I%d-H%d-M%d", r, r, r, r))
-		_ = f.SetCellFormula(ws, fmt.Sprintf("O%d", r), fmt.Sprintf("N%d/G%d", r, r))
+		// 销项/进项就地算，不单列；抵扣用 J 列
+		_ = f.SetCellFormula(ws, fmt.Sprintf("K%d", r),
+			fmt.Sprintf("G%d/(1+%g)*%g-H%d/(1+%g)*%g-J%d", r, out, out, r, in, in, r))
+		// 应结金额把平台代付扣回显式写进去，避免看起来像漏了
+		_ = f.SetCellFormula(ws, fmt.Sprintf("L%d", r),
+			fmt.Sprintf("D%d+E%d-F%d-H%d-I%d-K%d", r, r, r, r, r, r))
+		_ = f.SetCellFormula(ws, fmt.Sprintf("M%d", r), fmt.Sprintf("L%d/G%d", r, r))
 		_ = f.SetCellStyle(ws, fmt.Sprintf("D%d", r), fmt.Sprintf("F%d", r), money)
 		_ = f.SetCellStyle(ws, fmt.Sprintf("H%d", r), fmt.Sprintf("I%d", r), money)
-		_ = f.SetCellStyle(ws, fmt.Sprintf("J%d", r), fmt.Sprintf("M%d", r), money)
-		_ = f.SetCellStyle(ws, fmt.Sprintf("N%d", r), fmt.Sprintf("N%d", r), netStyle)
-		_ = f.SetCellStyle(ws, fmt.Sprintf("O%d", r), fmt.Sprintf("O%d", r), pct)
+		_ = f.SetCellStyle(ws, fmt.Sprintf("J%d", r), fmt.Sprintf("K%d", r), money)
+		_ = f.SetCellStyle(ws, fmt.Sprintf("L%d", r), fmt.Sprintf("L%d", r), netStyle)
+		_ = f.SetCellStyle(ws, fmt.Sprintf("M%d", r), fmt.Sprintf("M%d", r), pct)
 		r++
 	}
 	tt := rep.Total
@@ -112,36 +110,19 @@ func buildSummaryWorkbook(rep *service.SummaryReport, det *service.SummaryDetail
 	_ = f.SetCellValue(ws, fmt.Sprintf("H%d", r), tt.Cost.Float())
 	_ = f.SetCellValue(ws, fmt.Sprintf("I%d", r), tt.BorneFee.Float())
 	_ = f.SetCellFormula(ws, fmt.Sprintf("J%d", r),
-		fmt.Sprintf("G%d/(1+%g)*%g", r, rep.Rates.Output/100, rep.Rates.Output/100))
-	_ = f.SetCellFormula(ws, fmt.Sprintf("K%d", r),
-		fmt.Sprintf("H%d/(1+%g)*%g", r, rep.Rates.Input/100, rep.Rates.Input/100))
-	_ = f.SetCellFormula(ws, fmt.Sprintf("L%d", r),
 		fmt.Sprintf("I%d/(1+%g)*%g", r, rep.Rates.Platform/100, rep.Rates.Platform/100))
-	_ = f.SetCellFormula(ws, fmt.Sprintf("M%d", r), fmt.Sprintf("J%d-K%d-L%d", r, r, r))
-	_ = f.SetCellFormula(ws, fmt.Sprintf("N%d", r), fmt.Sprintf("G%d-I%d-H%d-M%d", r, r, r, r))
-	_ = f.SetCellStyle(ws, fmt.Sprintf("A%d", r), fmt.Sprintf("M%d", r), bold)
+	_ = f.SetCellFormula(ws, fmt.Sprintf("K%d", r),
+		fmt.Sprintf("G%d/(1+%g)*%g-H%d/(1+%g)*%g-J%d", r, rep.Rates.Output/100, rep.Rates.Output/100,
+			r, rep.Rates.Input/100, rep.Rates.Input/100, r))
+	_ = f.SetCellFormula(ws, fmt.Sprintf("L%d", r),
+		fmt.Sprintf("D%d+E%d-F%d-H%d-I%d-K%d", r, r, r, r, r, r))
+	_ = f.SetCellStyle(ws, fmt.Sprintf("A%d", r), fmt.Sprintf("K%d", r), bold)
 	_ = f.SetCellStyle(ws, fmt.Sprintf("D%d", r), fmt.Sprintf("F%d", r), bold)
 	_ = f.SetCellStyle(ws, fmt.Sprintf("H%d", r), fmt.Sprintf("I%d", r), bold)
-	_ = f.SetCellStyle(ws, fmt.Sprintf("N%d", r), fmt.Sprintf("N%d", r), netStyle)
+	_ = f.SetCellStyle(ws, fmt.Sprintf("L%d", r), fmt.Sprintf("L%d", r), netStyle)
 
-	// 增值税计算过程
-	r += 2
-	_ = f.SetCellValue(ws, fmt.Sprintf("A%d", r), "增值税计算过程（合计）")
-	_ = f.SetCellStyle(ws, fmt.Sprintf("A%d", r), fmt.Sprintf("A%d", r), head)
-	r++
-	steps := [][2]string{
-		{"销项税额（销售收入 ÷ (1+销项率) × 销项率）", fmt.Sprintf("+%.2f", tt.OutputVat(rep.Rates).Float())},
-		{"减：进项税额（供货成本 ÷ (1+进项率) × 进项率）", fmt.Sprintf("-%.2f", tt.InputVat(rep.Rates).Float())},
-		{"减：平台费抵扣（可抵扣费用 ÷ (1+专票率) × 专票率）", fmt.Sprintf("-%.2f", tt.PlatformVat(rep.Rates).Float())},
-		{"应交增值税", fmt.Sprintf("%.2f", tt.VatPayable(rep.Rates).Float())},
-	}
-	for _, s2 := range steps {
-		_ = f.SetCellValue(ws, fmt.Sprintf("A%d", r), s2[0])
-		_ = f.SetCellValue(ws, fmt.Sprintf("D%d", r), s2[1])
-		r++
-	}
 	_ = f.SetColWidth(ws, "A", "A", 40)
-	_ = f.SetColWidth(ws, "B", "O", 15)
+	_ = f.SetColWidth(ws, "B", "M", 15)
 
 	// ---------------- 表2 平台费用矩阵 ----------------
 	// 一行一个费用类型，一列一个平台，最后合计 ——
@@ -207,6 +188,27 @@ func buildSummaryWorkbook(rep *service.SummaryReport, det *service.SummaryDetail
 		_ = f.SetCellStyle(ws2, fmt.Sprintf("A%d", row), fmt.Sprintf("B%d", row), bold)
 	}
 	_ = f.SetColWidth(ws2, "A", "A", 30)
+	// 增值税计算过程（合计）——用户要求放在平台费用汇总里，首页不放这些中间量
+	{
+		vr := row + 3
+		_ = f.SetCellValue(ws2, fmt.Sprintf("A%d", vr), "增值税计算过程（合计）")
+		_ = f.SetCellStyle(ws2, fmt.Sprintf("A%d", vr), fmt.Sprintf("A%d", vr), head)
+		vr++
+		tt2 := rep.Total
+		steps := [][2]string{
+			{"销项税额 = 销售收入 ÷ (1+销项率) × 销项率", fmt.Sprintf("%.2f", tt2.OutputVat(rep.Rates).Float())},
+			{"减：进项税额 = 供货成本 ÷ (1+进项率) × 进项率", fmt.Sprintf("-%.2f", tt2.InputVat(rep.Rates).Float())},
+			{"减：平台费抵扣 = 平台费用 ÷ (1+专票率) × 专票率", fmt.Sprintf("-%.2f", tt2.PlatformVat(rep.Rates).Float())},
+			{"应交增值税", fmt.Sprintf("%.2f", tt2.VatPayable(rep.Rates).Float())},
+		}
+		for _, st := range steps {
+			_ = f.SetCellValue(ws2, fmt.Sprintf("A%d", vr), st[0])
+			_ = f.SetCellValue(ws2, fmt.Sprintf("B%d", vr), st[1])
+			vr++
+		}
+		_ = f.SetCellValue(ws2, fmt.Sprintf("A%d", vr), "（明细见「对账校验」表与该平台的账单费用明细）")
+	}
+
 	_ = f.SetColWidth(ws2, "B", "Z", 16)
 
 	// ---------------- 表3 订单明细 ----------------
