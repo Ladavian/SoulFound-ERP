@@ -117,10 +117,34 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # 关掉 provenance / SBOM：它们会让每次构建多出 2 个镜像版本，
+          # 自托管用不上，版本数还会翻倍。
+          provenance: false
+          sbom: false
           build-args: |
             VERSION=${{ steps.ver.outputs.value }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # 只保留最近 5 次构建的镜像，避免版本无限增长。
+      #
+      # 每次构建会产生 3 个版本（1 个多架构清单 + 2 个架构镜像，
+      # 关了 provenance/SBOM 之后是 3 个），所以保留 15 个版本 ≈ 最近 5 次。
+      #
+      # 注意：删除用户命名空间下的包版本需要 delete:packages 权限，
+      # GITHUB_TOKEN 通常没有。要真正生效，请在仓库里加一个
+      # PACKAGES_TOKEN 机密（PAT，勾选 delete:packages + read:packages）。
+      # 没配也不影响构建：这一步会跳过并给出警告。
+      - name: 清理旧镜像（保留最近 5 次）
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: soulfound-erp
+          package-type: container
+          min-versions-to-keep: 15
+          ignore-versions: '^(latest|main)$'
+          token: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: 汇总
         run: |
