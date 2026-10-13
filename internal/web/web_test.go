@@ -3727,3 +3727,27 @@ func TestSummaryExportFeeExcludesShipping(t *testing.T) {
 		t.Errorf("表2 里应有「仅展示」区块\n内容: %s", joined)
 	}
 }
+
+// TestStatementExportFileName 导出文件名沿用 PV销售对账表Vol.YYMM 的命名。
+//
+// 用户原来的习惯：PV销售对账表Vol.2608（2608 = 26 年 8 月）。
+// 多账期写成区间；单平台结算单在后面带平台名（并清掉斜杠等非法字符）。
+func TestStatementExportFileName(t *testing.T) {
+	cases := []struct {
+		periods  []string
+		platform string
+		want     string
+	}{
+		{[]string{"202609"}, "", "PV销售对账表Vol.2609.xlsx"},
+		{[]string{"202608", "202609"}, "", "PV销售对账表Vol.2608-2609.xlsx"},
+		{[]string{"202609", "202608"}, "", "PV销售对账表Vol.2608-2609.xlsx"}, // 顺序无关
+		{[]string{"202609"}, "淘宝 / 天猫", "PV销售对账表Vol.2609-淘宝天猫.xlsx"},
+		{[]string{"202606", "202607", "202608"}, "", "PV销售对账表Vol.2606-2608.xlsx"},
+		{nil, "", "PV销售对账表.xlsx"},
+	}
+	for _, c := range cases {
+		if got := statementFileName(c.periods, c.platform); got != c.want {
+			t.Errorf("statementFileName(%v, %q) = %q，期望 %q", c.periods, c.platform, got, c.want)
+		}
+	}
+}

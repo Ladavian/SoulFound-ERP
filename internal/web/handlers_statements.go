@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 
 	"icewine-erp/internal/model"
@@ -569,17 +570,66 @@ func (s *Server) handleSettlementExport(w http.ResponseWriter, r *http.Request) 
 		s.fail(w, r, "/ecommerce/settlement", err)
 		return
 	}
-	namePeriod := rep.Period
-	if len(sel) > 1 {
-		namePeriod = sel[len(sel)-1] + "_" + sel[0]
-	}
-	name := fmt.Sprintf("结算单-%s-%s.xlsx", platform, model.PeriodLabel(namePeriod))
+	name := statementFileName(sel, model.EcPlatformLabel(platform))
 	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 	w.Header().Set("Content-Disposition", "attachment; filename*=UTF-8''"+urlEncode(name))
 	w.Header().Set("Cache-Control", "no-store")
 	if err := f.Write(w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+// statementFileName 对账单导出文件名。
+//
+// 命名沿用用户原来的习惯：PV销售对账表Vol.2609
+// 其中 2609 = 26 年 9 月；多账期写成区间 Vol.2608-2609。
+// 传 platform 时在后面加上平台名，便于区分单平台结算单。
+func statementFileName(periods []string, platformLabel string) string {
+	uniq := map[string]bool{}
+	var ps []string
+	for _, p := range periods {
+		if p == "" || uniq[p] {
+			continue
+		}
+		uniq[p] = true
+		ps = append(ps, p)
+	}
+	sort.Strings(ps) // 区间按时间升序，2608-2609 更自然
+	part := ""
+	switch len(ps) {
+	case 0:
+		part = ""
+	case 1:
+		part = yymm(ps[0])
+	default:
+		part = yymm(ps[0]) + "-" + yymm(ps[len(ps)-1])
+	}
+	name := "PV销售对账表"
+	if part != "" {
+		name += "Vol." + part
+	}
+	if platformLabel != "" {
+		name += "-" + safeFileName(platformLabel)
+	}
+	return name + ".xlsx"
+}
+
+// safeFileName 去掉文件名里不能用的字符。
+//
+// 平台名里有「淘宝 / 天猫」这种带斜杠和空格的写法，
+// 斜杠会被当成路径分隔符，必须清掉。
+func safeFileName(s string) string {
+	r := strings.NewReplacer("/", "", "\\", "", ":", "", "*", "", "?", "",
+		"\"", "", "<", "", ">", "", "|", "", " ", "")
+	return r.Replace(s)
+}
+
+// yymm 202609 → 2609（26 年 9 月）。
+func yymm(period string) string {
+	if len(period) == 6 {
+		return period[2:]
+	}
+	return period
 }
 
 // urlEncode 文件名编码（Content-Disposition 用）。
@@ -736,7 +786,8 @@ func (s *Server) handleSummaryExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-	w.Header().Set("Content-Disposition", "attachment; filename*=UTF-8''"+urlEncode("总对账单.xlsx"))
+	fname := statementFileName(periodsOfKeys(keys), "")
+	w.Header().Set("Content-Disposition", "attachment; filename*=UTF-8''"+urlEncode(fname))
 	w.Header().Set("Cache-Control", "no-store")
 	if err := f.Write(w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
