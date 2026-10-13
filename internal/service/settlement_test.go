@@ -267,10 +267,14 @@ func TestShippingNotInVatCredit(t *testing.T) {
 	if vat < 61.5 || vat > 61.7 {
 		t.Errorf("应交增值税应约 61.60，实际 %.2f（运费被算进抵扣就会偏小）", vat)
 	}
-	// 应结 = 1130 − 565 − 61.60 = 503.40
+	// 应结（上游该打给我的利润）
+	//   = 销售收入 − 平台费用（承担的 60）− 供货成本 − 应交增值税
+	//   = 1130 − 60 − 565 − 61.60 = 443.40
+	// 注意必须扣平台费用：钱先进平台再进上游账户，
+	// 平台打款前就把费用扣掉了，漏减会把利润算多。
 	net := total.Net(rep.Rates).Float()
-	if net < 503.3 || net > 503.5 {
-		t.Errorf("应结金额应约 503.40，实际 %.2f", net)
+	if net < 443.3 || net > 443.5 {
+		t.Errorf("应结金额应约 443.40（已扣承担的平台费用 60），实际 %.2f", net)
 	}
 }
 
@@ -574,4 +578,322 @@ func TestRefundedOrderCostUsesEffectiveQty(t *testing.T) {
 	if total.Cost != model.MustMoney("420") {
 		t.Errorf("供货成本应为 420（退款单不计成本），实际 %s", total.Cost)
 	}
+}
+
+// TestSettlementFormulaMatchesRealData 用真实账单数字钉死结算公式。
+//
+// 用户核对时发现"货款 − 供货成本 − 平台费用 − 应交增值税"对不上，
+// 根因是 Net 漏减了平台费用——店铺是上游的，钱先进平台再进上游账户，
+// 平台打款前就把费用扣掉了，所以必须减掉，否则利润被算多。
+//
+// 下面两组数字全部来自用户的真实账单，逐项对齐，
+// 任何人改动结算公式都会在这里失败。
+func TestSettlementFormulaMatchesRealData(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+	admin := adminUser(t, svc)
+	settings, _ := svc.Store.Settings(ctx)
+
+	// ---------------- 京东 2026-09 ----------------
+	// 货款 575.00（2 单）；费用：佣金 31.62 + 交易服务费 3.45 + 保险 3.06 = 38.13
+	// 供货成本 295.00（140 + 155）；应交增值税 30.05
+	// 应结 = 575.00 − 38.13 − 295.00 − 30.05 = 211.82
+	jdP1, _ := svc.Store.CreateProduct(ctx, &model.Product{
+		SKU: "JD-VQA", Name: "维达尔冰白200ML", Unit: "瓶", IsActive: true, IsWine: true,
+		EcCost: model.MustMoney("140")})
+	jdP2, _ := svc.Store.CreateProduct(ctx, &model.Product{
+		SKU: "JD-CAB", Name: "品丽珠冰红200ML", Unit: "瓶", IsActive: true, IsWine: true,
+		EcCost: model.MustMoney("155")})
+	_, _ = svc.BindEcLink(ctx, model.EcJD, "10215605168506", "", "", jdP1, admin)
+	_, _ = svc.BindEcLink(ctx, model.EcJD, "10215605594506", "", "", jdP2, admin)
+	if _, err := svc.ImportEcOrders(ctx, model.EcJD, []EcOrderRow{
+		{OrderNo: "3600482011154052", SubOrderNo: "3600482011154052", Title: "维达尔冰白200ML",
+			EcProductID: "10215605168506", Qty: "1", PaidAmt: "279", ItemStatus: "完成",
+			RefundStatus: "没有申请退款", CreatedAt: "2026-08-24 20:05"},
+		{OrderNo: "3599406003546153", SubOrderNo: "3599406003546153", Title: "品丽珠冰红200ML",
+			EcProductID: "10215605594506", Qty: "1", PaidAmt: "296", ItemStatus: "完成",
+			RefundStatus: "没有申请退款", CreatedAt: "2026-08-23 22:32"},
+	}, admin); err != nil {
+		t.Fatal(err)
+	}
+	// 按「账单类型」分组导入：同一类型是一份账单、里面多行明细。
+	// （拆成多次同类型导入会互相覆盖，这是我第一版测试写错的地方。）
+	importByKind := func(platform, period string, items []model.EcStatementItem) {
+		groups := map[string][]model.EcStatementItem{}
+		var order []string
+		for _, it := range items {
+			if _, ok := groups[it.Kind]; !ok {
+				order = append(order, it.Kind)
+			}
+			groups[it.Kind] = append(groups[it.Kind], it)
+		}
+		for _, k := range order {
+			list := groups[k]
+			st := &model.EcStatement{Platform: platform, Period: period, Kind: k,
+				Source: model.StmtSourceBill, Direction: list[0].Direction}
+			if err := svc.ImportStatement(ctx, st, list, admin); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	importByKind(model.EcJD, "202609", []model.EcStatementItem{
+		{Period: "202609", Kind: model.StmtGoodsPayment, Direction: "income",
+			OrderNo: "3600482011154052", SubOrderNo: "3600482011154052",
+			EcProductID: "10215605168506", Qty: model.MustQty("1"), Amount: model.MustMoney("279")},
+		{Period: "202609", Kind: model.StmtGoodsPayment, Direction: "income",
+			OrderNo: "3599406003546153", SubOrderNo: "3599406003546153",
+			EcProductID: "10215605594506", Qty: model.MustQty("1"), Amount: model.MustMoney("296")},
+		{Period: "202609", Kind: "京东·佣金", Direction: "expense",
+			OrderNo: "3600482011154052", SubOrderNo: "3600482011154052", Amount: model.MustMoney("15.34")},
+		{Period: "202609", Kind: "京东·佣金", Direction: "expense",
+			OrderNo: "3599406003546153", SubOrderNo: "3599406003546153", Amount: model.MustMoney("16.28")},
+		{Period: "202609", Kind: "京东·交易服务费", Direction: "expense",
+			OrderNo: "3600482011154052", SubOrderNo: "3600482011154052", Amount: model.MustMoney("1.67")},
+		{Period: "202609", Kind: "京东·交易服务费", Direction: "expense",
+			OrderNo: "3599406003546153", SubOrderNo: "3599406003546153", Amount: model.MustMoney("1.78")},
+		{Period: "202609", Kind: "京东·商品保险服务费", Direction: "expense",
+			OrderNo: "3600482011154052", SubOrderNo: "3600482011154052", Amount: model.MustMoney("1.53")},
+		{Period: "202609", Kind: "京东·商品保险服务费", Direction: "expense",
+			OrderNo: "3599406003546153", SubOrderNo: "3599406003546153", Amount: model.MustMoney("1.53")},
+	})
+	jd, err := svc.BuildSettlement(ctx, model.EcJD, "202609", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jt := jd.Total
+	checkMoney(t, "京东·货款", jt.Goods, "575.00")
+	checkMoney(t, "京东·平台费用（承担）", jt.BorneFee, "38.13")
+	checkMoney(t, "京东·供货成本", jt.Cost, "295.00")
+	checkMoney(t, "京东·应交增值税", jt.VatPayable(jd.Rates), "30.05")
+	// 关键：应结 = 货款 − 平台费用 − 供货成本 − 应交增值税
+	checkMoney(t, "京东·应结金额", jt.Net(jd.Rates), "211.82")
+
+	// ---------------- 淘宝 2026-08 ----------------
+	// 货款 5737.90 + 补贴 39.02 − 垫支 609.00 = 销售收入 5167.92
+	// 平台费用：承担 345.39 + 运费 231.90（运费只展示）
+	// 下面用单件商品（成本 140）验证公式本身；真实 8 月是 22 件混合品，
+	// 供货成本 2810.00，应交增值税 251.71，
+	// 应结 = 5167.92 − 345.39 − 2810.00 − 251.71 = 1760.82
+	tbP, _ := svc.Store.CreateProduct(ctx, &model.Product{
+		SKU: "TB-1", Name: "淘宝测试品", Unit: "瓶", IsActive: true, IsWine: true,
+		EcCost: model.MustMoney("140")})
+	_, _ = svc.BindEcLink(ctx, model.EcTaobao, "TB-X", "", "", tbP, admin)
+	if _, err := svc.ImportEcOrders(ctx, model.EcTaobao, []EcOrderRow{{
+		OrderNo: "TB-ORD-1", SubOrderNo: "TB-ORD-1", Title: "淘宝测试品",
+		EcProductID: "TB-X", Qty: "1", PaidAmt: "5737.90", ItemStatus: "交易成功",
+		RefundStatus: "没有申请退款", CreatedAt: "2026-08-10 10:00",
+	}}, admin); err != nil {
+		t.Fatal(err)
+	}
+	tbItems := []model.EcStatementItem{
+		{Period: "202608", Kind: model.StmtGoodsPayment, Direction: "income",
+			OrderNo: "TB-ORD-1", SubOrderNo: "TB-ORD-1", EcProductID: "TB-X",
+			Qty: model.MustQty("1"), Amount: model.MustMoney("5737.90")},
+		{Period: "202608", Kind: model.StmtCoinCoop, Direction: "income",
+			OrderNo: "TB-ORD-1", SubOrderNo: "TB-ORD-1", Amount: model.MustMoney("39.02")},
+		{Period: "202608", Kind: model.StmtGoodsPayment, Direction: "income",
+			OrderNo: "TB-ORD-1", SubOrderNo: "TB-ORD-1",
+			Qty: model.MustQty("0"), Amount: 0,
+			Advance: model.MustMoney("609.00")},
+		{Period: "202608", Kind: model.StmtBaseService, Direction: "expense", Amount: model.MustMoney("345.39")},
+		{Period: "202608", Kind: model.StmtShipping, Direction: "expense", Amount: model.MustMoney("231.90")},
+	}
+	importByKind(model.EcTaobao, "202608", tbItems)
+	tb, err := svc.BuildSettlement(ctx, model.EcTaobao, "202608", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tt := tb.Total
+	checkMoney(t, "淘宝·销售收入", tt.Revenue, "5167.92")
+	checkMoney(t, "淘宝·平台费用（承担）", tt.BorneFee, "345.39")
+	checkMoney(t, "淘宝·仅展示运费", tt.ListedFee, "231.90")
+	checkMoney(t, "淘宝·供货成本", tt.Cost, "140.00")
+	// 应交增值税 = 销项 5167.92/1.13×13% − 进项 140/1.13×13% − 平台费抵扣 345.39/1.06×6%
+	//            = 594.54 − 16.11 − 19.55 = 558.88
+	checkMoney(t, "淘宝·应交增值税", tt.VatPayable(tb.Rates), "558.88")
+	// 关键：应结 = 销售收入 − 平台费用 − 供货成本 − 应交增值税
+	//            = 5167.92 − 345.39 − 140.00 − 558.88 = 4123.65
+	checkMoney(t, "淘宝·应结金额", tt.Net(tb.Rates), "4123.65")
+}
+
+// checkMoney 按"分"比较金额。
+//
+// 增值税这类要除以 1.13/1.06 的数，内部精度是 1/10000，
+// 30.0487 显示成 30.05 是对的；用严格相等反而会误报，
+// 所以这里比到分。
+func checkMoney(t *testing.T, name string, got model.Money, want string) {
+	t.Helper()
+	w := model.MustMoney(want)
+	diff := got - w
+	if diff < 0 {
+		diff = -diff
+	}
+	if diff > 100 { // 1 分 = 100（Money 精度 1/10000）
+		t.Errorf("%s 应为 %s，实际 %s（差 %s）", name, w, got, diff)
+	}
+}
+
+// TestSummaryRowFormulas 第一页（各平台结算）每一列的公式都要成立。
+//
+// 用户要求：不只是京东，整页的计算公式都要核对。
+// 这里用"公式不变量"的方式钉死——不管底层数据是什么，
+// 下面这些等式必须恒成立；任何一处口径改动都会在这里失败。
+//
+//	销量     = 有效数量合计（退款按实际成交折算）
+//	销售收入 = 货款 + 平台补贴 − 平台代付扣回
+//	供货成本 = 有效数量 × 电商成本
+//	平台费用 = 我方承担的费用（不含仅展示的运费）
+//	应交增值税 = 销项税额 − 进项税额 − 平台费抵扣
+//	应结金额 = 销售收入 − 平台费用 − 供货成本 − 应交增值税
+//	毛利率   = 应结金额 ÷ 销售收入
+//	合计行   = 各平台行逐列相加
+func TestSummaryRowFormulas(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+	admin := adminUser(t, svc)
+
+	// 淘宝：货款 1000 + 补贴 50 − 代付扣回 200；成本 2 件 × 140；费用 30（承担）+ 运费 10
+	tbP, _ := svc.Store.CreateProduct(ctx, &model.Product{
+		SKU: "F-TB", Name: "淘宝公式品", Unit: "瓶", IsActive: true, IsWine: true,
+		EcCost: model.MustMoney("140")})
+	_, _ = svc.BindEcLink(ctx, model.EcTaobao, "F-TB-1", "", "", tbP, admin)
+	if _, err := svc.ImportEcOrders(ctx, model.EcTaobao, []EcOrderRow{{
+		OrderNo: "F-TB-O1", SubOrderNo: "F-TB-O1", Title: "淘宝公式品",
+		EcProductID: "F-TB-1", Qty: "2", PaidAmt: "1000", ItemStatus: "交易成功",
+		RefundStatus: "没有申请退款", CreatedAt: "2026-09-10 10:00",
+	}}, admin); err != nil {
+		t.Fatal(err)
+	}
+	tbItems := []model.EcStatementItem{
+		{Period: "202609", Kind: model.StmtGoodsPayment, Direction: "income",
+			OrderNo: "F-TB-O1", SubOrderNo: "F-TB-O1", EcProductID: "F-TB-1",
+			Qty: model.MustQty("2"), Amount: model.MustMoney("1000")},
+		{Period: "202609", Kind: model.StmtCoinCoop, Direction: "income",
+			OrderNo: "F-TB-O1", SubOrderNo: "F-TB-O1", Amount: model.MustMoney("50")},
+		{Period: "202609", Kind: model.StmtGoodsPayment, Direction: "income",
+			OrderNo: "F-TB-O1", SubOrderNo: "F-TB-O1", Qty: model.MustQty("0"),
+			Amount: 0, Advance: model.MustMoney("200")},
+		{Period: "202609", Kind: model.StmtBaseService, Direction: "expense",
+			OrderNo: "F-TB-O1", SubOrderNo: "F-TB-O1", Amount: model.MustMoney("30")},
+		{Period: "202609", Kind: model.StmtShipping, Direction: "expense",
+			Amount: model.MustMoney("10")},
+	}
+	groups := map[string][]model.EcStatementItem{}
+	var order []string
+	for _, it := range tbItems {
+		if _, ok := groups[it.Kind]; !ok {
+			order = append(order, it.Kind)
+		}
+		groups[it.Kind] = append(groups[it.Kind], it)
+	}
+	for _, k := range order {
+		list := groups[k]
+		if err := svc.ImportStatement(ctx, &model.EcStatement{
+			Platform: model.EcTaobao, Period: "202609", Kind: k,
+			Source: model.StmtSourceBill, Direction: list[0].Direction}, list, admin); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// 京东：货款 500；成本 2 件 × 155；费用 20
+	jdP, _ := svc.Store.CreateProduct(ctx, &model.Product{
+		SKU: "F-JD", Name: "京东公式品", Unit: "瓶", IsActive: true, IsWine: true,
+		EcCost: model.MustMoney("155")})
+	_, _ = svc.BindEcLink(ctx, model.EcJD, "F-JD-1", "", "", jdP, admin)
+	if _, err := svc.ImportEcOrders(ctx, model.EcJD, []EcOrderRow{{
+		OrderNo: "F-JD-O1", SubOrderNo: "F-JD-O1", Title: "京东公式品",
+		EcProductID: "F-JD-1", Qty: "2", PaidAmt: "500", ItemStatus: "完成",
+		RefundStatus: "没有申请退款", CreatedAt: "2026-09-11 10:00",
+	}}, admin); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.ImportStatement(ctx, &model.EcStatement{
+		Platform: model.EcJD, Period: "202609", Kind: model.StmtGoodsPayment,
+		Source: model.StmtSourceBill, Direction: "income"}, []model.EcStatementItem{{
+		Period: "202609", Kind: model.StmtGoodsPayment, Direction: "income",
+		OrderNo: "F-JD-O1", SubOrderNo: "F-JD-O1", EcProductID: "F-JD-1",
+		Qty: model.MustQty("2"), Amount: model.MustMoney("500"),
+	}}, admin); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.ImportStatement(ctx, &model.EcStatement{
+		Platform: model.EcJD, Period: "202609", Kind: "京东·佣金",
+		Source: model.StmtSourceBill, Direction: "expense"}, []model.EcStatementItem{{
+		Period: "202609", Kind: "京东·佣金", Direction: "expense",
+		OrderNo: "F-JD-O1", SubOrderNo: "F-JD-O1", Amount: model.MustMoney("20"),
+	}}, admin); err != nil {
+		t.Fatal(err)
+	}
+
+	settings, _ := svc.Store.Settings(ctx)
+	rep, err := svc.BuildSummary(ctx, []store.StatementKey{
+		{Platform: model.EcTaobao, Period: "202609"},
+		{Platform: model.EcJD, Period: "202609"},
+	}, settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Items) != 2 {
+		t.Fatalf("应有 2 个平台行，实际 %d", len(rep.Items))
+	}
+
+	// 每一行的公式不变量
+	var sumQty model.Qty
+	var sumRev, sumSub, sumAdv, sumCost, sumFee, sumVat, sumNet model.Money
+	for _, it := range rep.Items {
+		s := it.Total
+		r := rep.Rates
+		name := it.Label + " "
+		// 销售收入 = 货款 + 补贴 − 代付扣回
+		checkMoney(t, name+"销售收入公式",
+			s.Revenue, (s.Goods + s.Subsidy - s.Advance).String())
+		// 应交增值税 = 销项 − 进项 − 平台费抵扣
+		checkMoney(t, name+"增值税公式",
+			s.VatPayable(r),
+			(s.OutputVat(r) - s.InputVat(r) - s.PlatformVat(r)).String())
+		// 应结 = 销售收入 − 平台费用 − 供货成本 − 应交增值税
+		checkMoney(t, name+"应结公式",
+			s.Net(r), (s.Revenue - s.BorneFee - s.Cost - s.VatPayable(r)).String())
+		// 毛利率 = 应结 ÷ 销售收入（Ratio/Margin 都是百分数，如 88.52）
+		if s.Revenue != 0 {
+			want := model.Ratio(s.Net(r), s.Revenue)
+			if got := s.Margin(r); got < want-0.0001 || got > want+0.0001 {
+				t.Errorf("%s毛利率应为 %.4f%%，实际 %.4f%%", name, want, got)
+			}
+		}
+		// 费用拆分：账单全部费用 = 承担 + 仅展示
+		checkMoney(t, name+"费用拆分",
+			s.PlatformFee, (s.BorneFee + s.ListedFee).String())
+		sumQty += s.Qty
+		sumRev += s.Revenue
+		sumSub += s.Subsidy
+		sumAdv += s.Advance
+		sumCost += s.Cost
+		sumFee += s.BorneFee
+		sumVat += s.VatPayable(r)
+		sumNet += s.Net(r)
+	}
+	// 合计行 = 各平台行逐列相加
+	tt := rep.Total
+	checkMoney(t, "合计·销量", model.Money(sumQty), model.Money(tt.Qty).String())
+	checkMoney(t, "合计·销售收入", tt.Revenue, sumRev.String())
+	checkMoney(t, "合计·平台补贴", tt.Subsidy, sumSub.String())
+	checkMoney(t, "合计·代付扣回", tt.Advance, sumAdv.String())
+	checkMoney(t, "合计·供货成本", tt.Cost, sumCost.String())
+	checkMoney(t, "合计·平台费用", tt.BorneFee, sumFee.String())
+	checkMoney(t, "合计·应交增值税", tt.VatPayable(rep.Rates), sumVat.String())
+	checkMoney(t, "合计·应结金额", tt.Net(rep.Rates), sumNet.String())
+
+	// 具体数字（手工核对过的期望值）
+	tb := rep.Items[0].Total // 淘宝
+	if rep.Items[0].Platform != model.EcTaobao {
+		tb = rep.Items[1].Total
+	}
+	checkMoney(t, "淘宝·销售收入", tb.Revenue, "850.00") // 1000 + 50 − 200
+	checkMoney(t, "淘宝·供货成本", tb.Cost, "280.00")    // 2 × 140
+	checkMoney(t, "淘宝·平台费用", tb.BorneFee, "30.00") // 不含运费 10
+	checkMoney(t, "淘宝·仅展示", tb.ListedFee, "10.00")
+	// 应结 = 850 − 30 − 280 − 增值税
+	checkMoney(t, "淘宝·应结", tb.Net(rep.Rates),
+		(tb.Revenue - tb.BorneFee - tb.Cost - tb.VatPayable(rep.Rates)).String())
 }

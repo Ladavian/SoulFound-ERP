@@ -539,6 +539,7 @@ type ItemDetailRow struct {
 	Title     string
 	Qty       model.Qty
 	Amount    model.Money
+	Refund    model.Money // 退款金额（自动退差价也在内）
 	Source    string
 	FileName  string
 }
@@ -591,7 +592,8 @@ func (s *Service) BuildSummaryDetail(ctx context.Context, keys []store.Statement
 			det.Items = append(det.Items, ItemDetailRow{
 				Platform: k.Platform, Period: it.Period, Kind: it.Kind, Direction: it.Direction,
 				OrderNo: it.OrderNo, EcID: it.EcProductID, Title: it.Title,
-				Qty: it.Qty, Amount: it.Amount, Source: source, FileName: fileName,
+				Qty: it.Qty, Amount: it.Amount, Refund: it.RefundAmount,
+				Source: source, FileName: fileName,
 			})
 		}
 	}

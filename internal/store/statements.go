@@ -849,3 +849,56 @@ func effectiveQty(qty model.Qty, amount, refund model.Money) model.Qty {
 	f := float64(qty.Float()) * (float64(amount) / float64(total))
 	return model.MustQty(strconv.FormatFloat(f, 'f', 3, 64))
 }
+
+// RefundedOrder 有退款的货款行（含自动退差价）。
+//
+// 用户问"退款 90 的那单怎么没看到"：整单退掉后收入为 0、
+// 成本按有效数量折算也是 0，于是从结算里"消失"了。
+// 这类单必须单独列出来，否则对不上平台账单。
+type RefundedOrder struct {
+	Period      string
+	OrderNo     string
+	Qty         model.Qty // 账单原始数量
+	Amount      model.Money
+	Refund      model.Money
+	EffQty      model.Qty // 折算后的有效数量
+	EcProductID string
+	Title       string
+}
+
+// RefundedOrders 列出这些账期里有退款的货款行。
+func (s *Store) RefundedOrders(ctx context.Context, platform string, periods []string) ([]RefundedOrder, error) {
+	if len(periods) == 0 {
+		return nil, nil
+	}
+	ph := make([]string, 0, len(periods))
+	args := []any{platform, model.StmtGoodsPayment}
+	for _, p := range periods {
+		ph = append(ph, "?")
+		args = append(args, p)
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT si.period, si.order_no, COALESCE(si.qty,0), si.amount,
+		        COALESCE(si.refund_amount,0), si.ec_product_id, si.title
+		   FROM ec_statement_items si
+		  WHERE si.platform = ? AND si.kind = ?
+		    AND si.refund_amount > 0
+		    AND si.period IN (`+strings.Join(ph, ",")+`)
+		  ORDER BY si.period, si.order_no`,
+		args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []RefundedOrder
+	for rows.Next() {
+		var r RefundedOrder
+		if err := rows.Scan(&r.Period, &r.OrderNo, &r.Qty, &r.Amount, &r.Refund,
+			&r.EcProductID, &r.Title); err != nil {
+			return nil, err
+		}
+		r.EffQty = effectiveQty(r.Qty, r.Amount, r.Refund)
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}

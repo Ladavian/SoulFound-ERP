@@ -228,12 +228,13 @@ func buildSummaryWorkbook(rep *service.SummaryReport, det *service.SummaryDetail
 	_, _ = f.NewSheet(ws4)
 	_ = f.SetCellValue(ws4, "A1", "账单费用明细（平台账单原始每一行）")
 	_ = f.SetCellStyle(ws4, "A1", "A1", head)
-	iHeads := []string{"平台", "账期", "费用项", "收/支", "订单号", "商品ID", "商品名称", "数量", "金额", "来源"}
+	iHeads := []string{"平台", "账期", "费用项", "收/支", "订单号", "商品ID",
+		"商品名称", "数量", "金额", "退款金额", "来源"}
 	for i, h := range iHeads {
 		c, _ := excelize.CoordinatesToCellName(i+1, 2)
 		_ = f.SetCellValue(ws4, c, h)
 	}
-	_ = f.SetCellStyle(ws4, "A2", "J2", head)
+	_ = f.SetCellStyle(ws4, "A2", "K2", head)
 	irow := 3
 	for _, it := range det.Items {
 		_ = f.SetCellValue(ws4, fmt.Sprintf("A%d", irow), model.EcPlatformLabel(it.Platform))
@@ -249,11 +250,12 @@ func buildSummaryWorkbook(rep *service.SummaryReport, det *service.SummaryDetail
 		_ = f.SetCellValue(ws4, fmt.Sprintf("G%d", irow), it.Title)
 		_ = f.SetCellValue(ws4, fmt.Sprintf("H%d", irow), it.Qty.Float())
 		_ = f.SetCellValue(ws4, fmt.Sprintf("I%d", irow), it.Amount.Float())
-		_ = f.SetCellValue(ws4, fmt.Sprintf("J%d", irow), model.SourceLabel(it.Source))
-		_ = f.SetCellStyle(ws4, fmt.Sprintf("I%d", irow), fmt.Sprintf("I%d", irow), money)
+		_ = f.SetCellValue(ws4, fmt.Sprintf("J%d", irow), (-it.Refund).Float())
+		_ = f.SetCellValue(ws4, fmt.Sprintf("K%d", irow), model.SourceLabel(it.Source))
+		_ = f.SetCellStyle(ws4, fmt.Sprintf("I%d", irow), fmt.Sprintf("J%d", irow), money)
 		irow++
 	}
-	_ = f.SetColWidth(ws4, "A", "J", 18)
+	_ = f.SetColWidth(ws4, "A", "K", 18)
 
 	// ---------------- 表5 按商品汇总 ----------------
 	ws5 := "按商品汇总"

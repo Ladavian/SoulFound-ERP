@@ -123,6 +123,56 @@
   </div>
 </div>
 
+{{if .HasRefunds}}
+{{/* 退款订单说明：
+     整单退款后收入为 0、成本也按有效数量折算为 0，
+     这类单会从结算明细里"消失"，容易被误以为漏了。
+     单独列出来，好和平台账单逐笔核对。 */}}
+<div class="card">
+  <div class="card__head">
+    <div class="card__title">
+      含退款的订单
+      <span class="card__sub">成本按实际成交金额折算有效数量（自动退差价也在内）</span>
+    </div>
+    <div class="card__actions">
+      <span class="badge badge--warn">{{len .RefundRows}} 单</span>
+    </div>
+  </div>
+  <div class="card__body">
+    <div class="table-wrap">
+      <table class="data data--stack">
+        <thead>
+          <tr><th>订单号 / 商品</th><th class="num">账期</th><th class="num">数量</th><th class="num">实际成交 / 退款</th></tr>
+        </thead>
+        <tbody>
+          {{range .RefundRows}}
+          <tr>
+            <td class="row-cell--main">
+              <span class="mono">{{.OrderNo}}</span>
+              <div class="tiny muted">{{if .Title}}{{.Title}}{{else}}商品ID {{.EcProductID}}{{end}}</div>
+            </td>
+            <td class="num" data-label="账期">{{periodLabel .Period}}</td>
+            <td class="num" data-label="数量">
+              <span class="cell-num">{{.Qty}}</span>
+              <div class="cell-sub">有效 {{.EffQty}}</div>
+            </td>
+            <td class="num span-2" data-label="实际成交 / 退款">
+              <span class="cell-num">{{money .Amount}}</span>
+              <div class="cell-sub neg">退款 {{money .Refund}}</div>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    <div class="tiny muted" style="margin-top:10px;line-height:1.8">
+      实际成交金额为 0 的整单退款，收入按 0 计、成本按有效数量 0 计，
+      所以既不出现在收入里、也不出现在成本里；「有效」列就是折算后的计费数量。
+    </div>
+  </div>
+</div>
+{{end}}
+
 {{if .HasOffline}}
 {{/* 线下结算排除说明：用户要求"排除订单的数据不管收入还是支出都要说明白"。
      平台账单的合计里含这些单，而本次结算不含，必须写清楚才能对账。 */}}

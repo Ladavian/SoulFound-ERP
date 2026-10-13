@@ -321,7 +321,14 @@ func (s Settlement) VatPayable(r VatRates) Money {
 // 注意：平台费用不再重复扣——平台打款时已经扣过了，
 // 这里的 Revenue 用的就是实际到账的货款。
 func (s Settlement) Net(r VatRates) Money {
-	return s.Revenue - s.Cost - s.VatPayable(r)
+	// 必须先扣平台费用：店铺是上游的，钱先进平台→上游账户，
+	// 平台在打款前就把它的费用扣掉了，我们实收的是「货款 − 平台费用」。
+	// 所以"上游该打给我的利润" = 实收 − 供货成本 − 应交增值税，
+	// 漏掉平台费用会把利润算多（用户核对京东时发现：应 211.82，我给了 249.95）。
+	//
+	// 用 BorneFee：只扣我方承担的费用。运费只展示、不由我方承担，
+	// 平台是单独开票给商家的，不从货款里扣，所以不在这里减。
+	return s.Revenue - s.BorneFee - s.Cost - s.VatPayable(r)
 }
 
 // GrossProfit 毛利（不含税口径）= 销售 − 成本 − 应交增值税。

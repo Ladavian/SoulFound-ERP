@@ -519,6 +519,11 @@ func (s *Server) handleSettlement(w http.ResponseWriter, r *http.Request) {
 	page := s.newPage(r, "结算单", "settlement")
 	page["Offline"] = offline
 	page["HasOffline"] = offline.Orders > 0
+	// 有退款的货款行（含自动退差价）：整单退掉后收入与成本都是 0，
+	// 会从结算里"消失"，必须单独列出来才对得上平台账单。
+	refunds, _ := s.svc.Store.RefundedOrders(ctx, platform, sel)
+	page["RefundRows"] = refunds
+	page["HasRefunds"] = len(refunds) > 0
 	// 导出链接带上全部选中账期
 	var eq []string
 	for _, p := range sel {
