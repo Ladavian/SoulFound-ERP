@@ -426,6 +426,44 @@ func buildSummaryWorkbook(rep *service.SummaryReport, det *service.SummaryDetail
 		_ = f.SetColWidth(ws7, "F", "F", 40)
 	}
 
+	// ---------------- 表8 对账校验 ----------------
+	// 表1 的每一列都能在明细表里查到，避免"数字不知道哪来的"。
+	ws8 := "对账校验"
+	_, _ = f.NewSheet(ws8)
+	_ = f.SetCellValue(ws8, "A1", "表1「各平台结算」每列的来源（都能在明细表里逐条查到）")
+	_ = f.SetCellStyle(ws8, "A1", "A1", head)
+	for i, h := range []string{"表1 的列", "来源明细", "合计"} {
+		c, _ := excelize.CoordinatesToCellName(i+1, 2)
+		_ = f.SetCellValue(ws8, c, h)
+	}
+	_ = f.SetCellStyle(ws8, "A2", "C2", head)
+	lines := [][3]string{
+		{"货款", "账单费用明细 · 交易货款行", tt.Goods.String()},
+		{"平台补贴", "账单费用明细 · 补贴类行", tt.Subsidy.String()},
+		{"平台代付扣回", "品牌新享礼金 · 代付扣回合计", (-tt.Advance).String()},
+		{"销售收入", "= 货款 + 平台补贴 − 平台代付扣回", tt.Revenue.String()},
+		{"供货成本", "订单明细 · 逐单 数量 × 电商成本", tt.Cost.String()},
+		{"平台费用", "平台费用汇总 · 承担的费用合计", tt.BorneFee.String()},
+		{"销项税额", "= 销售收入 ÷ (1+销项率) × 销项率", tt.OutputVat(rep.Rates).String()},
+		{"进项税额", "= 供货成本 ÷ (1+进项率) × 进项率", tt.InputVat(rep.Rates).String()},
+		{"平台费抵扣", "= 平台费用 ÷ (1+专票率) × 专票率", tt.PlatformVat(rep.Rates).String()},
+		{"应交增值税", "= 销项税额 − 进项税额 − 平台费抵扣", tt.VatPayable(rep.Rates).String()},
+		{"应结金额", "= 销售收入 − 平台费用 − 供货成本 − 应交增值税", tt.Net(rep.Rates).String()},
+		{"仅展示（不计入）", "平台费用汇总 · 仅展示区块（运费）", tt.ListedFee.String()},
+	}
+	r8 := 3
+	for _, ln := range lines {
+		_ = f.SetCellValue(ws8, fmt.Sprintf("A%d", r8), ln[0])
+		_ = f.SetCellValue(ws8, fmt.Sprintf("B%d", r8), ln[1])
+		_ = f.SetCellValue(ws8, fmt.Sprintf("C%d", r8), ln[2])
+		_ = f.SetCellStyle(ws8, fmt.Sprintf("C%d", r8), fmt.Sprintf("C%d", r8), money)
+		r8++
+	}
+	_ = f.SetCellStyle(ws8, fmt.Sprintf("A%d", r8-1), fmt.Sprintf("C%d", r8-1), bold)
+	_ = f.SetColWidth(ws8, "A", "A", 22)
+	_ = f.SetColWidth(ws8, "B", "B", 46)
+	_ = f.SetColWidth(ws8, "C", "C", 16)
+
 	f.SetActiveSheet(0)
 	return f, nil
 }
