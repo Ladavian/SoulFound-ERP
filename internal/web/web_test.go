@@ -8,6 +8,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"encoding/xml"
+	"fmt"
 	"html"
 	"image"
 	"image/color"
@@ -3770,6 +3771,126 @@ func TestStatementExportFileName(t *testing.T) {
 	for _, c := range cases {
 		if got := statementFileName(c.periods, c.platform); got != c.want {
 			t.Errorf("statementFileName(%v, %q) = %q，期望 %q", c.periods, c.platform, got, c.want)
+		}
+	}
+}
+
+// TestSummaryExportFormulasEvaluate 导出的公式要用 Excel 引擎真算一遍。
+//
+// 用户导出后发现 Excel 里的应结金额是 2610.75，而网页是 2332.88。
+// 原因：「平台代付扣回」列存的是负数（−157），公式却写 "=D+E−F−…"，
+// 减负数等于加回去，销售收入与应结都被算高。
+//
+// 光看公式字符串看不出这种错，必须真的求值。这里用 excelize 的
+// CalcCellValue 把导出的公式算出来，与接口给的值逐项对比。
+func TestSummaryExportFormulasEvaluate(t *testing.T) {
+	h, svc, cfg := testApp(t)
+	ctx := context.Background()
+	cookie := doLogin(t, h, cfg, "admin", "admin123")
+	admin := mustUser(t, svc, "admin")
+
+	pid, err := svc.Store.CreateProduct(ctx, &model.Product{
+		SKU: "FML-1", Name: "公式校验品", Unit: "瓶", IsActive: true, IsWine: true,
+		EcCost: model.MustMoney("140"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.BindEcLink(ctx, model.EcTaobao, "FML-EC", "", "", pid, admin); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ImportEcOrders(ctx, model.EcTaobao, []service.EcOrderRow{{
+		OrderNo: "FML-O1", SubOrderNo: "FML-O1", Title: "公式校验品",
+		EcProductID: "FML-EC", Qty: "2", PaidAmt: "1000", ItemStatus: "交易成功",
+		RefundStatus: "没有申请退款", CreatedAt: "2026-09-10 10:00",
+	}}, admin); err != nil {
+		t.Fatal(err)
+	}
+	// 货款 1000 + 补贴 50 − 代付扣回 200；成本 2×140；平台费用 30
+	items := []model.EcStatementItem{
+		{Period: "202609", Kind: model.StmtGoodsPayment, Direction: "income",
+			OrderNo: "FML-O1", SubOrderNo: "FML-O1", EcProductID: "FML-EC",
+			Qty: model.MustQty("2"), Amount: model.MustMoney("1000")},
+		{Period: "202609", Kind: model.StmtCoinCoop, Direction: "income",
+			OrderNo: "FML-O1", SubOrderNo: "FML-O1", Amount: model.MustMoney("50")},
+		{Period: "202609", Kind: model.StmtGoodsPayment, Direction: "income",
+			OrderNo: "FML-O1", SubOrderNo: "FML-O1", Qty: model.MustQty("0"),
+			Amount: 0, Advance: model.MustMoney("200")},
+		{Period: "202609", Kind: model.StmtBaseService, Direction: "expense",
+			OrderNo: "FML-O1", SubOrderNo: "FML-O1", Amount: model.MustMoney("30")},
+	}
+	groups := map[string][]model.EcStatementItem{}
+	var order []string
+	for _, it := range items {
+		if _, ok := groups[it.Kind]; !ok {
+			order = append(order, it.Kind)
+		}
+		groups[it.Kind] = append(groups[it.Kind], it)
+	}
+	for _, k := range order {
+		list := groups[k]
+		if err := svc.ImportStatement(ctx, &model.EcStatement{
+			Platform: model.EcTaobao, Period: "202609", Kind: k,
+			Source: model.StmtSourceBill, Direction: list[0].Direction}, list, admin); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	settings, _ := svc.Store.Settings(ctx)
+	rep, err := svc.BuildSummary(ctx, []store.StatementKey{
+		{Platform: model.EcTaobao, Period: "202609"}}, settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := rep.Total
+
+	_, exp := get(t, h, "/ecommerce/summary/export?sel=taobao%7C202609", cookie)
+	xlsx, err := excelize.OpenReader(strings.NewReader(exp))
+	if err != nil {
+		t.Fatalf("导出的 Excel 打不开：%v", err)
+	}
+	defer xlsx.Close()
+
+	const sheet = "各平台结算"
+	// 找数据行（第一行平台行）
+	dataRow := 0
+	rows, _ := xlsx.GetRows(sheet)
+	for i, r := range rows {
+		if len(r) > 9 && strings.Contains(strings.Join(r, " "), "淘宝") {
+			dataRow = i + 1 // excelize 行列从 1 开始
+			break
+		}
+	}
+	if dataRow == 0 {
+		t.Fatal("找不到数据行")
+	}
+	// 用 Excel 引擎求值，跟接口数字比
+	type chk struct {
+		cell string
+		want model.Money
+		name string
+	}
+	for _, c := range []chk{
+		{"G", want.Revenue, "销售收入"},
+		{"K", want.VatPayable(rep.Rates), "应交增值税"},
+		{"L", want.Net(rep.Rates), "应结金额"},
+	} {
+		val, err := xlsx.CalcCellValue(sheet, fmt.Sprintf("%s%d", c.cell, dataRow))
+		if err != nil {
+			t.Errorf("求值 %s%d 失败：%v", c.cell, dataRow, err)
+			continue
+		}
+		got, err := strconv.ParseFloat(val, 64)
+		if err != nil {
+			t.Errorf("%s%d 求值结果不是数字：%q", c.cell, dataRow, val)
+			continue
+		}
+		d := got - c.want.Float()
+		if d < 0 {
+			d = -d
+		}
+		if d > 0.01 {
+			t.Errorf("%s（%s%d）应为 %.2f，Excel 公式算出 %.2f", c.name, c.cell, dataRow, c.want.Float(), got)
 		}
 	}
 }

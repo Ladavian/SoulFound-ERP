@@ -76,7 +76,10 @@ func buildSummaryWorkbook(rep *service.SummaryReport, det *service.SummaryDetail
 		_ = f.SetCellValue(ws, fmt.Sprintf("C%d", r), t.Qty.Float())
 		_ = f.SetCellValue(ws, fmt.Sprintf("D%d", r), t.Goods.Float())
 		_ = f.SetCellValue(ws, fmt.Sprintf("E%d", r), t.Subsidy.Float())
-		_ = f.SetCellValue(ws, fmt.Sprintf("F%d", r), -t.Advance.Float())
+		// 这一列存**正数**（要减掉的金额），与供货成本、平台费用一致。
+		// 之前存的是负数 −157，而公式写的是 "− F"，
+		// 减负数等于加回去，销售收入和应结都被算高（Excel 里算出 2610.75）。
+		_ = f.SetCellValue(ws, fmt.Sprintf("F%d", r), t.Advance.Float())
 		// 销售收入与后面所有列都用公式互相引用
 		_ = f.SetCellFormula(ws, fmt.Sprintf("G%d", r), fmt.Sprintf("D%d+E%d-F%d", r, r, r))
 		_ = f.SetCellValue(ws, fmt.Sprintf("H%d", r), t.Cost.Float())
@@ -105,7 +108,7 @@ func buildSummaryWorkbook(rep *service.SummaryReport, det *service.SummaryDetail
 	_ = f.SetCellValue(ws, fmt.Sprintf("C%d", r), tt.Qty.Float())
 	_ = f.SetCellValue(ws, fmt.Sprintf("D%d", r), tt.Goods.Float())
 	_ = f.SetCellValue(ws, fmt.Sprintf("E%d", r), tt.Subsidy.Float())
-	_ = f.SetCellValue(ws, fmt.Sprintf("F%d", r), -tt.Advance.Float())
+	_ = f.SetCellValue(ws, fmt.Sprintf("F%d", r), tt.Advance.Float())
 	_ = f.SetCellFormula(ws, fmt.Sprintf("G%d", r), fmt.Sprintf("D%d+E%d-F%d", r, r, r))
 	_ = f.SetCellValue(ws, fmt.Sprintf("H%d", r), tt.Cost.Float())
 	_ = f.SetCellValue(ws, fmt.Sprintf("I%d", r), tt.BorneFee.Float())
@@ -442,7 +445,7 @@ func buildSummaryWorkbook(rep *service.SummaryReport, det *service.SummaryDetail
 	lines := [][3]string{
 		{"货款", "账单费用明细 · 交易货款行", tt.Goods.String()},
 		{"平台补贴", "账单费用明细 · 补贴类行", tt.Subsidy.String()},
-		{"平台代付扣回", "品牌新享礼金 · 代付扣回合计", (-tt.Advance).String()},
+		{"平台代付扣回", "品牌新享礼金 · 代付扣回合计", tt.Advance.String()},
 		{"销售收入", "= 货款 + 平台补贴 − 平台代付扣回", tt.Revenue.String()},
 		{"供货成本", "订单明细 · 逐单 数量 × 电商成本", tt.Cost.String()},
 		{"平台费用", "平台费用汇总 · 承担的费用合计", tt.BorneFee.String()},
