@@ -60,7 +60,7 @@ func buildSettlementWorkbook(rep *service.SettlementReport, platformLabel string
 
 	put("① 货款（平台打款）", total.Goods, false)
 	put("② 平台补贴", total.Subsidy, false)
-	put("③ 平台代付垫支（从货款扣回）", -total.Advance, false)
+	put("③ 平台代付扣回（从货款扣回）", -total.Advance, false)
 	put("④ 销售收入 = ①+②−③", total.Revenue, true)
 	put("⑤ 供货成本（上游结算价）", -total.Cost, false)
 	put(fmt.Sprintf("⑥ 应交增值税（销项%.0f%% − 进项%.0f%% − 平台费%.0f%%抵扣）",
@@ -81,7 +81,7 @@ func buildSettlementWorkbook(rep *service.SettlementReport, platformLabel string
 	put("应交增值税", total.VatPayable(rates), true)
 	idx++
 	_ = f.SetCellValue(ws, fmt.Sprintf("A%d", idx),
-		"说明：运费仅展示；平台代付垫支从收入扣回。")
+		"说明：运费仅展示；平台代付扣回从收入扣回。")
 	_ = f.SetCellStyle(ws, fmt.Sprintf("A%d", idx), fmt.Sprintf("A%d", idx), totalStyle)
 	_ = f.SetColWidth(ws, "A", "A", 46)
 	_ = f.SetColWidth(ws, "B", "B", 16)
@@ -216,7 +216,7 @@ func buildSettlementWorkbook(rep *service.SettlementReport, platformLabel string
 			put("平台补贴", "淘金币等", of.Subsidy.Float(), moneyStyle)
 		}
 		if of.Advance != 0 {
-			put("平台代付垫支", "从货款扣回（负数）", -of.Advance.Float(), moneyStyle)
+			put("平台代付扣回", "从货款扣回", -of.Advance.Float(), moneyStyle)
 		}
 		put("收入合计", "货款 + 补贴 − 垫支", of.Revenue.Float(), totalStyle)
 		for kind, amt := range of.FeeByKind {

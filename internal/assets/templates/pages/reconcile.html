@@ -49,7 +49,7 @@
     <div class="stat__label">净得</div>
     <div class="stat__value {{if $rec.Net.IsNeg}}neg{{else}}pos{{end}}">{{money $rec.Net}}</div>
     <div class="stat__hint">
-      {{if $rec.Advance}}另扣平台代付垫支 {{money $rec.Advance}} → 销售收入 {{money $rec.RealRevenue}}{{else}}平台实际结算给商家的钱{{end}}
+      {{if $rec.Advance}}另扣平台代付扣回 {{money $rec.Advance}} → 销售收入 {{money $rec.RealRevenue}}{{else}}平台实际结算给商家的钱{{end}}
     </div>
   </div>
   <div class="stat">

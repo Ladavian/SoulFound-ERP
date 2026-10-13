@@ -68,7 +68,7 @@
       </div>
       {{if $t.Advance}}
       <div class="settle__row">
-        <span>③ 平台代付垫支<em class="tiny muted">平台替商家垫给消费者的钱，从货款扣回</em></span>
+        <span>③ 平台代付扣回<em class="tiny muted">平台替你垫付给消费者的礼金，结算时从货款扣回（不开票）</em></span>
         <span class="settle__num neg">−{{money $t.Advance}}</span>
       </div>
       {{end}}
@@ -155,14 +155,14 @@
           {{end}}
           {{if .Offline.Advance}}
           <tr>
-            <td class="row-cell--main">平台代付垫支</td>
+            <td class="row-cell--main">平台代付扣回</td>
             <td class="small text-2" data-label="说明">从货款扣回</td>
             <td class="num neg" data-label="金额">−{{money .Offline.Advance}}</td>
           </tr>
           {{end}}
           <tr>
             <td class="row-cell--main strong">收入合计（销售收入）</td>
-            <td class="small text-2" data-label="说明">货款 + 补贴 − 垫支</td>
+            <td class="small text-2" data-label="说明">货款 + 补贴 − 代付扣回</td>
             <td class="num strong" data-label="金额">{{money .Offline.Revenue}}</td>
           </tr>
           {{range $kind := .Kinds}}
@@ -249,7 +249,7 @@
     <div class="tiny muted" style="margin-top:10px;line-height:1.8">
       <strong>运费（商家寄件服务费）</strong>只在报表里展示给上游看，
 
-      <strong>平台代付垫支 {{money $t.Advance}}</strong>（品牌新享礼金里平台替商家垫给消费者的钱）
+      <strong>平台代付扣回 {{money $t.Advance}}</strong>（品牌新享礼金：平台替你垫付给新客的钱，结算时扣回）
       不在上表——它不是费用、也不开票，已经直接从销售收入里扣掉了（见第③项）。
     </div>
   </div>

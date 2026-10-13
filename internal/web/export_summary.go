@@ -47,7 +47,7 @@ func buildSummaryWorkbook(rep *service.SummaryReport, det *service.SummaryDetail
 		rep.Rates.Output, rep.Rates.Input, rep.Rates.Platform))
 
 	heads := []string{"平台", "账期", "销量", "销售收入", "平台补贴",
-		"垫支扣回", "供货成本", "平台费用", "应交增值税", "应结金额", "毛利率"}
+		"平台代付扣回", "供货成本", "平台费用", "应交增值税", "应结金额", "毛利率"}
 	for i, h := range heads {
 		c, _ := excelize.CoordinatesToCellName(i+1, 4)
 		_ = f.SetCellValue(ws, c, h)
@@ -183,7 +183,7 @@ func buildSummaryWorkbook(rep *service.SummaryReport, det *service.SummaryDetail
 	_ = f.SetCellValue(ws3, "A1", "订单明细（销售收入 = 货款 + 补贴 − 垫支；应结 = 销售收入 − 供货成本 − 应交增值税）")
 	_ = f.SetCellStyle(ws3, "A1", "A1", head)
 	oHeads := []string{"平台", "账期", "订单号", "商品 / 产品", "商品ID", "数量",
-		"货款", "平台补贴", "垫支扣回", "销售收入", "平台费用", "供货成本", "应交增值税", "应结金额"}
+		"货款", "平台补贴", "平台代付扣回", "销售收入", "平台费用", "供货成本", "应交增值税", "应结金额"}
 	for i, h := range oHeads {
 		c, _ := excelize.CoordinatesToCellName(i+1, 2)
 		_ = f.SetCellValue(ws3, c, h)

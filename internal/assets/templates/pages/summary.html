@@ -84,7 +84,7 @@
   <div class="stat">
     <div class="stat__label">销售收入</div>
     <div class="stat__value">{{money $t.Revenue}}</div>
-    <div class="stat__hint">货款 + 补贴 − 垫支扣回</div>
+    <div class="stat__hint">货款 + 补贴 − 平台代付扣回</div>
   </div>
   <div class="stat">
     <div class="stat__label">供货成本</div>
@@ -173,7 +173,7 @@
       <div class="settle__row"><span>② 平台补贴</span><span class="settle__num">{{money $t.Subsidy}}</span></div>
       {{if $t.Advance}}
       <div class="settle__row">
-        <span>③ 平台代付垫支<em class="tiny muted">平台替商家垫给消费者的钱，从货款扣回</em></span>
+        <span>③ 平台代付扣回<em class="tiny muted">平台替你垫付给消费者的礼金，结算时从货款扣回</em></span>
         <span class="settle__num neg">−{{money $t.Advance}}</span>
       </div>
       {{end}}
