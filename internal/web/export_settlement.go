@@ -178,7 +178,7 @@ func buildSettlementWorkbook(rep *service.SettlementReport, platformLabel string
 		row++
 	}
 	_ = f.SetCellValue(ws4, fmt.Sprintf("A%d", row), "合计")
-	_ = f.SetCellValue(ws4, fmt.Sprintf("B%d", row), rep.Total.PlatformFee.Float())
+	_ = f.SetCellValue(ws4, fmt.Sprintf("B%d", row), rep.Total.BorneFee.Float())
 	_ = f.SetCellStyle(ws4, fmt.Sprintf("A%d", row), fmt.Sprintf("B%d", row), totalStyle)
 	_ = f.SetColWidth(ws4, "A", "A", 34)
 	_ = f.SetColWidth(ws4, "B", "B", 16)
@@ -233,7 +233,7 @@ func buildSettlementWorkbook(rep *service.SettlementReport, platformLabel string
 		_ = f.SetCellValue(wso, fmt.Sprintf("A%d", r), "支出侧对账")
 		_ = f.SetCellValue(wso, fmt.Sprintf("B%d", r),
 			fmt.Sprintf("平台账单全部费用 %s − 已排除费用 %s = 本次结算费用 %s",
-				rep.Total.PlatformFee.Add(of.FeeTotal).String(), of.FeeTotal.String(), rep.Total.PlatformFee.String()))
+				rep.Total.BorneFee.Add(of.FeeTotal).String(), of.FeeTotal.String(), rep.Total.BorneFee.String()))
 		r += 2
 		_ = f.SetCellValue(wso, fmt.Sprintf("A%d", r), "说明")
 		_ = f.SetCellValue(wso, fmt.Sprintf("B%d", r),

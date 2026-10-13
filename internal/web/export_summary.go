@@ -64,7 +64,8 @@ func buildSummaryWorkbook(rep *service.SummaryReport, det *service.SummaryDetail
 		_ = f.SetCellValue(ws, fmt.Sprintf("E%d", r), t.Subsidy.Float())
 		_ = f.SetCellValue(ws, fmt.Sprintf("F%d", r), -t.Advance.Float())
 		_ = f.SetCellValue(ws, fmt.Sprintf("G%d", r), t.Cost.Float())
-		_ = f.SetCellValue(ws, fmt.Sprintf("H%d", r), t.PlatformFee.Float())
+		// 平台费用列用"我方承担"口径（不含运费这类仅展示的费用）
+		_ = f.SetCellValue(ws, fmt.Sprintf("H%d", r), t.BorneFee.Float())
 		_ = f.SetCellValue(ws, fmt.Sprintf("I%d", r), t.VatPayable(rep.Rates).Float())
 		_ = f.SetCellValue(ws, fmt.Sprintf("J%d", r), net.Float())
 		if t.Revenue > 0 {
@@ -83,7 +84,7 @@ func buildSummaryWorkbook(rep *service.SummaryReport, det *service.SummaryDetail
 	_ = f.SetCellValue(ws, fmt.Sprintf("E%d", r), tt.Subsidy.Float())
 	_ = f.SetCellValue(ws, fmt.Sprintf("F%d", r), -tt.Advance.Float())
 	_ = f.SetCellValue(ws, fmt.Sprintf("G%d", r), tt.Cost.Float())
-	_ = f.SetCellValue(ws, fmt.Sprintf("H%d", r), tt.PlatformFee.Float())
+	_ = f.SetCellValue(ws, fmt.Sprintf("H%d", r), tt.BorneFee.Float())
 	_ = f.SetCellValue(ws, fmt.Sprintf("I%d", r), tt.VatPayable(rep.Rates).Float())
 	_ = f.SetCellValue(ws, fmt.Sprintf("J%d", r), tt.Net(rep.Rates).Float())
 	_ = f.SetCellStyle(ws, fmt.Sprintf("A%d", r), fmt.Sprintf("I%d", r), bold)
@@ -272,7 +273,7 @@ func buildSummaryWorkbook(rep *service.SummaryReport, det *service.SummaryDetail
 			_ = f.SetCellValue(ws5, fmt.Sprintf("B%d", prow), pr.S.Qty.Float())
 			_ = f.SetCellValue(ws5, fmt.Sprintf("C%d", prow), pr.S.Revenue.Float())
 			_ = f.SetCellValue(ws5, fmt.Sprintf("D%d", prow), pr.S.Cost.Float())
-			_ = f.SetCellValue(ws5, fmt.Sprintf("E%d", prow), pr.S.PlatformFee.Float())
+			_ = f.SetCellValue(ws5, fmt.Sprintf("E%d", prow), pr.S.BorneFee.Float())
 			_ = f.SetCellValue(ws5, fmt.Sprintf("F%d", prow), pr.S.VatPayable(rep.Rates).Float())
 			_ = f.SetCellValue(ws5, fmt.Sprintf("G%d", prow), net.Float())
 			if pr.S.Revenue > 0 {

@@ -3666,3 +3666,64 @@ func flattenRows(rows [][]string) []string {
 	}
 	return out
 }
+
+// TestSummaryExportFeeExcludesShipping 导出的「平台费用」不含运费。
+//
+// 用户反馈：导出的多平台账单里，各平台结算的平台费用还是把快递费算进去了。
+// 页面已经改用 BorneFee，但导出的 H 列表格仍在用 PlatformFee（含运费）。
+// 这里直接把导出的 Excel 打开断言数字。
+func TestSummaryExportFeeExcludesShipping(t *testing.T) {
+	h, svc, cfg := testApp(t)
+	ctx := context.Background()
+	cookie := doLogin(t, h, cfg, "admin", "admin123")
+	admin := mustUser(t, svc, "admin")
+
+	// 服务费 60（承担）+ 运费 106（仅展示）
+	for _, it := range []struct{ kind, amount string }{
+		{model.StmtBaseService, "60"},
+		{model.StmtShipping, "106"},
+	} {
+		if err := svc.ImportStatement(ctx, &model.EcStatement{
+			Platform: model.EcTaobao, Period: "202609", Kind: it.kind,
+			Source: model.StmtSourceBill, Direction: "expense"}, []model.EcStatementItem{{
+			Period: "202609", Kind: it.kind, Direction: "expense",
+			OrderNo: "X-" + it.kind, Amount: model.MustMoney(it.amount),
+		}}, admin); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	_, exp := get(t, h, "/ecommerce/summary/export?sel=taobao%7C202609", cookie)
+	xlsx, err := excelize.OpenReader(strings.NewReader(exp))
+	if err != nil {
+		t.Fatalf("导出的 Excel 打不开：%v", err)
+	}
+	defer xlsx.Close()
+	rows, _ := xlsx.GetRows("各平台结算")
+	var feeCell string
+	for _, r := range rows {
+		if len(r) > 7 && strings.Contains(strings.Join(r, " "), "淘宝") {
+			feeCell = r[7] // H 列：平台费用
+		}
+		if len(r) > 7 && strings.TrimSpace(r[0]) == "合计" {
+			if r[7] == "166" || strings.HasPrefix(r[7], "166") {
+				t.Errorf("合计行的平台费用不该含运费（应为 60），实际 %s", r[7])
+			}
+		}
+	}
+	if feeCell == "" {
+		t.Fatal("没读到平台费用单元格")
+	}
+	if strings.HasPrefix(feeCell, "166") {
+		t.Errorf("平台费用应只含承担的 60（不含运费 106），实际 %s", feeCell)
+	}
+	if !strings.HasPrefix(feeCell, "60") {
+		t.Errorf("平台费用应为 60，实际 %s", feeCell)
+	}
+	// 仅展示的费用也要在表2里单独出现
+	rows2, _ := xlsx.GetRows("平台费用汇总")
+	joined := strings.Join(flattenRows(rows2), " ")
+	if !strings.Contains(joined, "仅展示") {
+		t.Errorf("表2 里应有「仅展示」区块\n内容: %s", joined)
+	}
+}
