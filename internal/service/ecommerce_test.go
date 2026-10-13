@@ -627,3 +627,94 @@ func TestOfflineSettledOrderExcluded(t *testing.T) {
 		t.Errorf("恢复后货款应回到 1500，实际 %s", back.Total.Goods)
 	}
 }
+
+// TestEcommerceBillingDoesNotTouchStock 电商对账不碰库存。
+//
+// 用户明确：电商这一块只是在 ERP 里对平台账单做自动对账，
+// 只读取产品档案里的「电商成本」，不关联库存数量；
+// 发货在别的系统里做，所以导入账单/订单都不该动库存。
+//
+// 这条测试把这个边界钉住：以后谁不小心在电商路径里加了库存联动，
+// 会立刻在这里失败。
+func TestEcommerceBillingDoesNotTouchStock(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+	admin := adminUser(t, svc)
+
+	pid, err := svc.Store.CreateProduct(ctx, &model.Product{
+		SKU: "EC-NOSTOCK", Name: "电商对账测试品", Unit: "瓶", IsActive: true, IsWine: true,
+		EcCost: model.MustMoney("140"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 入库 50 瓶（这笔是采购的库存，电商不该动它）
+	if err := svc.AdjustStock(ctx, AdjustInput{
+		ProductID: pid, Qty: model.MustQty("50"), Reason: model.ReasonOpening,
+		OccurredOn: "2026-09-01", Note: "期初",
+	}, admin); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.BindEcLink(ctx, model.EcTaobao, "EC-NS-1", "", "", pid, admin); err != nil {
+		t.Fatal(err)
+	}
+	stockBefore := func() (model.Qty, int) {
+		p, err := svc.Store.ProductByID(ctx, pid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		moves, err := svc.Store.ListMovements(ctx, store.MovementFilter{ProductID: pid})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p.StockQty, len(moves)
+	}
+	q0, m0 := stockBefore()
+
+	// 导入订单（卖出 5 件）
+	if _, err := svc.ImportEcOrders(ctx, model.EcTaobao, []EcOrderRow{{
+		OrderNo: "EC-NS-O1", SubOrderNo: "EC-NS-O1", Title: "电商对账测试品",
+		EcProductID: "EC-NS-1", Qty: "5", PaidAmt: "1500", ItemStatus: "交易成功",
+		RefundStatus: "没有申请退款", CreatedAt: "2026-09-10 10:00",
+	}}, admin); err != nil {
+		t.Fatal(err)
+	}
+	// 导入账单（货款 + 服务费）
+	for _, it := range []struct {
+		kind, dir, amount string
+		qty               string
+	}{
+		{model.StmtGoodsPayment, "income", "1500", "5"},
+		{model.StmtBaseService, "expense", "9", ""},
+	} {
+		item := model.EcStatementItem{
+			Period: "202609", Kind: it.kind, Direction: it.dir,
+			OrderNo: "EC-NS-O1", SubOrderNo: "EC-NS-O1", EcProductID: "EC-NS-1",
+			Amount: model.MustMoney(it.amount),
+		}
+		if it.qty != "" {
+			item.Qty = model.MustQty(it.qty)
+		}
+		if err := svc.ImportStatement(ctx, &model.EcStatement{
+			Platform: model.EcTaobao, Period: "202609", Kind: it.kind,
+			Source: model.StmtSourceBill, Direction: it.dir}, []model.EcStatementItem{item}, admin); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 算一遍结算（最容易被顺手加上库存联动的地方）
+	settings, _ := svc.Store.Settings(ctx)
+	if _, err := svc.BuildSettlement(ctx, model.EcTaobao, "202609", settings); err != nil {
+		t.Fatal(err)
+	}
+
+	q1, m1 := stockBefore()
+	if q1 != q0 {
+		t.Errorf("电商对账不该动库存：导入前 %s，导入后 %s", q0, q1)
+	}
+	if m1 != m0 {
+		t.Errorf("电商对账不该产生库存流水：导入前 %d 笔，导入后 %d 笔", m0, m1)
+	}
+	if q1 != model.MustQty("50") {
+		t.Errorf("库存应仍是期初的 50 瓶，实际 %s", q1)
+	}
+}

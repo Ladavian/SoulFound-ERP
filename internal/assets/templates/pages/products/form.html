@@ -278,6 +278,7 @@
           <label class="field__label" for="ec_cost">电商成本价</label>
           <input class="input input--num" id="ec_cost" name="ec_cost" type="text" inputmode="decimal"
                  value="{{moneyInput2 $p.EcCost}}" placeholder="0.00">
+              <div class="field__hint">仅用于电商平台对账，与库存成本互不影响。</div>
           <div class="field__hint">
             电商口径的成本单价（含平台扣点、活动价摊薄等）。
             <strong>算电商毛利只用这个数</strong>，不会用平均成本；留空则电商毛利显示为「缺成本」。

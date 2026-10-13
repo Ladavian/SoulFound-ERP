@@ -16,6 +16,15 @@
   {{end}}
 </div>
 
+{{/* 边界说明：电商这块只做平台对账，不碰库存（用户明确） */}}
+<div class="alert alert--info" style="margin-bottom:14px">
+  {{template "icon" "info"}}
+  <div class="alert__body">
+    这里只做电商平台对账：读取产品档案里的<strong>电商成本</strong>算成本与利润，
+    不关联本系统库存，也不会产生出入库流水（发货在别的系统里做）。
+  </div>
+</div>
+
 {{template "platform_bar" (dict "Platforms" .PlatformOptions "Current" .Platform
     "Base" "/ecommerce" "Hint" "不同平台的订单分开看")}}
 
