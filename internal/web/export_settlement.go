@@ -80,7 +80,7 @@ func buildSettlementWorkbook(rep *service.SettlementReport, platformLabel string
 	put("应交增值税", total.VatPayable(rates), true)
 	idx++
 	_ = f.SetCellValue(ws, fmt.Sprintf("A%d", idx),
-		"说明：运费不计入结算；平台代付垫支不是费用、不开票，直接从收入扣回。")
+		"说明：运费仅展示；平台代付垫支从收入扣回。")
 	_ = f.SetCellStyle(ws, fmt.Sprintf("A%d", idx), fmt.Sprintf("A%d", idx), totalStyle)
 	_ = f.SetColWidth(ws, "A", "A", 46)
 	_ = f.SetColWidth(ws, "B", "B", 16)
@@ -161,7 +161,7 @@ func buildSettlementWorkbook(rep *service.SettlementReport, platformLabel string
 	// ---------------- Sheet 4 平台费用 ----------------
 	ws4 := "平台费用"
 	_, _ = f.NewSheet(ws4)
-	_ = f.SetCellValue(ws4, "A1", "平台费用（开票部分可抵扣增值税；运费仅列示不计入结算）")
+	_ = f.SetCellValue(ws4, "A1", "平台费用（开票部分可抵扣增值税；运费仅展示）")
 	_ = f.SetCellStyle(ws4, "A1", "A1", headStyle)
 	_ = f.SetCellValue(ws4, "A2", "费用类型")
 	_ = f.SetCellValue(ws4, "B2", "金额")
@@ -237,7 +237,7 @@ func buildSettlementWorkbook(rep *service.SettlementReport, platformLabel string
 		r += 2
 		_ = f.SetCellValue(wso, fmt.Sprintf("A%d", r), "说明")
 		_ = f.SetCellValue(wso, fmt.Sprintf("B%d", r),
-			"已排除订单不计入本次结算的收入、成本与增值税，也不算平台费用抵扣。")
+			"以上订单按线下结算处理，本次结算的收入、成本、增值税与费用抵扣均不含它们。")
 		_ = f.SetColWidth(wso, "A", "A", 20)
 		_ = f.SetColWidth(wso, "B", "B", 86)
 		_ = f.SetColWidth(wso, "C", "C", 16)

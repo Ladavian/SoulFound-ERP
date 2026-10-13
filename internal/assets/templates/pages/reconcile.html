@@ -123,7 +123,7 @@
   <div class="card__head">
     <div class="card__title">
       已排除（线下结算）
-      <span class="card__sub">这些单线下跟上游结，不参与平台结算</span>
+      <span class="card__sub">这些单按线下结算，本次结算不含它们</span>
     </div>
     <div class="card__actions">
       <span class="badge badge--warn">{{len .OfflineRows}} 单 · {{money .OfflineTotal.Amount}}</span>
@@ -211,7 +211,7 @@
                     <input type="hidden" name="mode" value="offline">
                     <input type="hidden" name="period" value="{{$.Period}}">
                     <button class="btn btn--sm btn--ghost" type="submit"
-                            title="这一单线下跟上游结，不参与平台结算">线下结算，排除</button>
+                            title="这一单按线下结算，本次结算不含它">线下结算，排除</button>
                   </form>
                   {{end}}
                   {{if .Cost}}
@@ -317,7 +317,7 @@
         <p><strong>月份归属</strong>跟着平台账单的账期走，不按订单月份。</p>
         <p><strong>匹配方式</strong>：货款与多数费用按订单号匹配；运费按运单号；
            消费者体验提升计划是整期一笔，不归订单。</p>
-        <p><strong>运费</strong>只在报表里展示给上游看，不从利润扣、也不参与增值税抵扣。</p>
+        <p><strong>运费</strong>仅展示，供上游查看。</p>
       </div>
     </div>
   </div>

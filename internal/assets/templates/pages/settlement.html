@@ -86,7 +86,7 @@
           <em class="tiny muted">
             销项 {{money ($t.OutputVat $rates)}} − 进项 {{money ($t.InputVat $rates)}}
             − 平台费抵扣 {{money ($t.PlatformVat $rates)}}
-            （按可抵扣费用 {{money $t.CreditableFee}} 算，运费不计入）
+            （可抵扣费用 {{money $t.CreditableFee}}）
           </em>
         </span>
         <span class="settle__num neg">−{{money ($t.VatPayable $rates)}}</span>
@@ -101,7 +101,7 @@
       税率：销项 {{fixed 0 $rates.Output}}% · 进项 {{fixed 0 $rates.Input}}% ·
       平台费专票 {{fixed 0 $rates.Platform}}%
       （在<a href="/settings">系统设置</a>里改）。
-      只承担<strong>成本以上</strong>的增值税；<strong>运费不计入</strong>结算。
+      增值税 = 销项税额 − 进项税额 − 平台费抵扣。
     </div>
   </div>
 </div>
@@ -199,7 +199,7 @@
         = 本次结算费用 <strong>{{money .Rep.Total.PlatformFee}}</strong>
       </div>
       <div class="muted" style="margin-top:6px">
-        说明：已排除订单不计入本次结算的收入、成本与增值税，也不算平台费用抵扣。
+        说明：以上订单按线下结算处理，本次结算的收入、成本、增值税与费用抵扣均不含它们。
         如需把某一单加回来，到「平台账单 → 已排除（线下结算）」点「恢复平台结算」。
       </div>
     </div>
@@ -211,7 +211,7 @@
   <div class="card__head">
     <div class="card__title">
       平台费用明细
-      <span class="card__sub">开票部分可抵扣增值税（已在上面第⑥项扣掉）；运费仅列示不计入结算</span>
+      <span class="card__sub">开票部分可抵扣增值税（已在上面第⑥项扣掉）；运费仅展示</span>
     </div>
   </div>
   <div class="card__body">
@@ -228,7 +228,7 @@
             <tr>
               <td class="row-cell--main">{{stmtKind $kind}}</td>
               <td class="small" data-label="能否抵扣">
-                {{if eq $kind "商家寄件服务费"}}<span class="muted">仅列示：不从利润扣，也不参与抵扣</span>
+                {{if eq $kind "商家寄件服务费"}}<span class="muted">仅展示</span>
                 {{else if eq $kind "品牌新享淘宝礼金软件服务费"}}<span class="pos">6% 专票可抵扣</span>
                 {{else}}<span class="pos">可抵扣</span>{{end}}
               </td>
@@ -241,14 +241,14 @@
           <tr>
             <td>费用合计</td>
             <td></td>
-            <td class="num">{{money $rep.Total.BorneFee}}{{if $rep.Total.ListedFee}}<div class="cell-sub muted">另有运费 {{money $rep.Total.ListedFee}} 仅列示</div>{{end}}</td>
+            <td class="num">{{money $rep.Total.BorneFee}}{{if $rep.Total.ListedFee}}<div class="cell-sub muted">另有运费 {{money $rep.Total.ListedFee}} 仅展示</div>{{end}}</td>
           </tr>
         </tfoot>
       </table>
     </div>
     <div class="tiny muted" style="margin-top:10px;line-height:1.8">
       <strong>运费（商家寄件服务费）</strong>只在报表里展示给上游看，
-      不从你的利润里扣，也不参与增值税抵扣。<br>
+
       <strong>平台代付垫支 {{money $t.Advance}}</strong>（品牌新享礼金里平台替商家垫给消费者的钱）
       不在上表——它不是费用、也不开票，已经直接从销售收入里扣掉了（见第③项）。
     </div>

@@ -94,7 +94,7 @@
   <div class="stat">
     <div class="stat__label">应交增值税</div>
     <div class="stat__value">−{{money ($t.VatPayable $rates)}}</div>
-    <div class="stat__hint">只承担成本以上的税</div>
+    <div class="stat__hint">销项 − 进项 − 平台费抵扣</div>
   </div>
   <div class="stat">
     <div class="stat__label">应结金额</div>
@@ -137,7 +137,7 @@
             <td class="num" data-label="供货成本">{{money .Total.Cost}}</td>
             <td class="num" data-label="平台费用">
               {{money .Total.BorneFee}}
-              {{if .Total.ListedFee}}<div class="cell-sub muted">另有运费 {{money .Total.ListedFee}} 仅列示</div>{{end}}
+              {{if .Total.ListedFee}}<div class="cell-sub muted">另有运费 {{money .Total.ListedFee}} 仅展示</div>{{end}}
             </td>
             <td class="num span-2" data-label="增值税">{{money (.Total.VatPayable $rates)}}</td>
             <td class="num span-2" data-label="应结金额">
@@ -207,7 +207,7 @@
           <tr>
             <td class="row-cell--main">
               {{stmtKind $kind}}
-              {{if eq $kind "商家寄件服务费"}}<div class="tiny muted">仅列示，不计入结算</div>{{end}}
+              {{if eq $kind "商家寄件服务费"}}<div class="tiny muted">仅展示</div>{{end}}
             </td>
             {{range $p := $rep.Fees.Platforms}}
             {{$amt := index $rep.Fees.Cell (printf "%s|%s" $kind $p)}}
@@ -234,11 +234,10 @@
     <div class="alert alert--info" style="margin-top:12px">
       {{template "icon" "info"}}
       <div class="alert__body">
-        <div class="alert__title">仅列示、我方不承担：{{money $rep.Fees.ListedTotal}}</div>
+        <div class="alert__title">仅展示：{{money $rep.Fees.ListedTotal}}</div>
         <div>
           {{range $kind := $rep.Fees.ListedKinds}}{{stmtKind $kind}} {{money (index $rep.Fees.Listed $kind)}}；{{end}}
-          这些钱不从你的利润里扣，也不参与增值税抵扣，只在报表里给上游看，
-          所以<strong>没有计入上面的费用合计</strong>。
+          单独列出，供上游查看；<strong>不计入上面的费用合计</strong>。
         </div>
       </div>
     </div>
