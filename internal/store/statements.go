@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strconv"
 	"strings"
 
 	"icewine-erp/internal/model"
@@ -383,7 +384,7 @@ func (s *Store) StatementSettlement(ctx context.Context, platform, period string
 	periodFees = map[string]model.Money{}
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT si.kind, si.direction, si.order_no, si.sub_order_no, si.title, si.ec_product_id,
-		       COALESCE(si.qty, 0), si.amount, si.advance_amount,
+		       COALESCE(si.qty, 0), si.amount, si.advance_amount, COALESCE(si.refund_amount, 0),
 		       oi.product_id, COALESCE(p.name, ''), COALESCE(p.ec_cost, 0)
 		  FROM ec_statement_items si
 		  `+statementOrderJoin+`
@@ -403,12 +404,13 @@ func (s *Store) StatementSettlement(ctx context.Context, platform, period string
 			qty                                    model.Qty
 			amount                                 model.Money
 			advance                                model.Money
+			refund                                 model.Money
 			productID                              *int64
 			productName                            string
 			unitCost                               model.Money
 		)
 		if err := rows.Scan(&kind, &dir, &orderNo, &subNo, &title, &ecID,
-			&qty, &amount, &advance, &productID, &productName, &unitCost); err != nil {
+			&qty, &amount, &advance, &refund, &productID, &productName, &unitCost); err != nil {
 			return nil, nil, err
 		}
 		// 没有订单号的：整期一笔的费用或收入，单独归集
@@ -437,7 +439,14 @@ func (s *Store) StatementSettlement(ctx context.Context, platform, period string
 		// 费用行也有数量（基础软件服务费、消费券等各是 1），
 		// 如果让它们覆盖，2 瓶的订单会被改成 1 瓶，成本就少算一半。
 		if qty > 0 && kind == model.StmtGoodsPayment {
-			row.Qty = qty
+			// 退款订单不能按原始数量算成本。
+			//
+			// 淘宝账单里退款的单会保留「数量」，但「订单实际金额」已经扣掉退款：
+			// 例如数量 2、实际金额 0、退款 90 —— 整单退掉，
+			// 若还按 2 瓶算成本就凭空多出一笔成本（真金白银的差错）。
+			// 所以按「实际成交金额 ÷ (成交金额 + 退款金额)」折算有效数量：
+			//   全退 → 0 件；退一半 → 一半件数。
+			row.Qty = effectiveQty(qty, amount, refund)
 		}
 		switch {
 		case kind == model.StmtGoodsPayment:
@@ -820,4 +829,23 @@ func (s *Store) OfflineSettlementDetail(ctx context.Context, platform string, pe
 	}
 	out.Revenue = out.Goods + out.Subsidy - out.Advance
 	return out, rows.Err()
+}
+
+// effectiveQty 扣掉退款后的有效数量。
+//
+// 全退（实际金额 0）→ 0；部分退款按金额比例折算。
+func effectiveQty(qty model.Qty, amount, refund model.Money) model.Qty {
+	if qty <= 0 {
+		return 0
+	}
+	if refund <= 0 {
+		return qty
+	}
+	total := amount + refund
+	if total <= 0 {
+		return qty
+	}
+	// 用浮点算再四舍五入到 0.001（Qty 的精度）
+	f := float64(qty.Float()) * (float64(amount) / float64(total))
+	return model.MustQty(strconv.FormatFloat(f, 'f', 3, 64))
 }

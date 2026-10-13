@@ -507,3 +507,71 @@ func TestShippingNotInBorneFee(t *testing.T) {
 		t.Error("运费应出现在「仅列示」列表里")
 	}
 }
+
+// TestRefundedOrderCostUsesEffectiveQty 退款订单不能按原始数量算成本。
+//
+// 淘宝账单里退款单保留「数量」，但「订单实际金额」已扣掉退款：
+// 例如数量 2、实际金额 0、退款 90 —— 整单退掉。
+// 若还按 2 瓶算成本，就凭空多出一笔成本（真实数据里出现过，
+// 等于结算时多扣了 280 元）。
+func TestRefundedOrderCostUsesEffectiveQty(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+	admin := adminUser(t, svc)
+
+	pid, err := svc.Store.CreateProduct(ctx, &model.Product{
+		SKU: "REF-P1", Name: "退款测试品", Unit: "瓶", IsActive: true, IsWine: true,
+		EcCost: model.MustMoney("140"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.BindEcLink(ctx, model.EcTaobao, "REF-EC-1", "", "", pid, admin); err != nil {
+		t.Fatal(err)
+	}
+	rows := []EcOrderRow{
+		// 整单退款：数量 2、实际金额 0、退款 180
+		{OrderNo: "REF-FULL", SubOrderNo: "REF-FULL", Title: "退款测试品",
+			EcProductID: "REF-EC-1", Qty: "2", PaidAmt: "180", ItemStatus: "交易关闭",
+			RefundStatus: "退款成功", CreatedAt: "2026-09-10 10:00"},
+		// 正常单：数量 3、金额 900
+		{OrderNo: "REF-OK", SubOrderNo: "REF-OK", Title: "退款测试品",
+			EcProductID: "REF-EC-1", Qty: "3", PaidAmt: "900", ItemStatus: "交易成功",
+			RefundStatus: "没有申请退款", CreatedAt: "2026-09-11 10:00"},
+	}
+	if _, err := svc.ImportEcOrders(ctx, model.EcTaobao, rows, admin); err != nil {
+		t.Fatal(err)
+	}
+	items := []model.EcStatementItem{
+		{Period: "202609", Kind: model.StmtGoodsPayment, Direction: "income",
+			OrderNo: "REF-FULL", SubOrderNo: "REF-FULL", EcProductID: "REF-EC-1",
+			Qty: model.MustQty("2"), Amount: 0, RefundAmount: model.MustMoney("180")},
+		{Period: "202609", Kind: model.StmtGoodsPayment, Direction: "income",
+			OrderNo: "REF-OK", SubOrderNo: "REF-OK", EcProductID: "REF-EC-1",
+			Qty: model.MustQty("3"), Amount: model.MustMoney("900")},
+	}
+	if err := svc.ImportStatement(ctx, &model.EcStatement{
+		Platform: model.EcTaobao, Period: "202609", Kind: model.StmtGoodsPayment,
+		Source: model.StmtSourceBill, Direction: "income"}, items, admin); err != nil {
+		t.Fatal(err)
+	}
+
+	settings, _ := svc.Store.Settings(ctx)
+	rep, err := svc.BuildSettlement(ctx, model.EcTaobao, "202609", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	total := rep.Total
+	// 收入只有正常单
+	if total.Revenue != model.MustMoney("900") {
+		t.Errorf("销售收入应为 900（退款单收入为 0），实际 %s", total.Revenue)
+	}
+	// 数量只算正常单的 3 件（退款单折算为 0）
+	if total.Qty != model.MustQty("3") {
+		t.Errorf("有效数量应为 3（退款单折算 0），实际 %s", total.Qty)
+	}
+	// 成本只算 3 × 140 = 420，绝不能是 5 × 140 = 700
+	if total.Cost != model.MustMoney("420") {
+		t.Errorf("供货成本应为 420（退款单不计成本），实际 %s", total.Cost)
+	}
+}

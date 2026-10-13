@@ -215,7 +215,10 @@
                   </form>
                   {{end}}
                   {{if .Cost}}
-                  <div class="cell-sub">成本 {{money .Cost}} · 净利 {{money .Profit}}</div>
+                  <div class="cell-sub">
+                    成本 {{money .Cost}} · 净利 {{money .Profit}}
+                    {{if .Refunded}}<span class="muted">（含退款 {{money .RefundAmount}}，成本已按实际成交折算）</span>{{end}}
+                  </div>
                   {{else if not .HasPayment}}
                   {{/* 费用账单里常有"本月只扣费、货款是别的月份打的"订单。
                      这类单没有货款行 → 没有数量 → 算不出成本，

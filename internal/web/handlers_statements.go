@@ -287,6 +287,11 @@ func (s *Server) handleReconcile(w http.ResponseWriter, r *http.Request) {
 		Profit    model.Money
 		Matched   bool
 
+		// Refunded 这一单有退款；RefundAmount 退款金额。
+		// 退款后的成本只按有效数量算，这里标出来让用户看得见。
+		Refunded     bool
+		RefundAmount model.Money
+
 		// HasPayment 本账期有没有这一单的货款行。
 		//
 		// 费用账单里常常出现"这个月只扣了费、货款是上个月打的"的订单。
@@ -326,6 +331,10 @@ func (s *Server) handleReconcile(w http.ResponseWriter, r *http.Request) {
 				if kind == model.StmtGoodsPayment {
 					row.Payment += it.Amount
 					row.HasPayment = true
+					if it.RefundAmount > 0 {
+						row.Refunded = true
+						row.RefundAmount += it.RefundAmount
+					}
 					if it.ProductID != nil && it.EcCost > 0 {
 						row.Cost += model.MulQty(it.Qty, it.EcCost)
 					}
