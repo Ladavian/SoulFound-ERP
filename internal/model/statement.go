@@ -67,10 +67,21 @@ var stmtKindLabels = map[string]string{
 	StmtExperience:     "消费者体验提升计划",
 }
 
+// StmtNotBorne 我方不承担的费用项（只列示给上游看）。
+//
+// 商家寄件服务费是快递费：用户明确"不从利润里扣，只展示给上游"。
+// 所以它既不计入「平台费用」（我方承担的口径），也不参与增值税抵扣。
+var StmtNotBorne = map[string]bool{
+	StmtShipping: true,
+}
+
+// StmtBorne 这笔费用我方是否承担。
+func StmtBorne(kind string) bool { return !StmtNotBorne[kind] }
+
 // StmtNoVatCredit 不参与增值税抵扣的费用项。
 //
-// 商家寄件服务费是快递费：用户在报表里只看，不从利润里扣，
-// 也不当平台开票的进项来抵扣（用户明确"仅列示不计入"）。
+// 不承担的费用自然也不抵扣；这里只是保留一个独立口径，
+// 将来若有"我方承担但不抵扣"的费用项，改这里即可。
 var StmtNoVatCredit = map[string]bool{
 	StmtShipping: true,
 }
@@ -262,8 +273,15 @@ type Settlement struct {
 	// 成本（含税，上游供货价）
 	Cost Money
 
-	// 平台费用（展示口径：账单上的全部费用，含仅列示的运费）
+	// PlatformFee 账单上的全部费用（含只列示、我方不承担的运费）
 	PlatformFee Money
+
+	// BorneFee 我方承担的平台费用（剔除运费等"仅列示"项）。
+	// 页面与导出里的「平台费用」都该用这个口径。
+	BorneFee Money
+
+	// ListedFee 只列示、我方不承担的费用（运费）
+	ListedFee Money
 
 	// CreditableFee 参与增值税抵扣的费用（= 平台费用 − 仅列示项）
 	CreditableFee Money
@@ -334,6 +352,8 @@ func (s *Settlement) Add(o Settlement) {
 	s.Qty += o.Qty
 	s.Cost += o.Cost
 	s.PlatformFee += o.PlatformFee
+	s.BorneFee += o.BorneFee
+	s.ListedFee += o.ListedFee
 	s.CreditableFee += o.CreditableFee
 }
 

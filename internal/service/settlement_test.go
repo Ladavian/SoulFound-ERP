@@ -431,3 +431,79 @@ func TestMultiPeriodSettlementNoDoubleFee(t *testing.T) {
 		t.Errorf("应保留 2 条逐账期小计，实际 %d", len(two.Periods))
 	}
 }
+
+// TestShippingNotInBorneFee 运费不计入"我方承担的平台费用"。
+//
+// 用户反馈：平台费用汇总里有快递费，各平台结算里也把快递费加进去了，
+// 但快递费不该由他承担（只列示给上游看）。
+// 所以「平台费用」必须是剔除运费后的口径，运费单独列示。
+func TestShippingNotInBorneFee(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+	admin := adminUser(t, svc)
+
+	// 一笔服务费 60（承担）+ 一笔运费 106（仅列示）
+	for _, it := range []struct {
+		kind   string
+		amount string
+	}{
+		{model.StmtBaseService, "60"},
+		{model.StmtShipping, "106"},
+	} {
+		if err := svc.ImportStatement(ctx, &model.EcStatement{
+			Platform: model.EcTaobao, Period: "202609", Kind: it.kind,
+			Source: model.StmtSourceBill, Direction: "expense"}, []model.EcStatementItem{{
+			Period: "202609", Kind: it.kind, Direction: "expense",
+			OrderNo: "T-" + it.kind, Amount: model.MustMoney(it.amount),
+		}}, admin); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	settings, _ := svc.Store.Settings(ctx)
+	rep, err := svc.BuildSettlement(ctx, model.EcTaobao, "202609", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	total := rep.Total
+	// 展示口径仍然保留全部（66+106）
+	if total.PlatformFee != model.MustMoney("166") {
+		t.Errorf("账单全部费用应为 166，实际 %s", total.PlatformFee)
+	}
+	// 我方承担的口径只算 60
+	if total.BorneFee != model.MustMoney("60") {
+		t.Errorf("我方承担的平台费用应为 60（不含运费），实际 %s", total.BorneFee)
+	}
+	if total.ListedFee != model.MustMoney("106") {
+		t.Errorf("仅列示的费用应为 106（运费），实际 %s", total.ListedFee)
+	}
+
+	// 费用矩阵的合计也只算承担的
+	rep2, err := svc.BuildSummary(ctx, []store.StatementKey{
+		{Platform: model.EcTaobao, Period: "202609"},
+	}, settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := rep2.Fees
+	if m.Total != model.MustMoney("60") {
+		t.Errorf("费用矩阵合计应只算承担的 60，实际 %s", m.Total)
+	}
+	if m.ListedTotal != model.MustMoney("106") {
+		t.Errorf("仅列示合计应为 106，实际 %s", m.ListedTotal)
+	}
+	for _, k := range m.Kinds {
+		if k == model.StmtShipping {
+			t.Error("运费不该出现在费用矩阵的费用行里（应单独列示）")
+		}
+	}
+	found := false
+	for _, k := range m.ListedKinds {
+		if k == model.StmtShipping {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("运费应出现在「仅列示」列表里")
+	}
+}

@@ -155,6 +155,22 @@ func buildSummaryWorkbook(rep *service.SummaryReport, det *service.SummaryDetail
 	tc, _ := excelize.CoordinatesToCellName(col, row)
 	_ = f.SetCellValue(ws2, tc, m.Total.Float())
 	_ = f.SetCellStyle(ws2, fmt.Sprintf("A%d", row), tc+fmt.Sprintf("%d", row), bold)
+	// 只列示、我方不承担的费用单独列在下面，不计入上面的合计
+	if m.ListedTotal != 0 {
+		row += 2
+		_ = f.SetCellValue(ws2, fmt.Sprintf("A%d", row), "以下只列示，我方不承担，不计入上面的费用合计")
+		_ = f.SetCellStyle(ws2, fmt.Sprintf("A%d", row), fmt.Sprintf("A%d", row), bold)
+		row++
+		for _, kind := range m.ListedKinds {
+			_ = f.SetCellValue(ws2, fmt.Sprintf("A%d", row), model.StmtKindLabel(kind))
+			_ = f.SetCellValue(ws2, fmt.Sprintf("B%d", row), m.Listed[kind].Float())
+			_ = f.SetCellStyle(ws2, fmt.Sprintf("B%d", row), fmt.Sprintf("B%d", row), money)
+			row++
+		}
+		_ = f.SetCellValue(ws2, fmt.Sprintf("A%d", row), "仅列示合计")
+		_ = f.SetCellValue(ws2, fmt.Sprintf("B%d", row), m.ListedTotal.Float())
+		_ = f.SetCellStyle(ws2, fmt.Sprintf("A%d", row), fmt.Sprintf("B%d", row), bold)
+	}
 	_ = f.SetColWidth(ws2, "A", "A", 30)
 	_ = f.SetColWidth(ws2, "B", "Z", 16)
 
@@ -323,7 +339,7 @@ func buildSummaryWorkbook(rep *service.SummaryReport, det *service.SummaryDetail
 		_ = f.SetCellValue(ws6, fmt.Sprintf("A%d", orow), "支出侧对账")
 		_ = f.SetCellValue(ws6, fmt.Sprintf("B%d", orow),
 			fmt.Sprintf("平台账单全部费用 %s − 已排除费用 %s = 本次结算费用 %s",
-				rep.Total.PlatformFee.Add(of.FeeTotal).String(), of.FeeTotal.String(), rep.Total.PlatformFee.String()))
+				rep.Total.BorneFee.Add(of.FeeTotal).String(), of.FeeTotal.String(), rep.Total.BorneFee.String()))
 		_ = f.SetColWidth(ws6, "A", "A", 22)
 		_ = f.SetColWidth(ws6, "B", "B", 82)
 		_ = f.SetColWidth(ws6, "C", "C", 16)

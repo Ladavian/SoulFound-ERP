@@ -147,9 +147,17 @@ func (s *Service) BuildSettlement(ctx context.Context, platform, period string, 
 	// 总费用按所有支出账单口径（含整期一笔）；
 	// 其中"仅列示"的（运费）单独扣出来，不参与增值税抵扣。
 	rep.Total.PlatformFee = 0
+	rep.Total.BorneFee = 0
+	rep.Total.ListedFee = 0
 	rep.Total.CreditableFee = 0
 	for kind, amt := range rep.FeeByKind {
 		rep.Total.PlatformFee += amt
+		if model.StmtBorne(kind) {
+			rep.Total.BorneFee += amt
+		} else {
+			// 运费这类只列示的单独归集，不混进"我方承担"
+			rep.Total.ListedFee += amt
+		}
 		if model.StmtCreditable(kind) {
 			rep.Total.CreditableFee += amt
 		}
@@ -178,7 +186,12 @@ type FeeMatrix struct {
 	Cell      map[string]model.Money // kind|platform → 金额
 	KindTotal map[string]model.Money // 每行合计
 	PlatTotal map[string]model.Money // 每列合计
-	Total     model.Money            // 总计
+	Total     model.Money            // 总计（仅"我方承担"的费用）
+
+	// Listed 只列示、我方不承担的费用（运费），单独归集
+	Listed      map[string]model.Money
+	ListedKinds []string
+	ListedTotal model.Money
 }
 
 // SummaryReport 多平台合并对账单。
@@ -230,12 +243,24 @@ func buildFeeMatrix(items []PlatformSettlement) FeeMatrix {
 		Cell:      map[string]model.Money{},
 		KindTotal: map[string]model.Money{},
 		PlatTotal: map[string]model.Money{},
+		Listed:    map[string]model.Money{},
 	}
 	platSeen, kindSeen := map[string]bool{}, map[string]bool{}
 	for _, it := range items {
 		for _, kind := range model.StmtKinds {
 			amt := it.FeeByKind[kind]
 			if amt == 0 {
+				continue
+			}
+			// "仅列示"的（运费）不进矩阵合计：我方不承担，
+			// 混进合计会让人以为要扣这笔钱。它单独在下面列示。
+			if !model.StmtBorne(kind) {
+				m.Listed[kind] += amt
+				m.ListedTotal += amt
+				if !kindSeen[kind] {
+					kindSeen[kind] = true
+					m.ListedKinds = append(m.ListedKinds, kind)
+				}
 				continue
 			}
 			if !platSeen[it.Platform] {
@@ -259,14 +284,33 @@ func buildFeeMatrix(items []PlatformSettlement) FeeMatrix {
 	var extra []string
 	for _, it := range items {
 		for kind := range it.FeeByKind {
+			if model.StmtBorne(kind) {
+				if !kindSeen[kind] {
+					kindSeen[kind] = true
+					extra = append(extra, kind)
+				}
+				continue
+			}
 			if !kindSeen[kind] {
 				kindSeen[kind] = true
-				extra = append(extra, kind)
+				m.ListedKinds = append(m.ListedKinds, kind)
 			}
 		}
 	}
 	sort.Strings(extra)
+	// 动态费用项里也可能有"仅列示"的，先归集
 	for _, kind := range extra {
+		if !model.StmtBorne(kind) {
+			for _, it := range items {
+				m.Listed[kind] += it.FeeByKind[kind]
+				m.ListedTotal += it.FeeByKind[kind]
+			}
+		}
+	}
+	for _, kind := range extra {
+		if !model.StmtBorne(kind) {
+			continue
+		}
 		m.Kinds = append(m.Kinds, kind)
 		for _, it := range items {
 			amt := it.FeeByKind[kind]

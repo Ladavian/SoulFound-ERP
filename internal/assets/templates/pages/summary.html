@@ -135,7 +135,10 @@
             <td class="num" data-label="销量">{{.Total.Qty}}</td>
             <td class="num" data-label="销售收入">{{money .Total.Revenue}}</td>
             <td class="num" data-label="供货成本">{{money .Total.Cost}}</td>
-            <td class="num" data-label="平台费用">{{money .Total.PlatformFee}}</td>
+            <td class="num" data-label="平台费用">
+              {{money .Total.BorneFee}}
+              {{if .Total.ListedFee}}<div class="cell-sub muted">另有运费 {{money .Total.ListedFee}} 仅列示</div>{{end}}
+            </td>
             <td class="num span-2" data-label="增值税">{{money (.Total.VatPayable $rates)}}</td>
             <td class="num span-2" data-label="应结金额">
               <span class="cell-num">{{money (.Total.Net $rates)}}</span>
@@ -150,7 +153,7 @@
             <td class="num">{{$t.Qty}}</td>
             <td class="num">{{money $t.Revenue}}</td>
             <td class="num">{{money $t.Cost}}</td>
-            <td class="num">{{money $t.PlatformFee}}</td>
+            <td class="num">{{money $t.BorneFee}}</td>
             <td class="num">{{money ($t.VatPayable $rates)}}</td>
             <td class="num">{{money ($t.Net $rates)}}</td>
           </tr>
@@ -186,7 +189,7 @@
   <div class="card__head">
     <div class="card__title">
       平台费用汇总
-      <span class="card__sub">一行一个费用类型，一列一个平台；看得出哪笔钱是哪个平台的</span>
+      <span class="card__sub">一行一个费用类型，一列一个平台；只统计我方承担的费用</span>
     </div>
   </div>
   <div class="card__body">
@@ -227,9 +230,22 @@
         </tfoot>
       </table>
     </div>
+    {{if $rep.Fees.ListedTotal}}
+    <div class="alert alert--info" style="margin-top:12px">
+      {{template "icon" "info"}}
+      <div class="alert__body">
+        <div class="alert__title">仅列示、我方不承担：{{money $rep.Fees.ListedTotal}}</div>
+        <div>
+          {{range $kind := $rep.Fees.ListedKinds}}{{stmtKind $kind}} {{money (index $rep.Fees.Listed $kind)}}；{{end}}
+          这些钱不从你的利润里扣，也不参与增值税抵扣，只在报表里给上游看，
+          所以<strong>没有计入上面的费用合计</strong>。
+        </div>
+      </div>
+    </div>
+    {{end}}
     <div class="tiny muted" style="margin-top:10px;line-height:1.8">
       每笔费用都带了平台前缀（如「京东·佣金」），所以同一个平台用什么费用一目了然。
-      开票部分参与增值税抵扣；<strong>商家寄件服务费</strong>（快递费）只列示、不计入结算。
+      开票部分参与增值税抵扣。
     </div>
   </div>
 </div>
