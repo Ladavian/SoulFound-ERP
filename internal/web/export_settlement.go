@@ -218,12 +218,29 @@ func buildSettlementWorkbook(rep *service.SettlementReport, platformLabel string
 		if of.Advance != 0 {
 			put("平台代付扣回", "从货款扣回", -of.Advance.Float(), moneyStyle)
 		}
-		put("收入合计", "货款 + 补贴 − 垫支", of.Revenue.Float(), totalStyle)
+		put("收入合计", "货款 + 补贴 − 平台代付扣回", of.Revenue.Float(), totalStyle)
+		if of.Cost != 0 {
+			put("供货成本", fmt.Sprintf("%s 件 × 电商成本", of.CostQty), of.Cost.Float(), moneyStyle)
+		}
 		for kind, amt := range of.FeeByKind {
 			put(model.StmtKindLabel(kind), "支出 · 已排除", -amt.Float(), moneyStyle)
 		}
 		if of.FeeTotal != 0 {
 			put("支出合计", "平台费用", -of.FeeTotal.Float(), totalStyle)
+		}
+		// 增值税：这些单一并转到线下结算，增值税也要算出来给他们用
+		offVat := 0.0
+		{
+			var creditable float64
+			for kind, amt := range of.FeeByKind {
+				if model.StmtCreditable(kind) {
+					creditable += amt.Float()
+				}
+			}
+			offVat = of.Revenue.Float()/1.13*0.13 - of.Cost.Float()/1.13*0.13 - creditable/1.06*0.06
+			put("应交增值税", "按这些单的收入/成本/费用单独算", offVat, moneyStyle)
+			put("线下应结", "收入 − 供货成本 − 增值税 − 平台费用",
+				of.Revenue.Float()-of.Cost.Float()-offVat-of.FeeTotal.Float(), totalStyle)
 		}
 		r++
 		_ = f.SetCellValue(wso, fmt.Sprintf("A%d", r), "收入侧对账")

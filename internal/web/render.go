@@ -15,6 +15,7 @@ import (
 
 	"icewine-erp/internal/assets"
 	"icewine-erp/internal/model"
+	"icewine-erp/internal/store"
 )
 
 // Renderer 负责模板解析与渲染。生产模式下模板随二进制打包，开发模式读取磁盘。
@@ -72,6 +73,27 @@ var ecNavItems = []map[string]any{
 func (r *Renderer) funcs() template.FuncMap {
 	sym := r.symbol()
 	return template.FuncMap{
+		"offlineVat": func(d store.OfflineDetail, r model.VatRates) model.Money {
+			var creditable model.Money
+			for kind, amt := range d.FeeByKind {
+				if model.StmtCreditable(kind) {
+					creditable += amt
+				}
+			}
+			return model.TaxOf(d.Revenue, r.Output) - model.TaxOf(d.Cost, r.Input) -
+				model.TaxOf(creditable, r.Platform)
+		},
+		"offlineNet": func(d store.OfflineDetail, r model.VatRates) model.Money {
+			var creditable model.Money
+			for kind, amt := range d.FeeByKind {
+				if model.StmtCreditable(kind) {
+					creditable += amt
+				}
+			}
+			vat := model.TaxOf(d.Revenue, r.Output) - model.TaxOf(d.Cost, r.Input) -
+				model.TaxOf(creditable, r.Platform)
+			return d.Revenue - d.Cost - vat - d.FeeTotal
+		},
 		"add2": func(a, b model.Money) model.Money { return a + b },
 		// 侧栏「电商账单」的子菜单
 		"ecNav": func() []map[string]any { return ecNavItems },

@@ -239,6 +239,19 @@
             <td class="num strong" data-label="金额">{{money .Offline.Cost}}</td>
           </tr>
           {{end}}
+          {{$ov := offlineVat .Offline .Rates}}
+          {{if $ov}}
+          <tr>
+            <td class="row-cell--main strong">应交增值税</td>
+            <td class="small text-2" data-label="说明">按这些单的收入/成本/费用单独算</td>
+            <td class="num strong" data-label="金额">{{money $ov}}</td>
+          </tr>
+          {{end}}
+          <tr>
+            <td class="row-cell--main strong">线下应结</td>
+            <td class="small text-2" data-label="说明">收入 − 供货成本 − 增值税 − 平台费用</td>
+            <td class="num strong" data-label="金额">{{money (offlineNet .Offline .Rates)}}</td>
+          </tr>
         </tbody>
       </table>
     </div>

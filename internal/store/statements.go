@@ -772,6 +772,13 @@ type OfflineDetail struct {
 	Cost     model.Money
 	CostQty  model.Qty
 	CostRows int
+
+	// Vat 被排除订单应交的增值税。
+	//
+	// 用户要求：这些单的收入、成本、费用、增值税全部放到线下去算，
+	// 电商账单里一点都不留。前三项已经排除，增值税是按它们自己的
+	// 收入/成本/费用单独算出来的，一并列出来供线下结算使用。
+	Vat model.Money
 }
 
 // OfflineSettlementDetail 统计被排除订单的收入与支出明细。

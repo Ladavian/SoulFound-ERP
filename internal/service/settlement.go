@@ -544,6 +544,23 @@ type ItemDetailRow struct {
 	FileName  string
 }
 
+// OfflineVat 被排除订单的应交增值税。
+//
+// 这些单整单转到线下结算，所以增值税也要按它们自己的
+// 收入 / 成本 / 费用单独算一份，电商账单里不再包含。
+func (s *Service) OfflineVat(d store.OfflineDetail, rates model.VatRates) model.Money {
+	// 被排除订单匹配到的平台费用里可抵扣的部分
+	var creditable model.Money
+	for kind, amt := range d.FeeByKind {
+		if model.StmtCreditable(kind) {
+			creditable += amt
+		}
+	}
+	return model.TaxOf(d.Revenue, rates.Output) -
+		model.TaxOf(d.Cost, rates.Input) -
+		model.TaxOf(creditable, rates.Platform)
+}
+
 // SummaryDetail 汇总报告附带的明细。
 type SummaryDetail struct {
 	Orders []OrderDetailRow
