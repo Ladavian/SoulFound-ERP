@@ -232,6 +232,13 @@
             <td class="num strong neg" data-label="金额">−{{money .Offline.FeeTotal}}</td>
           </tr>
           {{end}}
+          {{if .Offline.Cost}}
+          <tr>
+            <td class="row-cell--main strong">供货成本</td>
+            <td class="small text-2" data-label="说明">{{.Offline.CostQty}} 件 × 电商成本</td>
+            <td class="num strong" data-label="金额">{{money .Offline.Cost}}</td>
+          </tr>
+          {{end}}
         </tbody>
       </table>
     </div>
@@ -242,6 +249,14 @@
         − 已排除货款 <strong>{{money .Offline.Goods}}</strong>
         = 本次结算货款 <strong>{{money .Rep.Total.Goods}}</strong>
       </div>
+      {{if .Offline.Cost}}
+      <div>
+        <strong>成本侧对账</strong>：全部订单供货成本
+        <strong>{{money (add2 .Rep.Total.Cost .Offline.Cost)}}</strong>
+        − 已排除成本 <strong>{{money .Offline.Cost}}</strong>
+        = 本次结算供货成本 <strong>{{money .Rep.Total.Cost}}</strong>
+      </div>
+      {{end}}
       <div>
         <strong>支出侧对账</strong>：平台账单全部费用合计
         <strong>{{money (add2 .Rep.Total.PlatformFee .Offline.FeeTotal)}}</strong>

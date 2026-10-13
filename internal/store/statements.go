@@ -765,6 +765,13 @@ type OfflineDetail struct {
 	// FeeByKind 各费用项的金额（支出侧要逐项说明）
 	FeeByKind map[string]model.Money
 	FeeRows   int
+
+	// Cost 被排除订单的供货成本（有效数量 × 电商成本）。
+	// 排掉大额采购单时，被剔除的主要就是这块，必须一并说明，
+	// 否则看不出"应结为什么涨了这么多"。
+	Cost     model.Money
+	CostQty  model.Qty
+	CostRows int
 }
 
 // OfflineSettlementDetail 统计被排除订单的收入与支出明细。
@@ -828,7 +835,37 @@ func (s *Store) OfflineSettlementDetail(ctx context.Context, platform string, pe
 		}
 	}
 	out.Revenue = out.Goods + out.Subsidy - out.Advance
-	return out, rows.Err()
+
+	// 被排除订单的供货成本
+	costRows, err := s.db.QueryContext(ctx, `
+		SELECT COALESCE(SUM(CASE WHEN oi.product_id IS NOT NULL THEN oi.qty END), 0),
+		       COALESCE(SUM(CASE WHEN oi.product_id IS NOT NULL
+		                         THEN oi.qty * COALESCE(p.ec_cost, 0) END), 0),
+		       COUNT(*)
+		  FROM ec_statement_items si
+		  JOIN ec_orders x ON x.platform = si.platform AND x.order_no = si.order_no
+		  LEFT JOIN ec_order_items oi ON oi.order_id = x.id
+		  LEFT JOIN products p ON p.id = oi.product_id
+		 WHERE si.platform = ? AND si.kind = ? AND si.period IN (`+in+`)
+		   AND x.settle_mode = 'offline'`,
+		append([]any{platform, model.StmtGoodsPayment}, args[1:]...)...)
+	if err != nil {
+		return out, err
+	}
+	defer costRows.Close()
+	if costRows.Next() {
+		var q, c int64
+		if err := costRows.Scan(&q, &c, &out.CostRows); err != nil {
+			return out, err
+		}
+		// 单位换算：qty 精度 1/1000、ec_cost 精度 1/10000，
+		// 两者相乘得 1/10^7；要还原成 Money（1/10000）需除以 1000。
+		// 之前写成 /1000*10（等于 /100），结果成本被放大 10 倍
+		// （140 件 × 75 显示成 105,000，实际应为 10,500）。
+		out.CostQty = model.Qty(q)
+		out.Cost = model.Money(c / 1000)
+	}
+	return out, costRows.Err()
 }
 
 // effectiveQty 扣掉退款后的有效数量。

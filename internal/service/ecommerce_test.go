@@ -718,3 +718,69 @@ func TestEcommerceBillingDoesNotTouchStock(t *testing.T) {
 		t.Errorf("库存应仍是期初的 50 瓶，实际 %s", q1)
 	}
 }
+
+// TestOfflineDetailCostUnits 被排除订单的成本金额单位要正确。
+//
+// 踩过：SQL 里 qty（1/1000）× ec_cost（1/10000）得 1/10^7，
+// 还原成 Money（1/10000）要除以 1000；我写成 /1000*10（等于 /100），
+// 结果 140 件 × 75 元显示成 105,000（实际应为 10,500），放大 10 倍。
+func TestOfflineDetailCostUnits(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+	admin := adminUser(t, svc)
+
+	pid, err := svc.Store.CreateProduct(ctx, &model.Product{
+		SKU: "OFF-C1", Name: "排除成本测试品", Unit: "瓶", IsActive: true, IsWine: true,
+		EcCost: model.MustMoney("75"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.BindEcLink(ctx, model.EcTaobao, "OFF-C-EC", "", "", pid, admin); err != nil {
+		t.Fatal(err)
+	}
+	// 140 件、货款 11070
+	if _, err := svc.ImportEcOrders(ctx, model.EcTaobao, []EcOrderRow{{
+		OrderNo: "OFF-C-1", SubOrderNo: "OFF-C-1", Title: "排除成本测试品",
+		EcProductID: "OFF-C-EC", Qty: "140", PaidAmt: "11070", ItemStatus: "交易成功",
+		RefundStatus: "没有申请退款", CreatedAt: "2026-09-10 10:00",
+	}}, admin); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.ImportStatement(ctx, &model.EcStatement{
+		Platform: model.EcTaobao, Period: "202609", Kind: model.StmtGoodsPayment,
+		Source: model.StmtSourceBill, Direction: "income"}, []model.EcStatementItem{{
+		Period: "202609", Kind: model.StmtGoodsPayment, Direction: "income",
+		OrderNo: "OFF-C-1", SubOrderNo: "OFF-C-1", EcProductID: "OFF-C-EC",
+		Qty: model.MustQty("140"), Amount: model.MustMoney("11070"),
+	}}, admin); err != nil {
+		t.Fatal(err)
+	}
+	// 全部结算时成本 = 140 × 75 = 10500
+	settings, _ := svc.Store.Settings(ctx)
+	all, err := svc.BuildSettlement(ctx, model.EcTaobao, "202609", settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if all.Total.Cost != model.MustMoney("10500") {
+		t.Errorf("全部结算成本应为 10500，实际 %s", all.Total.Cost)
+	}
+	// 标记线下结算后：本次结算成本 0，被排除成本应为 10500
+	if err := svc.SetOrderSettleMode(ctx, model.EcTaobao, "OFF-C-1", model.SettleModeOffline, admin); err != nil {
+		t.Fatal(err)
+	}
+	det, err := svc.Store.OfflineSettlementDetail(ctx, model.EcTaobao, []string{"202609"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if det.Cost != model.MustMoney("10500") {
+		t.Errorf("被排除订单成本应为 10500（140 件 × 75），实际 %s", det.Cost)
+	}
+	if det.CostQty != model.MustQty("140") {
+		t.Errorf("被排除订单数量应为 140，实际 %s", det.CostQty)
+	}
+	after, _ := svc.BuildSettlement(ctx, model.EcTaobao, "202609", settings)
+	if after.Total.Cost != 0 {
+		t.Errorf("排除后本次结算成本应为 0，实际 %s", after.Total.Cost)
+	}
+}
