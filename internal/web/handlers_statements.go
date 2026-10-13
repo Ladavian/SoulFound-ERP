@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -509,16 +510,14 @@ func (s *Server) handleSettlement(w http.ResponseWriter, r *http.Request) {
 
 	// 线下结算被排除的订单：结算单里必须说清楚，
 	// 否则平台账单合计与本次结算对不上会让人怀疑算错。
-	offline, err := s.svc.Store.OfflineSettlementDetail(ctx, platform, sel)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	// 已排除订单：只列出订单与金额（用户要求，不做二次计算）
+	offlineOrders, offlineAmount := s.offlineOrderList(ctx, platform, sel)
 
 	noCache(w)
 	page := s.newPage(r, "结算单", "settlement")
-	page["Offline"] = offline
-	page["HasOffline"] = offline.Orders > 0
+	page["OfflineOrders"] = offlineOrders
+	page["OfflineAmount"] = offlineAmount
+	page["HasOffline"] = len(offlineOrders) > 0
 	// 有退款的货款行（含自动退差价）：整单退掉后收入与成本都是 0，
 	// 会从结算里"消失"，必须单独列出来才对得上平台账单。
 	refunds, _ := s.svc.Store.RefundedOrders(ctx, platform, sel)
@@ -566,11 +565,13 @@ func (s *Server) handleSettlementExport(w http.ResponseWriter, r *http.Request) 
 		s.fail(w, r, "/ecommerce/settlement", err)
 		return
 	}
-	offline, _ := s.svc.Store.OfflineSettlementDetail(ctx, platform, rep.Periods2)
-	if len(rep.Periods2) == 0 && rep.Period != "" {
-		offline, _ = s.svc.Store.OfflineSettlementDetail(ctx, platform, []string{rep.Period})
+	exportPeriods := rep.Periods2
+	if len(exportPeriods) == 0 && rep.Period != "" {
+		exportPeriods = []string{rep.Period}
 	}
-	f, err := buildSettlementWorkbook(rep, model.EcPlatformLabel(platform), &offline)
+	offlineOrders, offlineAmount := s.offlineOrderList(ctx, platform, exportPeriods)
+	offline := store.OfflineDetail{Orders: len(offlineOrders), Goods: offlineAmount}
+	f, err := buildSettlementWorkbook(rep, model.EcPlatformLabel(platform), &offline, offlineOrders)
 	if err != nil {
 		s.fail(w, r, "/ecommerce/settlement", err)
 		return
@@ -949,4 +950,20 @@ func periodsOfKeys(keys []store.StatementKey) []string {
 		}
 	}
 	return out
+}
+
+// offlineOrderList 已排除（线下结算）的订单与金额。
+//
+// 只取"哪个单、多少钱"，不在结算单里再算增值税/收入/成本——
+// 用户明确这些单整单转到线下算，这里列出来即可。
+func (s *Server) offlineOrderList(ctx context.Context, platform string, periods []string) ([]store.RefundedOrder, model.Money) {
+	rows, err := s.svc.Store.OfflineOrderList(ctx, platform, periods)
+	if err != nil {
+		return nil, 0
+	}
+	var total model.Money
+	for _, r := range rows {
+		total += r.Amount
+	}
+	return rows, total
 }

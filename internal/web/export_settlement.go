@@ -15,7 +15,7 @@ import (
 //
 // 版式按"人能看懂"来排：先结论（应结多少），再构成（怎么算出来的），
 // 最后明细（逐单 + 逐商品 + 平台费用），会计和上游都能直接看。
-func buildSettlementWorkbook(rep *service.SettlementReport, platformLabel string, offlineOff *store.OfflineDetail) (*excelize.File, error) {
+func buildSettlementWorkbook(rep *service.SettlementReport, platformLabel string, offlineOff *store.OfflineDetail, offlineOrders []store.RefundedOrder) (*excelize.File, error) {
 	f := excelize.NewFile()
 	defer func() { _ = f.Close() }()
 
@@ -187,77 +187,34 @@ func buildSettlementWorkbook(rep *service.SettlementReport, platformLabel string
 	f.SetActiveSheet(0)
 	// ---------------- 已排除订单（线下结算） ----------------
 	//
-	// 用户要求：排除的订单不管收入还是支出都要在账单里说明白，
-	// 否则平台账单的合计与本次结算对不上，看不出是不是算错了。
+	// 用户要求：只需列出订单与金额，其他不用写。
 	if offlineOff != nil && offlineOff.Orders > 0 {
 		of := offlineOff
 		wso := "已排除订单"
 		_, _ = f.NewSheet(wso)
-		_ = f.SetCellValue(wso, "A1", "已排除订单（线下结算）—— 本次结算的收入与支出都不含这些单")
+		_ = f.SetCellValue(wso, "A1", "已排除订单（线下结算）—— 这些单在线下结算，不计入本次对账单")
 		_ = f.SetCellStyle(wso, "A1", "A1", headStyle)
-		_ = f.SetCellValue(wso, "A2", "项目")
-		_ = f.SetCellValue(wso, "B2", "说明")
+		_ = f.SetCellValue(wso, "A2", "订单号")
+		_ = f.SetCellValue(wso, "B2", "商品")
 		_ = f.SetCellValue(wso, "C2", "金额")
 		_ = f.SetCellStyle(wso, "A2", "C2", headStyle)
-
 		r := 3
-		put := func(name, note string, amt float64, style int) {
-			_ = f.SetCellValue(wso, fmt.Sprintf("A%d", r), name)
-			_ = f.SetCellValue(wso, fmt.Sprintf("B%d", r), note)
-			_ = f.SetCellValue(wso, fmt.Sprintf("C%d", r), amt)
-			if style != 0 {
-				_ = f.SetCellStyle(wso, fmt.Sprintf("C%d", r), fmt.Sprintf("C%d", r), style)
+		for _, o := range offlineOrders {
+			_ = f.SetCellValue(wso, fmt.Sprintf("A%d", r), o.OrderNo)
+			title := o.Title
+			if title == "" {
+				title = "商品ID " + o.EcProductID
 			}
+			_ = f.SetCellValue(wso, fmt.Sprintf("B%d", r), title)
+			_ = f.SetCellValue(wso, fmt.Sprintf("C%d", r), o.Amount.Float())
+			_ = f.SetCellStyle(wso, fmt.Sprintf("C%d", r), fmt.Sprintf("C%d", r), moneyStyle)
 			r++
 		}
-		put("订单数", "共 "+fmt.Sprintf("%d", of.Orders)+" 单 · "+of.Qty.String()+" 件", 0, 0)
-		put("货款", "这些单的平台打款", of.Goods.Float(), moneyStyle)
-		if of.Subsidy != 0 {
-			put("平台补贴", "淘金币等", of.Subsidy.Float(), moneyStyle)
-		}
-		if of.Advance != 0 {
-			put("平台代付扣回", "从货款扣回", -of.Advance.Float(), moneyStyle)
-		}
-		put("收入合计", "货款 + 补贴 − 平台代付扣回", of.Revenue.Float(), totalStyle)
-		if of.Cost != 0 {
-			put("供货成本", fmt.Sprintf("%s 件 × 电商成本", of.CostQty), of.Cost.Float(), moneyStyle)
-		}
-		for kind, amt := range of.FeeByKind {
-			put(model.StmtKindLabel(kind), "支出 · 已排除", -amt.Float(), moneyStyle)
-		}
-		if of.FeeTotal != 0 {
-			put("支出合计", "平台费用", -of.FeeTotal.Float(), totalStyle)
-		}
-		// 增值税：这些单一并转到线下结算，增值税也要算出来给他们用
-		offVat := 0.0
-		{
-			var creditable float64
-			for kind, amt := range of.FeeByKind {
-				if model.StmtCreditable(kind) {
-					creditable += amt.Float()
-				}
-			}
-			offVat = of.Revenue.Float()/1.13*0.13 - of.Cost.Float()/1.13*0.13 - creditable/1.06*0.06
-			put("应交增值税", "按这些单的收入/成本/费用单独算", offVat, moneyStyle)
-			put("线下应结", "收入 − 供货成本 − 增值税 − 平台费用",
-				of.Revenue.Float()-of.Cost.Float()-offVat-of.FeeTotal.Float(), totalStyle)
-		}
-		r++
-		_ = f.SetCellValue(wso, fmt.Sprintf("A%d", r), "收入侧对账")
-		_ = f.SetCellValue(wso, fmt.Sprintf("B%d", r),
-			fmt.Sprintf("平台账单全部货款 %s − 已排除货款 %s = 本次结算货款 %s",
-				rep.Total.Goods.Add(of.Goods).String(), of.Goods.String(), rep.Total.Goods.String()))
-		r++
-		_ = f.SetCellValue(wso, fmt.Sprintf("A%d", r), "支出侧对账")
-		_ = f.SetCellValue(wso, fmt.Sprintf("B%d", r),
-			fmt.Sprintf("平台账单全部费用 %s − 已排除费用 %s = 本次结算费用 %s",
-				rep.Total.BorneFee.Add(of.FeeTotal).String(), of.FeeTotal.String(), rep.Total.BorneFee.String()))
-		r += 2
-		_ = f.SetCellValue(wso, fmt.Sprintf("A%d", r), "说明")
-		_ = f.SetCellValue(wso, fmt.Sprintf("B%d", r),
-			"以上订单按线下结算处理，本次结算的收入、成本、增值税与费用抵扣均不含它们。")
-		_ = f.SetColWidth(wso, "A", "A", 20)
-		_ = f.SetColWidth(wso, "B", "B", 86)
+		_ = f.SetCellValue(wso, fmt.Sprintf("A%d", r), fmt.Sprintf("合计 %d 单", len(offlineOrders)))
+		_ = f.SetCellValue(wso, fmt.Sprintf("C%d", r), of.Goods.Float())
+		_ = f.SetCellStyle(wso, fmt.Sprintf("A%d", r), fmt.Sprintf("C%d", r), totalStyle)
+		_ = f.SetColWidth(wso, "A", "A", 24)
+		_ = f.SetColWidth(wso, "B", "B", 52)
 		_ = f.SetColWidth(wso, "C", "C", 16)
 	}
 

@@ -946,3 +946,42 @@ func (s *Store) RefundedOrders(ctx context.Context, platform string, periods []s
 	}
 	return out, rows.Err()
 }
+
+// OfflineOrderList 已排除（线下结算）的订单与金额。
+//
+// 只返回"哪个单、多少钱"，供结算单简单列出。
+func (s *Store) OfflineOrderList(ctx context.Context, platform string, periods []string) ([]RefundedOrder, error) {
+	if len(periods) == 0 {
+		return nil, nil
+	}
+	ph := make([]string, 0, len(periods))
+	args := []any{platform, model.StmtGoodsPayment}
+	for _, p := range periods {
+		ph = append(ph, "?")
+		args = append(args, p)
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT si.period, si.order_no, COALESCE(si.qty,0), si.amount, 0,
+		        si.ec_product_id, si.title
+		   FROM ec_statement_items si
+		   JOIN ec_orders x ON x.platform = si.platform AND x.order_no = si.order_no
+		  WHERE si.platform = ? AND si.kind = ? AND x.settle_mode = 'offline'
+		    AND si.period IN (`+strings.Join(ph, ",")+`)
+		  ORDER BY si.period, si.order_no`,
+		args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []RefundedOrder
+	for rows.Next() {
+		var r RefundedOrder
+		var refund int64
+		if err := rows.Scan(&r.Period, &r.OrderNo, &r.Qty, &r.Amount, &refund,
+			&r.EcProductID, &r.Title); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}

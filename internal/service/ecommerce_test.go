@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"database/sql"
 	"testing"
 
 	"icewine-erp/internal/model"
@@ -786,29 +785,29 @@ func TestOfflineDetailCostUnits(t *testing.T) {
 	}
 }
 
-// TestOfflineOrdersCarryTheirOwnVat 被排除订单的增值税要单独算出来。
+// TestOfflineOrdersListedWithAmount 已排除订单只需列出订单与金额。
 //
-// 用户要求：这些单的收入、成本、费用、增值税全部放到线下去算，
-// 电商账单里一点都不留。所以「已排除」块必须给出它们的
-// 应交增值税与线下应结，否则线下结算缺一块。
-func TestOfflineOrdersCarryTheirOwnVat(t *testing.T) {
+// 用户明确：这些单整单转到线下算，电商对账里列出来就行，
+// 不要在这里再算增值税、收入、成本。
+// 同时电商侧的四个基数必须全部为 0（一点都不留）。
+func TestOfflineOrdersListedWithAmount(t *testing.T) {
 	svc := newTestService(t)
 	ctx := context.Background()
 	admin := adminUser(t, svc)
 
 	pid, err := svc.Store.CreateProduct(ctx, &model.Product{
-		SKU: "OFF-VAT", Name: "排除增值税测试品", Unit: "瓶", IsActive: true, IsWine: true,
+		SKU: "OFF-L1", Name: "排除列表测试品", Unit: "瓶", IsActive: true, IsWine: true,
 		EcCost: model.MustMoney("75"),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.BindEcLink(ctx, model.EcTaobao, "OFF-VAT-EC", "", "", pid, admin); err != nil {
+	if _, err := svc.BindEcLink(ctx, model.EcTaobao, "OFF-L-EC", "", "", pid, admin); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := svc.ImportEcOrders(ctx, model.EcTaobao, []EcOrderRow{{
-		OrderNo: "OFF-VAT-1", SubOrderNo: "OFF-VAT-1", Title: "排除增值税测试品",
-		EcProductID: "OFF-VAT-EC", Qty: "140", PaidAmt: "11070", ItemStatus: "交易成功",
+		OrderNo: "OFF-L-1", SubOrderNo: "OFF-L-1", Title: "排除列表测试品",
+		EcProductID: "OFF-L-EC", Qty: "140", PaidAmt: "11070", ItemStatus: "交易成功",
 		RefundStatus: "没有申请退款", CreatedAt: "2026-09-10 10:00",
 	}}, admin); err != nil {
 		t.Fatal(err)
@@ -817,46 +816,33 @@ func TestOfflineOrdersCarryTheirOwnVat(t *testing.T) {
 		Platform: model.EcTaobao, Period: "202609", Kind: model.StmtGoodsPayment,
 		Source: model.StmtSourceBill, Direction: "income"}, []model.EcStatementItem{{
 		Period: "202609", Kind: model.StmtGoodsPayment, Direction: "income",
-		OrderNo: "OFF-VAT-1", SubOrderNo: "OFF-VAT-1", EcProductID: "OFF-VAT-EC",
+		OrderNo: "OFF-L-1", SubOrderNo: "OFF-L-1", EcProductID: "OFF-L-EC",
 		Qty: model.MustQty("140"), Amount: model.MustMoney("11070"),
 	}}, admin); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.SetOrderSettleMode(ctx, model.EcTaobao, "OFF-VAT-1", model.SettleModeOffline, admin); err != nil {
+	if err := svc.SetOrderSettleMode(ctx, model.EcTaobao, "OFF-L-1", model.SettleModeOffline, admin); err != nil {
 		t.Fatal(err)
 	}
 
-	settings, _ := svc.Store.Settings(ctx)
-	rates := serviceVatRates(settings)
-	det, err := svc.Store.OfflineSettlementDetail(ctx, model.EcTaobao, []string{"202609"})
+	// 列表：订单号 + 金额
+	list, err := svc.Store.OfflineOrderList(ctx, model.EcTaobao, []string{"202609"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	checkMoney(t, "被排除·销售收入", det.Revenue, "11070.00")
-	checkMoney(t, "被排除·供货成本", det.Cost, "10500.00")
-
-	// 增值税 = 销项 11070/1.13×13% − 进项 10500/1.13×13% − 平台费抵扣 0
-	//        = 1273.54 − 1207.96 = 65.58
-	vat := svc.OfflineVat(det, rates)
-	checkMoney(t, "被排除·应交增值税", vat, "65.58")
-	// 线下应结 = 收入 − 成本 − 增值税 − 费用 = 11070 − 10500 − 65.58 = 504.42
-	checkMoney(t, "被排除·线下应结", det.Revenue-det.Cost-vat-det.FeeTotal, "504.42")
-
-	// 电商账单里一点都不留：四个基数全部为 0
-	if err := svc.Store.Tx(ctx, func(tx *sql.Tx) error { return nil }); err != nil {
-		t.Fatal(err)
+	if len(list) != 1 || list[0].OrderNo != "OFF-L-1" {
+		t.Fatalf("应列出 1 单 OFF-L-1，实际 %+v", list)
 	}
+	checkMoney(t, "已排除订单金额", list[0].Amount, "11070.00")
+
+	// 电商侧四个基数全部为 0
+	settings, _ := svc.Store.Settings(ctx)
 	sum, err := svc.BuildSettlement(ctx, model.EcTaobao, "202609", settings)
 	if err != nil {
 		t.Fatal(err)
 	}
-	checkMoney(t, "电商·销售收入", sum.Total.Revenue, "0.00")
-	checkMoney(t, "电商·供货成本", sum.Total.Cost, "0.00")
-	checkMoney(t, "电商·应交增值税", sum.Total.VatPayable(sum.Rates), "0.00")
-	checkMoney(t, "电商·应结", sum.Total.Net(sum.Rates), "0.00")
-}
-
-// serviceVatRates 测试里取的税率（与服务层一致）。
-func serviceVatRates(settings *model.Settings) model.VatRates {
-	return VatRatesFromSettings(settings)
+	checkMoney(t, "电商销售收入", sum.Total.Revenue, "0.00")
+	checkMoney(t, "电商供货成本", sum.Total.Cost, "0.00")
+	checkMoney(t, "电商应交增值税", sum.Total.VatPayable(sum.Rates), "0.00")
+	checkMoney(t, "电商应结", sum.Total.Net(sum.Rates), "0.00")
 }
