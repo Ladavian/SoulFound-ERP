@@ -80,7 +80,7 @@ func buildSettlementWorkbook(rep *service.SettlementReport, platformLabel string
 	put("应交增值税", total.VatPayable(rates), true)
 	idx++
 	_ = f.SetCellValue(ws, fmt.Sprintf("A%d", idx),
-		"说明：只承担成本以上的增值税；运费不计入结算；平台代付垫支不是费用、不开票，直接从收入扣回。")
+		"说明：运费不计入结算；平台代付垫支不是费用、不开票，直接从收入扣回。")
 	_ = f.SetCellStyle(ws, fmt.Sprintf("A%d", idx), fmt.Sprintf("A%d", idx), totalStyle)
 	_ = f.SetColWidth(ws, "A", "A", 46)
 	_ = f.SetColWidth(ws, "B", "B", 16)

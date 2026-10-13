@@ -2,11 +2,13 @@ package web
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/xuri/excelize/v2"
 
 	"icewine-erp/internal/model"
 	"icewine-erp/internal/service"
+	"icewine-erp/internal/store"
 )
 
 // buildSummaryWorkbook 生成多平台合并对账单。
@@ -14,7 +16,7 @@ import (
 // 用户的实际节奏：淘宝按月结，其它平台可能两三个月结一次，
 // 所以这张表按「平台 + 账期」逐行列示，最后给一行总计，
 // 一次把不同平台、不同账期都装进去，直接发给上游结算。
-func buildSummaryWorkbook(rep *service.SummaryReport, det *service.SummaryDetail) (*excelize.File, error) {
+func buildSummaryWorkbook(rep *service.SummaryReport, det *service.SummaryDetail, offline *store.OfflineDetail) (*excelize.File, error) {
 	f := excelize.NewFile()
 	defer func() { _ = f.Close() }()
 
@@ -27,6 +29,12 @@ func buildSummaryWorkbook(rep *service.SummaryReport, det *service.SummaryDetail
 	})
 	title, _ := f.NewStyle(&excelize.Style{Font: &excelize.Font{Bold: true, Size: 14}})
 	bold, _ := f.NewStyle(&excelize.Style{Font: &excelize.Font{Bold: true}, NumFmt: 4})
+	// 应结金额要一眼能看到：加粗 + 底色
+	netStyle, _ := f.NewStyle(&excelize.Style{
+		Font:   &excelize.Font{Bold: true, Color: "1F5C2E"},
+		Fill:   excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"E6F4EA"}},
+		NumFmt: 4,
+	})
 
 	// ---------------- 表1 各平台结算 ----------------
 	ws := "各平台结算"
@@ -34,7 +42,7 @@ func buildSummaryWorkbook(rep *service.SummaryReport, det *service.SummaryDetail
 	_ = f.SetCellValue(ws, "A1", "电商多平台销售对账单")
 	_ = f.SetCellStyle(ws, "A1", "A1", title)
 	_ = f.SetCellValue(ws, "A2", fmt.Sprintf(
-		"税率：销项 %.0f%% · 进项 %.0f%% · 平台费专票 %.0f%%；只承担成本以上的增值税，运费不计入结算",
+		"税率：销项 %.0f%% · 进项 %.0f%% · 平台费专票 %.0f%%；运费不计入结算",
 		rep.Rates.Output, rep.Rates.Input, rep.Rates.Platform))
 
 	heads := []string{"平台", "账期", "销量", "销售收入", "平台补贴",
@@ -62,7 +70,8 @@ func buildSummaryWorkbook(rep *service.SummaryReport, det *service.SummaryDetail
 		if t.Revenue > 0 {
 			_ = f.SetCellValue(ws, fmt.Sprintf("K%d", r), model.Ratio(net, t.Revenue)/100)
 		}
-		_ = f.SetCellStyle(ws, fmt.Sprintf("D%d", r), fmt.Sprintf("J%d", r), money)
+		_ = f.SetCellStyle(ws, fmt.Sprintf("D%d", r), fmt.Sprintf("I%d", r), money)
+		_ = f.SetCellStyle(ws, fmt.Sprintf("J%d", r), fmt.Sprintf("J%d", r), netStyle)
 		_ = f.SetCellStyle(ws, fmt.Sprintf("K%d", r), fmt.Sprintf("K%d", r), pct)
 		r++
 	}
@@ -77,7 +86,8 @@ func buildSummaryWorkbook(rep *service.SummaryReport, det *service.SummaryDetail
 	_ = f.SetCellValue(ws, fmt.Sprintf("H%d", r), tt.PlatformFee.Float())
 	_ = f.SetCellValue(ws, fmt.Sprintf("I%d", r), tt.VatPayable(rep.Rates).Float())
 	_ = f.SetCellValue(ws, fmt.Sprintf("J%d", r), tt.Net(rep.Rates).Float())
-	_ = f.SetCellStyle(ws, fmt.Sprintf("A%d", r), fmt.Sprintf("J%d", r), bold)
+	_ = f.SetCellStyle(ws, fmt.Sprintf("A%d", r), fmt.Sprintf("I%d", r), bold)
+	_ = f.SetCellStyle(ws, fmt.Sprintf("J%d", r), fmt.Sprintf("J%d", r), netStyle)
 
 	// 增值税计算过程
 	r += 2
@@ -85,9 +95,9 @@ func buildSummaryWorkbook(rep *service.SummaryReport, det *service.SummaryDetail
 	_ = f.SetCellStyle(ws, fmt.Sprintf("A%d", r), fmt.Sprintf("A%d", r), head)
 	r++
 	steps := [][2]string{
-		{"销项税 = 销售收入 ÷ (1+销项率) × 销项率", fmt.Sprintf("%.2f", tt.OutputVat(rep.Rates).Float())},
-		{"进项税 = 供货成本 ÷ (1+进项率) × 进项率", fmt.Sprintf("%.2f", -tt.InputVat(rep.Rates).Float())},
-		{"平台费抵扣 = 平台费用 ÷ (1+专票率) × 专票率", fmt.Sprintf("%.2f", -tt.PlatformVat(rep.Rates).Float())},
+		{"销项税额（销售收入 ÷ (1+销项率) × 销项率）", fmt.Sprintf("+%.2f", tt.OutputVat(rep.Rates).Float())},
+		{"减：进项税额（供货成本 ÷ (1+进项率) × 进项率）", fmt.Sprintf("-%.2f", tt.InputVat(rep.Rates).Float())},
+		{"减：平台费抵扣（可抵扣费用 ÷ (1+专票率) × 专票率）", fmt.Sprintf("-%.2f", tt.PlatformVat(rep.Rates).Float())},
 		{"应交增值税", fmt.Sprintf("%.2f", tt.VatPayable(rep.Rates).Float())},
 	}
 	for _, s2 := range steps {
@@ -259,6 +269,65 @@ func buildSummaryWorkbook(rep *service.SummaryReport, det *service.SummaryDetail
 	}
 	_ = f.SetColWidth(ws5, "A", "A", 34)
 	_ = f.SetColWidth(ws5, "B", "H", 15)
+
+	// ---------------- 表6 已排除订单（线下结算） ----------------
+	// 用户要求：导出的总对账单也要体现被排除的线下结算订单，
+	// 收入和支出都要说明白。
+	if offline != nil && offline.Orders > 0 {
+		of := offline
+		ws6 := "已排除订单"
+		_, _ = f.NewSheet(ws6)
+		_ = f.SetCellValue(ws6, "A1", "已排除订单（线下结算）—— 本次结算的收入与支出都不含这些单")
+		_ = f.SetCellStyle(ws6, "A1", "A1", head)
+		_ = f.SetCellValue(ws6, "A2", "项目")
+		_ = f.SetCellValue(ws6, "B2", "说明")
+		_ = f.SetCellValue(ws6, "C2", "金额")
+		_ = f.SetCellStyle(ws6, "A2", "C2", head)
+
+		orow := 3
+		put := func(name, note string, amt float64, style int) {
+			_ = f.SetCellValue(ws6, fmt.Sprintf("A%d", orow), name)
+			_ = f.SetCellValue(ws6, fmt.Sprintf("B%d", orow), note)
+			_ = f.SetCellValue(ws6, fmt.Sprintf("C%d", orow), amt)
+			if style != 0 {
+				_ = f.SetCellStyle(ws6, fmt.Sprintf("C%d", orow), fmt.Sprintf("C%d", orow), style)
+			}
+			orow++
+		}
+		put("订单数", fmt.Sprintf("共 %d 单 · %s 件", of.Orders, of.Qty.String()), 0, 0)
+		put("货款", "这些单的平台打款", of.Goods.Float(), money)
+		if of.Subsidy != 0 {
+			put("平台补贴", "淘金币等", of.Subsidy.Float(), money)
+		}
+		if of.Advance != 0 {
+			put("平台代付垫支", "从货款扣回", -of.Advance.Float(), money)
+		}
+		put("收入合计（销售收入）", "货款 + 补贴 − 垫支", of.Revenue.Float(), bold)
+		var kinds []string
+		for k := range of.FeeByKind {
+			kinds = append(kinds, k)
+		}
+		sort.Strings(kinds)
+		for _, k := range kinds {
+			put(model.StmtKindLabel(k), "支出 · 已排除", -of.FeeByKind[k].Float(), money)
+		}
+		if of.FeeTotal != 0 {
+			put("支出合计（平台费用）", fmt.Sprintf("共 %d 行", of.FeeRows), -of.FeeTotal.Float(), bold)
+		}
+		orow++
+		_ = f.SetCellValue(ws6, fmt.Sprintf("A%d", orow), "收入侧对账")
+		_ = f.SetCellValue(ws6, fmt.Sprintf("B%d", orow),
+			fmt.Sprintf("平台账单全部货款 %s − 已排除货款 %s = 本次结算货款 %s",
+				rep.Total.Goods.Add(of.Goods).String(), of.Goods.String(), rep.Total.Goods.String()))
+		orow++
+		_ = f.SetCellValue(ws6, fmt.Sprintf("A%d", orow), "支出侧对账")
+		_ = f.SetCellValue(ws6, fmt.Sprintf("B%d", orow),
+			fmt.Sprintf("平台账单全部费用 %s − 已排除费用 %s = 本次结算费用 %s",
+				rep.Total.PlatformFee.Add(of.FeeTotal).String(), of.FeeTotal.String(), rep.Total.PlatformFee.String()))
+		_ = f.SetColWidth(ws6, "A", "A", 22)
+		_ = f.SetColWidth(ws6, "B", "B", 82)
+		_ = f.SetColWidth(ws6, "C", "C", 16)
+	}
 
 	f.SetActiveSheet(0)
 	return f, nil

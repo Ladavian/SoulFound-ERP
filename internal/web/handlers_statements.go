@@ -719,7 +719,9 @@ func (s *Server) handleSummaryExport(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, "/ecommerce/summary", err)
 		return
 	}
-	f, err := buildSummaryWorkbook(rep, det)
+	// 线下结算被排除的订单也要在总对账单里说明白
+	offline, _ := s.svc.Store.OfflineSettlementDetail(ctx, platformOfKeys(keys), periodsOfKeys(keys))
+	f, err := buildSummaryWorkbook(rep, det, &offline)
 	if err != nil {
 		s.fail(w, r, "/ecommerce/summary", err)
 		return
@@ -853,6 +855,32 @@ func filterStatementKeys(r *http.Request, keys []store.StatementKey) []store.Sta
 	for _, k := range keys {
 		if picked[store.StatementKeyString(k.Platform, k.Period)] {
 			out = append(out, k)
+		}
+	}
+	return out
+}
+
+// platformOfKeys 选中账单涉及的平台（去重）。
+func platformOfKeys(keys []store.StatementKey) string {
+	seen := map[string]bool{}
+	var out []string
+	for _, k := range keys {
+		if !seen[k.Platform] {
+			seen[k.Platform] = true
+			out = append(out, k.Platform)
+		}
+	}
+	return strings.Join(out, ",")
+}
+
+// periodsOfKeys 选中账单涉及的账期（去重）。
+func periodsOfKeys(keys []store.StatementKey) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, k := range keys {
+		if !seen[k.Period] {
+			seen[k.Period] = true
+			out = append(out, k.Period)
 		}
 	}
 	return out
