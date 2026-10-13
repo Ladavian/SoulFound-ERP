@@ -2,6 +2,7 @@ package web
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/xuri/excelize/v2"
 
@@ -53,7 +54,7 @@ func buildSettlementWorkbook(rep *service.SettlementReport, platformLabel string
 		}
 		idx++
 	}
-	_ = f.SetCellValue(ws, "A1", fmt.Sprintf("%s · %s 结算单", platformLabel, model.PeriodLabel(rep.Period)))
+	_ = f.SetCellValue(ws, "A1", "PondView 销售对账表 "+settlementVolumeLabel(rep)+" · "+platformLabel+" 结算单")
 	_ = f.SetCellStyle(ws, "A1", "A1", titleStyle)
 	idx = 3
 
@@ -249,4 +250,20 @@ func buildSettlementWorkbook(rep *service.SettlementReport, platformLabel string
 func mustStyle(f *excelize.File, numFmt string) int {
 	st, _ := f.NewStyle(&excelize.Style{NumFmt: 10, CustomNumFmt: &numFmt})
 	return st
+}
+
+// settlementVolumeLabel 期次标识（与导出文件名同一口径：Vol.2609）。
+func settlementVolumeLabel(rep *service.SettlementReport) string {
+	ps := append([]string{}, rep.Periods2...)
+	if len(ps) == 0 && rep.Period != "" {
+		ps = append(ps, rep.Period)
+	}
+	if len(ps) == 0 {
+		return ""
+	}
+	sort.Strings(ps)
+	if len(ps) == 1 {
+		return "Vol." + yymm(ps[0])
+	}
+	return "Vol." + yymm(ps[0]) + "-" + yymm(ps[len(ps)-1])
 }

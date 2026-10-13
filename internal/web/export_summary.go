@@ -39,7 +39,8 @@ func buildSummaryWorkbook(rep *service.SummaryReport, det *service.SummaryDetail
 	// ---------------- 表1 各平台结算 ----------------
 	ws := "各平台结算"
 	_ = f.SetSheetName("Sheet1", ws)
-	_ = f.SetCellValue(ws, "A1", "电商多平台销售对账单")
+	// 标题与文件名一致，文件转发出去也能一眼认出是哪份。
+	_ = f.SetCellValue(ws, "A1", "PondView 销售对账表 "+volumeLabel(rep))
 	_ = f.SetCellStyle(ws, "A1", "A1", title)
 	_ = f.SetCellValue(ws, "A2", fmt.Sprintf(
 		"税率：销项 %.0f%% · 进项 %.0f%% · 平台费专票 %.0f%%；运费不计入结算",
@@ -351,3 +352,24 @@ func buildSummaryWorkbook(rep *service.SummaryReport, det *service.SummaryDetail
 }
 
 func strPtr(s string) *string { return &s }
+
+// volumeLabel 期次标识：Vol.2609 / Vol.2608-2609（与导出文件名同一口径）。
+func volumeLabel(rep *service.SummaryReport) string {
+	uniq := map[string]bool{}
+	var ps []string
+	for _, it := range rep.Items {
+		if it.Period == "" || uniq[it.Period] {
+			continue
+		}
+		uniq[it.Period] = true
+		ps = append(ps, it.Period)
+	}
+	if len(ps) == 0 {
+		return ""
+	}
+	sort.Strings(ps)
+	if len(ps) == 1 {
+		return "Vol." + yymm(ps[0])
+	}
+	return "Vol." + yymm(ps[0]) + "-" + yymm(ps[len(ps)-1])
+}
