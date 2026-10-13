@@ -985,3 +985,54 @@ func (s *Store) OfflineOrderList(ctx context.Context, platform string, periods [
 	}
 	return out, rows.Err()
 }
+
+// BrandGiftRow 品牌新享礼金的一行明细。
+//
+// 用户要能查：这笔礼金是哪一单、平台收了多少服务费、代扣了多少。
+// 账单文件里 抽佣金额 = 礼金 + 服务费，账单金额 = 服务费，
+// 所以 代付扣回 = 抽佣金额 − 账单金额。
+type BrandGiftRow struct {
+	Period      string
+	OrderNo     string
+	Commission  model.Money // 抽佣金额
+	ServiceFee  model.Money // 账单金额（平台服务费，开票）
+	Advance     model.Money // 代付扣回 = 抽佣 − 服务费
+	Title       string
+	EcProductID string
+}
+
+// BrandGiftRows 品牌新享礼金的逐单明细。
+func (s *Store) BrandGiftRows(ctx context.Context, platform string, periods []string) ([]BrandGiftRow, error) {
+	if len(periods) == 0 {
+		return nil, nil
+	}
+	ph := make([]string, 0, len(periods))
+	args := []any{platform, model.StmtBrandGift}
+	for _, p := range periods {
+		ph = append(ph, "?")
+		args = append(args, p)
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT si.period, si.order_no, COALESCE(si.gross_amount, 0), si.amount,
+		        COALESCE(si.title, ''), COALESCE(si.ec_product_id, '')
+		   FROM ec_statement_items si
+		  WHERE si.platform = ? AND si.kind = ?
+		    AND si.period IN (`+strings.Join(ph, ",")+`)
+		  ORDER BY si.period, si.order_no`,
+		args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []BrandGiftRow
+	for rows.Next() {
+		var r BrandGiftRow
+		if err := rows.Scan(&r.Period, &r.OrderNo, &r.Commission, &r.ServiceFee,
+			&r.Title, &r.EcProductID); err != nil {
+			return nil, err
+		}
+		r.Advance = r.Commission - r.ServiceFee
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}

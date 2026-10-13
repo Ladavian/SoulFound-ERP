@@ -3700,15 +3700,34 @@ func TestSummaryExportFeeExcludesShipping(t *testing.T) {
 	}
 	defer xlsx.Close()
 	rows, _ := xlsx.GetRows("各平台结算")
-	var feeCell string
-	for _, r := range rows {
-		if len(r) > 7 && strings.Contains(strings.Join(r, " "), "淘宝") {
-			feeCell = r[7] // H 列：平台费用
-		}
-		if len(r) > 7 && strings.TrimSpace(r[0]) == "合计" {
-			if r[7] == "166" || strings.HasPrefix(r[7], "166") {
-				t.Errorf("合计行的平台费用不该含运费（应为 60），实际 %s", r[7])
+	// 按表头名找列，避免以后调整列顺序把测试弄坏
+	feeCol := -1
+	headRow := -1
+	for i, r := range rows {
+		for j, h := range r {
+			if strings.TrimSpace(h) == "平台费用" {
+				feeCol = j
+				headRow = i
+				break
 			}
+		}
+		if feeCol >= 0 {
+			break
+		}
+	}
+	if feeCol < 0 || headRow < 0 {
+		t.Fatal("在「各平台结算」里找不到「平台费用」列")
+	}
+	var feeCell, totalCell string
+	for _, r := range rows[headRow+1:] {
+		if len(r) <= feeCol {
+			continue
+		}
+		if strings.Contains(strings.Join(r, " "), "淘宝") {
+			feeCell = r[feeCol]
+		}
+		if strings.TrimSpace(r[0]) == "合计" {
+			totalCell = r[feeCol]
 		}
 	}
 	if feeCell == "" {
@@ -3719,6 +3738,9 @@ func TestSummaryExportFeeExcludesShipping(t *testing.T) {
 	}
 	if !strings.HasPrefix(feeCell, "60") {
 		t.Errorf("平台费用应为 60，实际 %s", feeCell)
+	}
+	if strings.HasPrefix(totalCell, "166") {
+		t.Errorf("合计行的平台费用不该含运费（应为 60），实际 %s", totalCell)
 	}
 	// 仅展示的费用也要在表2里单独出现
 	rows2, _ := xlsx.GetRows("平台费用汇总")

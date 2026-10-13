@@ -786,7 +786,8 @@ func (s *Server) handleSummaryExport(w http.ResponseWriter, r *http.Request) {
 	}
 	// 线下结算被排除的订单也要在总对账单里说明白
 	offline, _ := s.svc.Store.OfflineSettlementDetail(ctx, platformOfKeys(keys), periodsOfKeys(keys))
-	f, err := buildSummaryWorkbook(rep, det, &offline)
+	gifts, _ := s.svc.Store.BrandGiftRows(ctx, platformOfKeys(keys), periodsOfKeys(keys))
+	f, err := buildSummaryWorkbook(rep, det, &offline, gifts)
 	if err != nil {
 		s.fail(w, r, "/ecommerce/summary", err)
 		return
