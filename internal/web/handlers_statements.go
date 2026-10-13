@@ -3,6 +3,7 @@ package web
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"icewine-erp/internal/model"
@@ -508,6 +509,14 @@ func (s *Server) handleSettlement(w http.ResponseWriter, r *http.Request) {
 	page := s.newPage(r, "结算单", "settlement")
 	page["Offline"] = offline
 	page["HasOffline"] = offline.Orders > 0
+	// 导出链接带上全部选中账期
+	var eq []string
+	for _, p := range sel {
+		eq = append(eq, "period="+url.QueryEscape(p))
+	}
+	if len(eq) > 0 {
+		page["ExportQuery"] = "?" + strings.Join(eq, "&")
+	}
 	page["PlatformStatements"] = 0
 	page["PeriodChips"] = periodChips(r, periods, sel, nil)
 	page["Platform"] = platform
@@ -532,9 +541,12 @@ func (s *Server) handleSettlement(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSettlementExport(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	platform := s.ecPlatform(r)
-	period := strings.TrimSpace(r.URL.Query().Get("period"))
+	// 账期支持多选，导出要把每个选中账期都算进去；
+	// 没带账期时只导最新一期（与页面默认一致），不能默认导出全部。
+	periods, _ := s.svc.Store.StatementPeriods(ctx, platform)
+	sel := selectedPeriods(r, periods, 1)
 	settings, _ := s.svc.Store.Settings(ctx)
-	rep, err := s.svc.BuildSettlement(ctx, platform, period, settings)
+	rep, err := s.svc.BuildSettlementFor(ctx, platform, sel, settings)
 	if err != nil {
 		s.fail(w, r, "/ecommerce/settlement", err)
 		return
@@ -548,7 +560,11 @@ func (s *Server) handleSettlementExport(w http.ResponseWriter, r *http.Request) 
 		s.fail(w, r, "/ecommerce/settlement", err)
 		return
 	}
-	name := fmt.Sprintf("结算单-%s-%s.xlsx", platform, model.PeriodLabel(period))
+	namePeriod := rep.Period
+	if len(sel) > 1 {
+		namePeriod = sel[len(sel)-1] + "_" + sel[0]
+	}
+	name := fmt.Sprintf("结算单-%s-%s.xlsx", platform, model.PeriodLabel(namePeriod))
 	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 	w.Header().Set("Content-Disposition", "attachment; filename*=UTF-8''"+urlEncode(name))
 	w.Header().Set("Cache-Control", "no-store")
@@ -647,6 +663,14 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 	page["Picked"] = picked
 	page["AllCount"] = len(keys)
 	page["SelKeys"] = selKeys
+	// 导出链接要带上一模一样的勾选，否则导出结果跟页面不一致
+	var eq []string
+	for _, k := range selKeys {
+		eq = append(eq, "sel="+url.QueryEscape(k))
+	}
+	if len(eq) > 0 {
+		page["ExportQuery"] = "?" + strings.Join(eq, "&")
+	}
 	page["Rep"] = rep
 	page["Rates"] = rep.Rates
 	page["Keys"] = keys
@@ -667,8 +691,22 @@ func (s *Server) handleSummaryExport(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, "/ecommerce/summary", err)
 		return
 	}
-	// 导出跟页面选择保持一致（同样是"平台 + 账期"逐条勾选）
-	keys = filterStatementKeys(r, keys)
+	// 导出跟页面选择保持一致（同样是"平台 + 账期"逐条勾选）。
+	// 没带 sel 时按"每个平台最新一期"兜底——绝不能默认导出全部，
+	// 否则会把已经结过的月份又算进去（用户踩过：只勾 9 月却导出了 8 月）。
+	if len(r.URL.Query()["sel"]) == 0 {
+		seen := map[string]bool{}
+		var latest []store.StatementKey
+		for _, k := range keys { // keys 已按 period DESC 排序
+			if !seen[k.Platform] {
+				seen[k.Platform] = true
+				latest = append(latest, k)
+			}
+		}
+		keys = latest
+	} else {
+		keys = filterStatementKeys(r, keys)
+	}
 	settings, _ := s.svc.Store.Settings(ctx)
 	rep, err := s.svc.BuildSummary(ctx, keys, settings)
 	if err != nil {

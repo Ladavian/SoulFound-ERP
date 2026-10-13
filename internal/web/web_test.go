@@ -24,6 +24,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/xuri/excelize/v2"
 	"time"
 
 	"icewine-erp/internal/config"
@@ -3587,4 +3589,80 @@ func TestFeeOnlyOrderShowsWherePaymentIs(t *testing.T) {
 	if strings.Contains(page, "缺电商成本") {
 		t.Error("不该再出现「缺电商成本」这种误导性提示（产品明明填了成本）")
 	}
+}
+
+// TestSummaryExportHonorsSelection 总对账单导出必须跟页面勾选一致。
+//
+// 用户踩过：只勾了「京东9月 + 淘宝9月」，导出的 Excel 里却还有淘宝8月。
+// 原因是页面上的导出按钮链接没带上勾选参数（href="/ecommerce/summary/export"），
+// 导出端拿不到 sel 就退化成"全部账单"。
+//
+// 两道防线：导出链接带上 sel；没带时按"每平台最新一期"兜底，绝不默认全部。
+func TestSummaryExportHonorsSelection(t *testing.T) {
+	h, svc, cfg := testApp(t)
+	ctx := context.Background()
+	cookie := doLogin(t, h, cfg, "admin", "admin123")
+	admin := mustUser(t, svc, "admin")
+
+	mk := func(platform, period, amount string) {
+		items := []model.EcStatementItem{{
+			Period: period, Kind: model.StmtGoodsPayment, Direction: "income",
+			OrderNo: platform + "-" + period, Amount: model.MustMoney(amount),
+		}}
+		if err := svc.ImportStatement(ctx, &model.EcStatement{
+			Platform: platform, Period: period, Kind: model.StmtGoodsPayment,
+			Source: model.StmtSourceBill, Direction: "income"}, items, admin); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mk(model.EcTaobao, "202608", "1000")
+	mk(model.EcTaobao, "202609", "2000")
+	mk(model.EcJD, "202609", "3000")
+
+	// 页面上的导出链接要带上勾选
+	_, raw := get(t, h, "/ecommerce/summary?sel=taobao%7C202609&sel=jd%7C202609", cookie)
+	page := html.UnescapeString(raw)
+	// 链接里是 URL 编码形式（%7C = |）
+	if !strings.Contains(page, "sel=taobao%7C202609") || !strings.Contains(page, "sel=jd%7C202609") {
+		t.Errorf("导出链接应带上勾选参数；片段: %s", snippetAround(page, "summary/export", 300))
+	}
+	if strings.Contains(page, `href="/ecommerce/summary/export"`) {
+		t.Error("导出链接不能是不带参数的裸链接（会导致导出全部账期）")
+	}
+
+	// 导出内容只含勾选的两条
+	_, exp := get(t, h, "/ecommerce/summary/export?sel=taobao%7C202609&sel=jd%7C202609", cookie)
+	xlsx, err := excelize.OpenReader(strings.NewReader(exp))
+	if err != nil {
+		t.Fatalf("导出的 Excel 打不开：%v", err)
+	}
+	defer xlsx.Close()
+	rows, _ := xlsx.GetRows("各平台结算")
+	joined := strings.Join(flattenRows(rows), " ")
+	if !strings.Contains(joined, "2026-09") {
+		t.Error("导出应含 2026-09")
+	}
+	if strings.Contains(joined, "2026-08") {
+		t.Errorf("导出不该含 2026-08（未勾选的账期）\n内容: %s", joined)
+	}
+
+	// 没带 sel 时兜底为"每平台最新一期"，也不能带 2026-08
+	_, exp2 := get(t, h, "/ecommerce/summary/export", cookie)
+	xlsx2, err := excelize.OpenReader(strings.NewReader(exp2))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer xlsx2.Close()
+	rows2, _ := xlsx2.GetRows("各平台结算")
+	if joined2 := strings.Join(flattenRows(rows2), " "); strings.Contains(joined2, "2026-08") {
+		t.Errorf("没带勾选时应兜底为最新一期，不该出现 2026-08\n内容: %s", joined2)
+	}
+}
+
+func flattenRows(rows [][]string) []string {
+	var out []string
+	for _, r := range rows {
+		out = append(out, r...)
+	}
+	return out
 }

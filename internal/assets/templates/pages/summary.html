@@ -66,7 +66,9 @@
   </div>
   <div class="page-head__actions">
     {{if $rep.Items}}
-    <a class="btn btn--primary" href="/ecommerce/summary/export">
+    {{/* 导出必须带上当前勾选：不带的话导出会把全部账单都算进去
+         （用户就遇到"只勾了 9 月，导出里还有 8 月"）。 */}}
+    <a class="btn btn--primary" href="/ecommerce/summary/export{{.ExportQuery}}">
       {{template "icon" "download"}}<span>导出总对账单</span>
     </a>
     {{end}}

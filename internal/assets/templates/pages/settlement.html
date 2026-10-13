@@ -15,7 +15,8 @@
       {{template "icon" "list"}}<span>账单明细</span>
     </a>
     {{if .Period}}
-    <a class="btn btn--primary" href="/ecommerce/settlement/export?platform={{.Platform}}&period={{.Period}}">
+    {{/* 账期支持多选，导出要把每个选中账期都带上 */}}
+    <a class="btn btn--primary" href="/ecommerce/settlement/export?platform={{.Platform}}{{.ExportQuery}}">
       {{template "icon" "download"}}<span>导出结算单</span>
     </a>
     {{end}}
