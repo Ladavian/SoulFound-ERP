@@ -18,56 +18,205 @@
   </div>
 </div>
 
-<form class="card billing-filter" method="get" action="/ecommerce/summary">
-  <input type="hidden" name="sel" value="">
-  <details class="billing-filter__picker">
-    <summary>平台与账期 · 当前勾选 <strong>{{len .SelKeys}}</strong> 组</summary>
-  <div class="card__head">
-    <div class="card__title">
-      选择要结算的账单
-      <span class="card__sub">按「平台 + 账期」逐条勾选；默认只勾每个平台最新一期</span>
-    </div>
-    <div class="card__actions">
-      <button class="btn btn--sm btn--ghost" type="button"
-              onclick="this.form.querySelectorAll('input[type=checkbox][name=sel]').forEach(c=>c.checked=true)">全选</button>
-      <button class="btn btn--sm btn--ghost" type="button"
-              onclick="this.form.querySelectorAll('input[type=checkbox][name=sel]').forEach(c=>c.checked=false)">清空</button>
-      <button class="btn btn--sm btn--primary" type="submit">应用筛选</button>
-      <a class="btn btn--sm" href="/ecommerce/summary">恢复各平台最新一期</a>
-    </div>
+{{if .PPRows}}
+<section class="card billing-filter" id="summary-periods">
+  <div class="billing-filter__actions">
+    <strong>已应用账期</strong>
+    <span class="tiny muted">当前勾选 <strong>{{len .SelKeys}}</strong> 组</span>
   </div>
-  <div class="card__body">
-    {{if .PPRows}}
-    <div class="table-wrap billing-filter__options">
-      <table class="data data--stack">
-        <thead>
-          <tr><th>平台 / 账期</th><th class="num">金额合计</th></tr>
-        </thead>
-        <tbody>
-          {{range .PPRows}}
-          <tr>
-            <td class="row-cell--main">
-              <label class="pick">
-                <input type="checkbox" name="sel" value="{{.Key}}" {{if .Checked}}checked{{end}}>
-                <span>{{.Label}} · {{.PeriodL}}</span>
-              </label>
-              <div class="tiny muted">
-                {{if .HasIncome}}收入{{end}}{{if and .HasIncome .HasExpense}} + {{end}}{{if .HasExpense}}支出{{end}}
-                · {{.Kinds}} 个费用项 · {{.RowCount}} 行
-              </div>
-            </td>
-            <td class="num span-2" data-label="金额合计">{{money .Amount}}</td>
-          </tr>
-          {{end}}
-        </tbody>
-      </table>
-    </div>
-    {{else}}
-    <div class="tiny muted">还没有导入过任何账单。</div>
-    {{end}}
+  <div class="billing-filter__actions">
+    {{range .PPRows}}{{if .Checked}}
+    <span class="chip is-active">{{.Label}} · {{.PeriodL}}
+      <button type="button" class="btn btn--sm btn--ghost" hidden data-remove-period="{{.Key}}"
+        aria-label="移除 {{.Label}} {{.PeriodL}}">×</button>
+    </span>
+    {{end}}{{end}}
+    {{if not .SelKeys}}<span class="tiny muted">未选择账期</span>{{end}}
   </div>
+  <details data-period-fallback>
+    <summary>编辑账期</summary>
+    <form method="get" action="/ecommerce/summary" data-period-form>
+      <input type="hidden" name="sel" value="">
+      <div class="billing-filter__actions" data-period-controls hidden>
+        <label>查找账期 <select class="select" data-period-range aria-label="查找账期">
+          <option value="recent">最近 6 个月</option>
+          <option value="all">全部账期</option>
+        </select></label>
+        <button class="btn btn--sm" type="button" data-period-latest>各平台最新一期</button>
+        <button class="btn btn--sm" type="button" data-period-clear>清空</button>
+        <button class="btn btn--sm" type="button" data-period-add>勾选当前范围</button>
+      </div>
+      <p class="tiny muted" data-period-visibility hidden>查找账期只改变列表显示，已勾选的历史账期会保留。</p>
+      <div data-period-options>
+        {{range .PPRows}}
+        <label class="summary-period-row" data-platform="{{.Platform}}" data-platform-label="{{.Label}}" data-period="{{.Period}}">
+          <span class="pick">
+            <input type="checkbox" name="sel" value="{{.Key}}" {{if .Checked}}checked{{end}}>
+            <span data-period-label>{{.PeriodL}}</span>
+          </span>
+          <span class="tiny muted" data-period-platform>{{.Label}}</span>
+          <span class="num">{{money .Amount}}</span>
+        </label>
+        {{end}}
+      </div>
+      <p data-period-empty hidden>这个范围内没有账期。</p>
+      <details data-period-review hidden>
+        <summary data-period-count></summary>
+        <div class="billing-filter__actions" data-period-preview></div>
+      </details>
+      <div class="billing-filter__actions">
+        <button class="btn btn--primary" type="submit">应用筛选</button>
+        <button class="btn" type="button" data-period-cancel hidden>取消</button>
+      </div>
+    </form>
   </details>
-</form>
+  <button class="btn" type="button" data-period-open hidden>编辑账期</button>
+  <dialog class="summary-period-dialog" data-period-dialog aria-labelledby="summary-period-title">
+    <h2 id="summary-period-title">选择平台与账期</h2>
+  </dialog>
+</section>
+<style>
+  #summary-periods [hidden] { display: none !important; }
+  .summary-period-dialog {
+    position: fixed;
+    inset: 0 0 0 auto;
+    margin: 0;
+    box-sizing: border-box;
+    width: min(100%, 38rem);
+    max-width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    padding: 1.25rem;
+    border: 0;
+    background: var(--surface, Canvas);
+    color: inherit;
+  }
+  .summary-period-dialog::backdrop { background: rgb(0 0 0 / 42%); }
+  [data-period-form] { display: grid; gap: .8rem; }
+  [data-period-options] { display: grid; gap: .55rem; }
+  .summary-period-group { border: 1px solid var(--border, #8886); border-radius: .5rem; padding: .55rem .75rem; }
+  .summary-period-group summary { cursor: pointer; font-weight: 600; }
+  .summary-period-row { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .45rem 0; }
+  [data-period-review] { padding: .55rem 0; }
+  [data-period-preview] { margin-top: .5rem; }
+</style>
+<script>
+(() => {
+  const section = document.getElementById('summary-periods');
+  const find = (name) => section.querySelector('[data-period-' + name + ']');
+  const form = find('form');
+  const dialog = find('dialog');
+  if (typeof dialog.showModal !== 'function') return;
+
+  const range = find('range');
+  const options = find('options');
+  const rows = Array.from(options.querySelectorAll('[data-period]'));
+  const groups = new Map();
+  const monthIndex = (period) => Number(period.slice(0, 4)) * 12 + Number(period.slice(4, 6));
+  const periods = [...new Set(rows.map(row => row.dataset.period))].sort().reverse();
+  const years = [...new Set(periods.map(period => period.slice(0, 4)))];
+  for (const year of years) range.add(new Option(year + ' 年', year));
+  for (const period of periods) {
+    range.add(new Option(period.slice(0, 4) + '-' + period.slice(4), period));
+  }
+
+  const checkbox = (row) => row.querySelector('input');
+  const label = (row) => row.dataset.platformLabel + ' · ' + row.querySelector('[data-period-label]').textContent;
+  for (const row of rows) {
+    const platform = row.dataset.platform;
+    if (!groups.has(platform)) {
+      const group = document.createElement('details');
+      group.className = 'summary-period-group';
+      group.open = true;
+      const heading = document.createElement('summary');
+      group.append(heading);
+      options.append(group);
+      groups.set(platform, { group, heading, rows: [] });
+    }
+    const entry = groups.get(platform);
+    entry.rows.push(row);
+    row.querySelector('[data-period-platform]').hidden = true;
+    entry.group.append(row);
+  }
+
+  function refresh() {
+    const visible = [];
+    const selected = rows.filter(row => checkbox(row).checked);
+    for (const { group, heading, rows: platformRows } of groups.values()) {
+      let count = 0;
+      for (const row of platformRows) {
+        const period = row.dataset.period;
+        const matches = range.value === 'all' ||
+          (range.value === 'recent' ? monthIndex(periods[0]) - monthIndex(period) < 6 :
+            period.startsWith(range.value));
+        row.hidden = !matches;
+        if (matches) {
+          visible.push(row);
+          count += 1;
+        }
+      }
+      const checked = platformRows.filter(row => checkbox(row).checked).length;
+      heading.textContent = platformRows[0].dataset.platformLabel + ' · 已勾选 ' + checked + ' 组';
+      group.hidden = count === 0;
+    }
+    find('empty').hidden = visible.length > 0;
+    const available = visible.filter(row => !checkbox(row).checked).length;
+    find('add').disabled = available === 0;
+    find('add').textContent = '勾选当前范围（新增 ' + available + ' 组）';
+    find('count').textContent = '待应用 · ' + selected.length + ' 组';
+    find('preview').replaceChildren(...selected.map(row => {
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      chip.textContent = label(row);
+      return chip;
+    }));
+  }
+
+  find('fallback').hidden = true;
+  dialog.append(form);
+  for (const name of ['controls', 'visibility', 'review', 'cancel', 'open']) find(name).hidden = false;
+  find('open').addEventListener('click', () => {
+    form.reset();
+    for (const { group } of groups.values()) group.open = true;
+    refresh();
+    dialog.showModal();
+  });
+  find('cancel').addEventListener('click', () => dialog.close());
+  range.addEventListener('change', () => {
+    for (const { group } of groups.values()) group.open = true;
+    refresh();
+  });
+  form.addEventListener('change', (event) => {
+    if (event.target.matches('input[type=checkbox]')) refresh();
+  });
+  find('latest').addEventListener('click', () => {
+    for (const { rows: platformRows } of groups.values()) {
+      const latest = platformRows.reduce((best, row) => row.dataset.period > best.dataset.period ? row : best);
+      for (const row of platformRows) checkbox(row).checked = row === latest;
+    }
+    refresh();
+  });
+  find('clear').addEventListener('click', () => {
+    for (const row of rows) checkbox(row).checked = false;
+    refresh();
+  });
+  find('add').addEventListener('click', () => {
+    for (const row of rows) if (!row.hidden) checkbox(row).checked = true;
+    find('review').open = true;
+    refresh();
+  });
+  for (const button of section.querySelectorAll('[data-remove-period]')) {
+    button.hidden = false;
+    button.addEventListener('click', () => {
+      form.reset();
+      const row = rows.find(row => checkbox(row).value === button.dataset.removePeriod);
+      checkbox(row).checked = false;
+      form.requestSubmit();
+    });
+  }
+})();
+</script>
+{{end}}
 
 {{if not $rep.Items}}
 {{if .PPRows}}{{template "empty" (dict "Title" "未选择账单" "Text" "勾选要汇总的平台与账期，再应用筛选。")}}{{else}}
