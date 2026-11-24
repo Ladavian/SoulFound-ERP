@@ -267,13 +267,20 @@ func (s *Server) handleReconcile(w http.ResponseWriter, r *http.Request) {
 	rec.ExpenseTotal = settle.Total.PlatformFee
 
 	detail := map[string][]model.EcStatementItem{}
+	type statementGroup struct{ period, kind string }
+	seenGroups := map[statementGroup]bool{}
 	for _, st := range statements {
+		group := statementGroup{st.Period, st.Kind}
+		if seenGroups[group] {
+			continue
+		}
+		seenGroups[group] = true
 		list, err := s.svc.Store.StatementByKindRows(ctx, platform, st.Period, st.Kind)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		detail[st.Kind] = list
+		detail[st.Kind] = append(detail[st.Kind], list...)
 	}
 
 	// 订单维度的到手金额：货款 − 该单各项费用
@@ -402,7 +409,11 @@ func (s *Server) handleReconcile(w http.ResponseWriter, r *http.Request) {
 	page["PlatformLabel"] = model.EcPlatformLabel(platform)
 	page["Periods"] = periods
 	page["Period"] = period
-	page["PeriodLabel"] = model.PeriodLabel(period)
+	page["PeriodLabel"] = periodLabelMulti(sel)
+	page["PeriodChips"] = periodChips(r, periods, sel, nil)
+	periodQuery := billingPeriodQuery(platform, sel)
+	page["SettlementURL"] = "/ecommerce/settlement?" + periodQuery
+	page["SettleModeURL"] = "/ecommerce/settle-mode?" + periodQuery
 	page["Rec"] = rec
 	page["Statements"] = statements
 	page["Detail"] = detail
@@ -523,14 +534,6 @@ func (s *Server) handleSettlement(w http.ResponseWriter, r *http.Request) {
 	refunds, _ := s.svc.Store.RefundedOrders(ctx, platform, sel)
 	page["RefundRows"] = refunds
 	page["HasRefunds"] = len(refunds) > 0
-	// 导出链接带上全部选中账期
-	var eq []string
-	for _, p := range sel {
-		eq = append(eq, "period="+url.QueryEscape(p))
-	}
-	if len(eq) > 0 {
-		page["ExportQuery"] = "?" + strings.Join(eq, "&")
-	}
 	page["PlatformStatements"] = 0
 	page["PeriodChips"] = periodChips(r, periods, sel, nil)
 	page["Platform"] = platform
@@ -540,6 +543,9 @@ func (s *Server) handleSettlement(w http.ResponseWriter, r *http.Request) {
 	page["SelectedPeriods"] = sel
 	page["Period"] = period
 	page["PeriodLabel"] = periodLabelMulti(sel)
+	periodQuery := billingPeriodQuery(platform, sel)
+	page["ReconcileURL"] = "/ecommerce/reconcile?" + periodQuery
+	page["SettlementExportURL"] = "/ecommerce/settlement/export?" + periodQuery
 	page["Rep"] = rep
 	page["Rates"] = rep.Rates
 	page["Kinds"] = model.StmtKinds
@@ -557,8 +563,16 @@ func (s *Server) handleSettlementExport(w http.ResponseWriter, r *http.Request) 
 	platform := s.ecPlatform(r)
 	// 账期支持多选，导出要把每个选中账期都算进去；
 	// 没带账期时只导最新一期（与页面默认一致），不能默认导出全部。
-	periods, _ := s.svc.Store.StatementPeriods(ctx, platform)
+	periods, err := s.svc.Store.StatementPeriods(ctx, platform)
+	if err != nil {
+		s.fail(w, r, "/ecommerce/settlement", err)
+		return
+	}
 	sel := selectedPeriods(r, periods, 1)
+	if len(sel) == 0 {
+		http.Error(w, "请选择要导出的账期", http.StatusBadRequest)
+		return
+	}
 	settings, _ := s.svc.Store.Settings(ctx)
 	rep, err := s.svc.BuildSettlementFor(ctx, platform, sel, settings)
 	if err != nil {
@@ -670,24 +684,10 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	picked := filterStatementKeys(r, keys)
 	pickedSet := map[string]bool{}
-	rawSel := r.URL.Query()["sel"]
-	if len(rawSel) == 0 {
-		// 默认只勾每个平台最新的一期：最贴近"这次要结的账"，
-		// 不会把以前已经结过的月份又算一遍。
-		seen := map[string]bool{}
-		for _, it := range pp {
-			if !seen[it.Platform] {
-				seen[it.Platform] = true
-				pickedSet[store.StatementKeyString(it.Platform, it.Period)] = true
-			}
-		}
-	} else {
-		for _, v := range rawSel {
-			if _, _, ok := store.ParseStatementKey(v); ok {
-				pickedSet[v] = true
-			}
-		}
+	for _, k := range picked {
+		pickedSet[store.StatementKeyString(k.Platform, k.Period)] = true
 	}
 	type ppRow struct {
 		store.PlatformPeriod
@@ -709,13 +709,6 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 		ppRows = append(ppRows, row)
 	}
 
-	var picked []store.StatementKey
-	for _, k := range keys {
-		if pickedSet[store.StatementKeyString(k.Platform, k.Period)] {
-			picked = append(picked, k)
-		}
-	}
-
 	settings, _ := s.svc.Store.Settings(ctx)
 	rep, err := s.svc.BuildSummary(ctx, picked, settings)
 	if err != nil {
@@ -728,14 +721,11 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 	page["Picked"] = picked
 	page["AllCount"] = len(keys)
 	page["SelKeys"] = selKeys
-	// 导出链接要带上一模一样的勾选，否则导出结果跟页面不一致
-	var eq []string
-	for _, k := range selKeys {
-		eq = append(eq, "sel="+url.QueryEscape(k))
+	q := url.Values{"sel": {""}}
+	if len(selKeys) > 0 {
+		q["sel"] = selKeys
 	}
-	if len(eq) > 0 {
-		page["ExportQuery"] = "?" + strings.Join(eq, "&")
-	}
+	page["ExportURL"] = "/ecommerce/summary/export?" + q.Encode()
 	page["Rep"] = rep
 	page["Rates"] = rep.Rates
 	page["Keys"] = keys
@@ -756,21 +746,10 @@ func (s *Server) handleSummaryExport(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, "/ecommerce/summary", err)
 		return
 	}
-	// 导出跟页面选择保持一致（同样是"平台 + 账期"逐条勾选）。
-	// 没带 sel 时按"每个平台最新一期"兜底——绝不能默认导出全部，
-	// 否则会把已经结过的月份又算进去（用户踩过：只勾 9 月却导出了 8 月）。
-	if len(r.URL.Query()["sel"]) == 0 {
-		seen := map[string]bool{}
-		var latest []store.StatementKey
-		for _, k := range keys { // keys 已按 period DESC 排序
-			if !seen[k.Platform] {
-				seen[k.Platform] = true
-				latest = append(latest, k)
-			}
-		}
-		keys = latest
-	} else {
-		keys = filterStatementKeys(r, keys)
+	keys = filterStatementKeys(r, keys)
+	if len(keys) == 0 {
+		http.Error(w, "请选择要导出的账单", http.StatusBadRequest)
+		return
 	}
 	settings, _ := s.svc.Store.Settings(ctx)
 	rep, err := s.svc.BuildSummary(ctx, keys, settings)
@@ -785,8 +764,41 @@ func (s *Server) handleSummaryExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// 线下结算被排除的订单也要在总对账单里说明白
-	offline, _ := s.svc.Store.OfflineSettlementDetail(ctx, platformOfKeys(keys), periodsOfKeys(keys))
-	gifts, _ := s.svc.Store.BrandGiftRows(ctx, platformOfKeys(keys), periodsOfKeys(keys))
+	offline := store.OfflineDetail{FeeByKind: map[string]model.Money{}}
+	var gifts []store.BrandGiftRow
+	for _, platform := range model.EcPlatformOptions() {
+		var periods []string
+		for _, key := range keys {
+			if key.Platform == platform.Value {
+				periods = append(periods, key.Period)
+			}
+		}
+		if len(periods) == 0 {
+			continue
+		}
+		part, err := s.svc.Store.OfflineSettlementDetail(ctx, platform.Value, periods)
+		if err != nil {
+			s.fail(w, r, "/ecommerce/summary", err)
+			return
+		}
+		offline.Orders += part.Orders
+		offline.Qty += part.Qty
+		offline.Goods += part.Goods
+		offline.Subsidy += part.Subsidy
+		offline.Advance += part.Advance
+		offline.Revenue += part.Revenue
+		offline.FeeTotal += part.FeeTotal
+		offline.FeeRows += part.FeeRows
+		for kind, amount := range part.FeeByKind {
+			offline.FeeByKind[kind] += amount
+		}
+		rows, err := s.svc.Store.BrandGiftRows(ctx, platform.Value, periods)
+		if err != nil {
+			s.fail(w, r, "/ecommerce/summary", err)
+			return
+		}
+		gifts = append(gifts, rows...)
+	}
 	f, err := buildSummaryWorkbook(rep, det, &offline, gifts)
 	if err != nil {
 		s.fail(w, r, "/ecommerce/summary", err)
@@ -910,9 +922,17 @@ func (s *Server) saveStatementGroupsSource(r *http.Request, platform, period, so
 // 注意不是按平台、按账期分别过滤（那会变成笛卡尔积），
 // 而是逐条勾选：淘宝8月 + 京东7月 + 京东8月 这样。
 func filterStatementKeys(r *http.Request, keys []store.StatementKey) []store.StatementKey {
-	raw := r.URL.Query()["sel"]
-	if len(raw) == 0 {
-		return keys
+	raw, submitted := r.URL.Query()["sel"]
+	if !submitted {
+		latest := map[string]string{}
+		for _, k := range keys {
+			if k.Period > latest[k.Platform] {
+				latest[k.Platform] = k.Period
+			}
+		}
+		for platform, period := range latest {
+			raw = append(raw, store.StatementKeyString(platform, period))
+		}
 	}
 	picked := map[string]bool{}
 	for _, v := range raw {
@@ -925,19 +945,6 @@ func filterStatementKeys(r *http.Request, keys []store.StatementKey) []store.Sta
 		}
 	}
 	return out
-}
-
-// platformOfKeys 选中账单涉及的平台（去重）。
-func platformOfKeys(keys []store.StatementKey) string {
-	seen := map[string]bool{}
-	var out []string
-	for _, k := range keys {
-		if !seen[k.Platform] {
-			seen[k.Platform] = true
-			out = append(out, k.Platform)
-		}
-	}
-	return strings.Join(out, ",")
 }
 
 // periodsOfKeys 选中账单涉及的账期（去重）。

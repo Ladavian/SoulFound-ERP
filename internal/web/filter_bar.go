@@ -2,6 +2,7 @@ package web
 
 import (
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -83,18 +84,20 @@ func setQuery(r *http.Request, key string, values []string, drop ...string) stri
 //
 // 没选就返回 all 里最新的若干期，避免一进来什么都没有。
 func selectedPeriods(r *http.Request, all []string, defaultN int) []string {
-	raw := r.URL.Query()["period"]
-	seen := map[string]bool{}
+	raw, submitted := r.URL.Query()["period"]
+	available := map[string]bool{}
+	for _, p := range all {
+		available[p] = true
+	}
 	var out []string
 	for _, v := range raw {
 		v = strings.TrimSpace(v)
-		if v == "" || seen[v] {
-			continue
+		if available[v] {
+			out = append(out, v)
+			delete(available, v)
 		}
-		seen[v] = true
-		out = append(out, v)
 	}
-	if len(out) == 0 {
+	if !submitted {
 		n := defaultN
 		if n <= 0 || n > len(all) {
 			n = len(all)
@@ -145,7 +148,7 @@ func periodChips(r *http.Request, all []string, selected []string, counts map[st
 		})
 	}
 	bar.AllHref = setQuery(r, "period", all)
-	bar.NoneHref = setQuery(r, "period", nil)
+	bar.NoneHref = setQuery(r, "period", nil, "msg", "import")
 	return bar
 }
 
@@ -190,4 +193,12 @@ func periodLabelMulti(periods []string) string {
 	sort.Strings(sorted)
 	return periodLabelForUI(sorted[0]) + " ~ " + periodLabelForUI(sorted[len(sorted)-1]) +
 		"（共 " + strconv.Itoa(len(sorted)) + " 期）"
+}
+
+func billingPeriodQuery(platform string, periods []string) string {
+	q := url.Values{"platform": {platform}, "period": {""}}
+	if len(periods) > 0 {
+		q["period"] = periods
+	}
+	return q.Encode()
 }
