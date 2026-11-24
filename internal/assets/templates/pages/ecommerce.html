@@ -9,7 +9,7 @@
   </div>
   {{if .UnmatchedLines}}
   <div class="page-head__actions">
-    <a class="btn btn--primary" href="/ecommerce?unmatched=1">
+    <a class="btn btn--primary" href="{{.UnmatchedURL}}">
       {{template "icon" "alert"}}<span>处理待绑定（{{.UnmatchedLines}} 行）</span>
     </a>
   </div>
@@ -28,7 +28,55 @@
 {{template "platform_bar" (dict "Platforms" .PlatformOptions "Current" .Platform
     "Base" "/ecommerce" "Hint" "不同平台的订单分开看")}}
 
-{{if .MonthChips.Chips}}{{template "filter_bar" .MonthChips}}{{end}}
+
+
+<form class="billing-filter card" method="get" action="/ecommerce">
+  <input type="hidden" name="platform" value="{{.Platform}}">
+  <div class="billing-filter__fields">
+    <div class="field">
+      <label class="field__label" for="q">搜索订单</label>
+      <input class="input" id="q" name="q" type="search" value="{{.Keyword}}" placeholder="订单号、商品、商品 ID 或留言">
+    </div>
+            <div class="field">
+              <label class="field__label" for="status">订单状态</label>
+              <select class="select" id="status" name="status">
+                <option value="">— 全部 —</option>
+                {{range .Statuses}}<option value="{{.Value}}"{{if eq .Value $.Status}} selected{{end}}>{{.Label}}</option>{{end}}
+              </select>
+            </div>
+            <div class="field">
+              <label class="field__label" for="from">下单起</label>
+              <input class="input" id="from" name="from" type="date" value="{{.From}}">
+            </div>
+            <div class="field">
+              <label class="field__label" for="to">下单止</label>
+              <input class="input" id="to" name="to" type="date" value="{{.To}}">
+            </div>
+            <div class="field">
+              <label class="field__label" for="unmatched">只看待绑定</label>
+              <select class="select" id="unmatched" name="unmatched">
+                <option value="">— 全部订单 —</option>
+                <option value="1"{{if .UnmatchedOnly}} selected{{end}}>只显示有待绑定商品的订单</option>
+              </select>
+            </div>
+  </div>
+  {{if .MonthChips.Chips}}
+  <details class="billing-filter__picker">
+    <summary>下单月份 · {{if .MonthCount}}已选 {{.MonthCount}} 个月{{else}}全部{{end}}</summary>
+    <div class="billing-filter__options">
+      {{range .MonthChips.Chips}}
+      <label class="pick"><input type="checkbox" name="month" value="{{.Value}}" {{if .Active}}checked{{end}}> {{.Label}}（{{.Count}}）</label>
+      {{end}}
+    </div>
+    <div class="tiny muted">月份可多选，未勾选时不限月份。与日期区间同时填写时取交集。</div>
+  </details>
+  {{end}}
+  <div class="billing-filter__actions">
+    <button class="btn btn--primary" type="submit">应用筛选</button>
+    <a class="btn" href="{{.OrderResetURL}}">重置</a>
+    <span class="tiny muted" role="status">匹配 {{.Total}} 单</span>
+  </div>
+</form>
 
 {{/* 汇总：只统计"有效"的行（交易关闭与退款成功的不算）。
      没绑定产品或没填电商成本的行单独提示，不混进毛利里。 */}}
@@ -36,12 +84,12 @@
   <div class="stat">
     <div class="stat__label">有效订单行</div>
     <div class="stat__value">{{.LineCount}}</div>
-    <div class="stat__hint">当前筛选结果内，关闭与退款成功的不计入</div>
+    <div class="stat__hint">仅统计当前页的有效订单行</div>
   </div>
   <div class="stat">
     <div class="stat__label">实收金额</div>
     <div class="stat__value">{{money .Revenue}}</div>
-    <div class="stat__hint">买家实付合计，已扣退款</div>
+    <div class="stat__hint">当前页买家实付合计，已扣退款</div>
   </div>
   <div class="stat">
     <div class="stat__label">电商成本</div>
@@ -159,47 +207,7 @@
           </button>
         </form>
 
-        <form class="filters" method="get" action="/ecommerce" x-data="{ more: false }">
-          <input type="hidden" name="platform" value="{{.Platform}}">
-          <div class="field field--wide">
-            <label class="field__label" for="q">搜索</label>
-            <input class="input" id="q" name="q" type="search" value="{{.Keyword}}"
-                   placeholder="订单号、商品标题、商品ID 或留言">
-          </div>
-          <button class="btn filters__toggle" type="button" @click="more = !more" :aria-expanded="more">
-            {{template "icon" "filter"}}<span x-text="more ? '收起条件' : '筛选条件'">筛选条件</span>
-          </button>
-          <button class="btn btn--primary filters__submit" type="submit">
-            {{template "icon" "search"}}<span>筛选</span>
-          </button>
-          <div class="filters__more" :class="more ? 'is-open' : ''">
-            <div class="field">
-              <label class="field__label" for="status">订单状态</label>
-              <select class="select" id="status" name="status">
-                <option value="">— 全部 —</option>
-                {{range .Statuses}}<option value="{{.Value}}"{{if eq .Value $.Status}} selected{{end}}>{{.Label}}</option>{{end}}
-              </select>
-            </div>
-            <div class="field">
-              <label class="field__label" for="from">下单起</label>
-              <input class="input" id="from" name="from" type="date" value="{{.From}}">
-            </div>
-            <div class="field">
-              <label class="field__label" for="to">下单止</label>
-              <input class="input" id="to" name="to" type="date" value="{{.To}}">
-            </div>
-            <div class="field">
-              <label class="field__label" for="unmatched">只看待绑定</label>
-              <select class="select" id="unmatched" name="unmatched">
-                <option value="">— 全部订单 —</option>
-                <option value="1"{{if .UnmatchedOnly}} selected{{end}}>只显示有待绑定商品的订单</option>
-              </select>
-            </div>
-            <div class="filters__more-actions">
-              <a class="btn" href="/ecommerce">重置条件</a>
-            </div>
-          </div>
-        </form>
+
 
         {{if .Orders}}
         <div class="table-wrap">

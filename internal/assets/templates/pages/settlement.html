@@ -11,12 +11,12 @@
     </div>
   </div>
   <div class="page-head__actions">
-    <a class="btn" href="/ecommerce/reconcile?platform={{.Platform}}&period={{.Period}}">
+    <a class="btn" href="{{.ReconcileURL}}">
       {{template "icon" "list"}}<span>账单明细</span>
     </a>
     {{if .Period}}
     {{/* 账期支持多选，导出要把每个选中账期都带上 */}}
-    <a class="btn btn--primary" href="/ecommerce/settlement/export?platform={{.Platform}}{{.ExportQuery}}">
+    <a class="btn btn--primary" href="{{.SettlementExportURL}}">
       {{template "icon" "download"}}<span>导出结算单</span>
     </a>
     {{end}}
@@ -31,22 +31,11 @@
   </div>
 </div>
 
-{{template "filter_bar" .PeriodChips}}
+{{template "billing_period_filter" (dict "Platform" .Platform "Bar" .PeriodChips "Label" .PeriodLabel "Base" "/ecommerce/settlement")}}
 
 {{if not .Period}}
-{{template "empty" (dict "Title" "还没有账单" "Text" "先在「电商对账单」里导入平台的账期账单。")}}
+{{if .Periods}}{{template "empty" (dict "Title" "未选择账期" "Text" "勾选账期并应用筛选后查看结算单。")}}{{else}}{{template "empty" (dict "Title" "还没有账单" "Text" "先在「电商对账单」里导入平台的账期账单。")}}{{end}}
 {{else}}
-
-<div class="card">
-  <div class="card__body">
-    <div class="period-bar">
-      <span class="tiny muted">账期</span>
-      {{range .Periods}}
-      <a class="chip{{if eq . $.Period}} is-active{{end}}" href="/ecommerce/settlement?platform={{$.Platform}}&period={{.}}">{{periodLabel .}}</a>
-      {{end}}
-    </div>
-  </div>
-</div>
 
 {{/* 结算表：一条一条往下减，看出来钱是怎么算的 */}}
 <div class="card">

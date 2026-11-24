@@ -1,8 +1,8 @@
 package web
 
 import (
-	"fmt"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 
@@ -25,7 +25,7 @@ func (s *Server) handleEcommerce(w http.ResponseWriter, r *http.Request) {
 	// 下单月份多选：订单列表按平台 + 月份筛选
 	months, _ := s.svc.Store.EcOrderMonths(ctx, platform)
 	monthCounts, _ := s.svc.Store.EcOrderMonthCounts(ctx, platform)
-	selMonths := selectedValues(r, "month", months)
+	selMonths := selectedValues(r, "month", nil)
 	base := store.EcOrderFilter{
 		Platform:  platform,
 		Status:    fr.Str("status"),
@@ -43,7 +43,11 @@ func (s *Server) handleEcommerce(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	total, _ := s.svc.Store.CountEcOrders(ctx, base)
+	total, err := s.svc.Store.CountEcOrders(ctx, base)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	unmatched, _ := s.svc.Store.EcUnmatched(ctx, platform, 100)
 	unmatchedLines, _ := s.svc.Store.CountEcUnmatched(ctx, platform)
 	statuses, _ := s.svc.Store.EcOrderStatusCounts(ctx, platform)
@@ -60,10 +64,13 @@ func (s *Server) handleEcommerce(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	allLinks, _ := s.svc.Store.AllProductLinks(ctx)
 	var flat []model.ProductEcLink
-	for _, list := range allLinks {
-		flat = append(flat, list...)
+	for _, list := range links {
+		for _, link := range list {
+			if link.Platform == platform {
+				flat = append(flat, link)
+			}
+		}
 	}
 	sort.Slice(flat, func(i, j int) bool { return flat[i].ID < flat[j].ID })
 
@@ -73,7 +80,6 @@ func (s *Server) handleEcommerce(w http.ResponseWriter, r *http.Request) {
 	// 礼金/淘金币好几行账单，成本被重复算了五六遍，净利显示成 -9685。
 	var revenue, cost, missing model.Money
 	var lines int
-	orderRolled := map[int64]bool{}
 	for _, o := range orders {
 		for _, it := range o.Items {
 			if !it.Counts() {
@@ -82,13 +88,10 @@ func (s *Server) handleEcommerce(w http.ResponseWriter, r *http.Request) {
 			lines++
 			revenue += it.NetPaid()
 			if it.Matched() && it.EcCost > 0 {
-				if !orderRolled[o.ID] {
-					cost += model.MulQty(it.Qty, it.EcCost)
-				}
+				cost += model.MulQty(it.Qty, it.EcCost)
 			} else {
 				missing += it.NetPaid()
 			}
-			orderRolled[o.ID] = true
 		}
 	}
 
@@ -118,11 +121,12 @@ func (s *Server) handleEcommerce(w http.ResponseWriter, r *http.Request) {
 		}
 		monthChips.Chips = append(monthChips.Chips, FilterChip{
 			Value: m, Label: m, Active: active,
-			Href: toggleQuery(r, "month", m, true), Count: monthCounts[m],
+			Count: monthCounts[m],
 		})
 	}
-	monthChips.AllHref = setQuery(r, "month", months)
-	monthChips.NoneHref = setQuery(r, "month", nil)
+	page["MonthCount"] = len(selMonths)
+	page["OrderResetURL"] = "/ecommerce?" + url.Values{"platform": {platform}}.Encode()
+	page["UnmatchedURL"] = setQuery(r, "unmatched", []string{"1"}, "msg")
 	page["MonthChips"] = monthChips
 	page["Status"] = f.Status
 	page["Keyword"] = f.Keyword
@@ -132,8 +136,6 @@ func (s *Server) handleEcommerce(w http.ResponseWriter, r *http.Request) {
 	// 待绑定的商品ID 里，有些可能已经在别的产品上绑过了——
 	// 直接标出来，省得用户试一次才知道。
 	for i := range unmatched {
-		end := len(flat)
-		_ = end
 		for _, l := range flat {
 			if l.Platform == platform && l.EcProductID == unmatched[i].EcProductID {
 				unmatched[i].BoundTo = l.ProductName
@@ -149,7 +151,7 @@ func (s *Server) handleEcommerce(w http.ResponseWriter, r *http.Request) {
 	page["Links"] = flat
 	page["Revenue"] = revenue
 	page["Cost"] = cost
-	page["Profit"] = revenue - cost
+	page["Profit"] = revenue - missing - cost
 	page["KnownRevenue"] = revenue - missing
 	page["MissingCostAmount"] = missing
 	page["LineCount"] = lines
@@ -203,7 +205,16 @@ func (s *Server) handleOrderSettleMode(w http.ResponseWriter, r *http.Request) {
 	if mode == "" {
 		mode = model.SettleModeOffline
 	}
-	back := fmt.Sprintf("/ecommerce/reconcile?platform=%s&period=%s", platform, fr.Str("period"))
+	periods, hasPeriod := r.URL.Query()["period"]
+	if !hasPeriod && fr.Str("period") != "" {
+		periods = []string{fr.Str("period")}
+		hasPeriod = true
+	}
+	q := url.Values{"platform": {platform}}
+	if hasPeriod {
+		q["period"] = periods
+	}
+	back := "/ecommerce/reconcile?" + q.Encode()
 	if fr.Str("from") == "orders" {
 		back = "/ecommerce?platform=" + platform
 	}

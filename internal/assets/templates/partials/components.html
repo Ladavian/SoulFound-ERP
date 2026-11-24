@@ -83,3 +83,26 @@
   </div>
 </div>
 {{end}}
+
+{{define "billing_period_filter"}}
+{{if .Bar.Chips}}
+<form class="billing-filter card" method="get" action="{{.Base}}">
+  <input type="hidden" name="platform" value="{{.Platform}}">
+  <input type="hidden" name="period" value="">
+  <details class="billing-filter__picker">
+    <summary>账期 · {{if .Label}}{{.Label}}{{else}}未选择{{end}}</summary>
+    <div class="billing-filter__options">
+      {{range .Bar.Chips}}
+      <label class="pick"><input type="checkbox" name="period" value="{{.Value}}" {{if .Active}}checked{{end}}> {{.Label}}</label>
+      {{end}}
+    </div>
+  </details>
+  <div class="billing-filter__actions">
+    <button class="btn btn--primary" type="submit">应用筛选</button>
+    <a class="btn" href="{{.Bar.NoneHref}}">恢复最新一期</a>
+    <button class="btn" type="button" onclick="this.form.querySelectorAll('input[type=checkbox]').forEach(box => box.checked = true)">全选</button>
+    <button class="btn" type="button" onclick="this.form.querySelectorAll('input[type=checkbox]').forEach(box => box.checked = false)">清空</button>
+  </div>
+</form>
+{{end}}
+{{end}}
