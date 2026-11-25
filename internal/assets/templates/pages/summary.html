@@ -37,14 +37,17 @@
     <summary>编辑账期</summary>
     <form method="get" action="/ecommerce/summary" data-period-form>
       <input type="hidden" name="sel" value="">
-      <div class="billing-filter__actions" data-period-controls hidden>
-        <label>查找账期 <select class="select" data-period-range aria-label="查找账期">
+      <div class="summary-period-scroll">
+      <div class="summary-period-controls" data-period-controls hidden>
+        <label class="summary-period-range"><span>查找账期</span><select class="select" data-period-range aria-label="查找账期">
           <option value="recent">最近 6 个月</option>
           <option value="all">全部账期</option>
         </select></label>
+        <div class="summary-period-shortcuts">
         <button class="btn btn--sm" type="button" data-period-latest>各平台最新一期</button>
         <button class="btn btn--sm" type="button" data-period-clear>清空</button>
         <button class="btn btn--sm" type="button" data-period-add>勾选当前范围</button>
+        </div>
       </div>
       <p class="tiny muted" data-period-visibility hidden>查找账期只改变列表显示，已勾选的历史账期会保留。</p>
       <div data-period-options>
@@ -64,7 +67,8 @@
         <summary data-period-count></summary>
         <div class="billing-filter__actions" data-period-preview></div>
       </details>
-      <div class="billing-filter__actions">
+      </div>
+      <div class="billing-filter__actions summary-period-footer">
         <button class="btn btn--primary" type="submit">应用筛选</button>
         <button class="btn" type="button" data-period-cancel hidden>取消</button>
       </div>
@@ -72,27 +76,83 @@
   </details>
   <button class="btn" type="button" data-period-open hidden>编辑账期</button>
   <dialog class="summary-period-dialog" data-period-dialog aria-labelledby="summary-period-title">
-    <h2 id="summary-period-title">选择平台与账期</h2>
+    <h2 id="summary-period-title" tabindex="-1" autofocus>选择平台与账期</h2>
   </dialog>
 </section>
 <style>
   #summary-periods [hidden] { display: none !important; }
   .summary-period-dialog {
     position: fixed;
-    inset: 0 0 0 auto;
+    inset: 0 0 auto auto;
     margin: 0;
     box-sizing: border-box;
     width: min(100%, 38rem);
     max-width: 100%;
+    height: 100vh;
+    max-height: 100vh;
     height: 100dvh;
     max-height: 100dvh;
-    padding: 1.25rem;
+    padding: 0;
     border: 0;
+    overflow: hidden;
     background: var(--surface, Canvas);
     color: inherit;
+    --period-gutter: 1.25rem;
+    --period-left: max(var(--period-gutter), env(safe-area-inset-left, 0px));
+    --period-right: max(var(--period-gutter), env(safe-area-inset-right, 0px));
   }
+  .summary-period-dialog[open] { display: grid; grid-template-rows: auto minmax(0, 1fr); }
   .summary-period-dialog::backdrop { background: rgb(0 0 0 / 42%); }
+  .summary-period-dialog h2 {
+    margin: 0;
+    padding: calc(.9rem + env(safe-area-inset-top, 0px)) var(--period-right) .75rem var(--period-left);
+    font-size: 1.25rem;
+    line-height: 1.25;
+  }
+  .summary-period-dialog h2:focus { outline: none; }
   [data-period-form] { display: grid; gap: .8rem; }
+  .summary-period-dialog [data-period-form] {
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: 0;
+    min-height: 0;
+  }
+  .summary-period-dialog .summary-period-scroll {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    padding: 0 var(--period-right) .75rem var(--period-left);
+  }
+  .summary-period-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: .65rem;
+  }
+  .summary-period-range {
+    display: grid;
+    gap: .25rem;
+    flex: 1 1 8.5rem;
+    min-width: 0;
+    font-size: .875rem;
+  }
+  .summary-period-range .select { width: 100%; box-sizing: border-box; }
+  .summary-period-shortcuts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4rem;
+  }
+  .summary-period-range .select,
+  .summary-period-shortcuts .btn { min-height: 2.5rem; }
+  .summary-period-dialog .summary-period-footer {
+    border-top: 1px solid var(--line, #8884);
+    padding: .75rem var(--period-right) calc(.75rem + env(safe-area-inset-bottom, 0px)) var(--period-left);
+  }
+  @media (max-width: 560px) {
+    .summary-period-dialog { width: 100%; --period-gutter: .875rem; }
+    .summary-period-range, .summary-period-shortcuts { flex: 1 1 100%; }
+    .summary-period-shortcuts .btn { white-space: normal; }
+    .summary-period-dialog .summary-period-footer .btn { flex: 1; }
+  }
   [data-period-options] { display: grid; gap: .55rem; }
   .summary-period-group { border: 1px solid var(--border, #8886); border-radius: .5rem; padding: .55rem .75rem; }
   .summary-period-group summary { cursor: pointer; font-weight: 600; }
